@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -99,6 +100,14 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlinx.coroutines.delay
+
+private const val CompletionSortDelayMillis = 1_500L
+
+private sealed interface DeleteConfirmation {
+    data class SingleTodo(val id: String, val title: String) : DeleteConfirmation
+    data class CompletedTodos(val count: Int) : DeleteConfirmation
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -124,6 +133,9 @@ private fun PixelDoneApp() {
     var hideCompleted by remember { mutableStateOf(false) }
     var editorExpanded by remember { mutableStateOf(false) }
     var editingTodoId by remember { mutableStateOf<String?>(null) }
+    var displayOrderIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var sortDelayUntilMillis by remember { mutableStateOf(0L) }
+    var deleteConfirmation by remember { mutableStateOf<DeleteConfirmation?>(null) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -135,6 +147,24 @@ private fun PixelDoneApp() {
 
     LaunchedEffect(Unit) {
         TodoAlarmScheduler.sync(context, emptyList(), todos)
+    }
+
+    val sortedVisibleIds = visibleTodos(todos, sortMode, hideCompleted).map { it.id }
+
+    LaunchedEffect(sortedVisibleIds, sortDelayUntilMillis) {
+        if (sortDelayUntilMillis == 0L) {
+            displayOrderIds = sortedVisibleIds
+        }
+    }
+
+    LaunchedEffect(sortDelayUntilMillis) {
+        if (sortDelayUntilMillis > 0L) {
+            val remainingDelay = sortDelayUntilMillis - System.currentTimeMillis()
+            if (remainingDelay > 0L) {
+                delay(remainingDelay)
+            }
+            sortDelayUntilMillis = 0L
+        }
     }
 
     fun updateTodos(updatedTodos: List<TodoItem>) {
@@ -250,6 +280,28 @@ private fun PixelDoneApp() {
         editorExpanded = false
     }
 
+    fun confirmDelete() {
+        when (val confirmation = deleteConfirmation) {
+            is DeleteConfirmation.SingleTodo -> {
+                updateTodos(deleteTodoItem(todos, confirmation.id))
+                if (editingTodoId == confirmation.id) {
+                    resetEditor()
+                    editorExpanded = false
+                }
+            }
+            is DeleteConfirmation.CompletedTodos -> {
+                val editingItem = todos.firstOrNull { it.id == editingTodoId }
+                updateTodos(deleteCompletedTodos(todos))
+                if (editingItem?.completed == true) {
+                    resetEditor()
+                    editorExpanded = false
+                }
+            }
+            null -> Unit
+        }
+        deleteConfirmation = null
+    }
+
     PixelDoneScreen(
         todos = todos,
         activeCount = todos.count { !it.completed },
@@ -270,26 +322,43 @@ private fun PixelDoneApp() {
         onCancelEdit = ::cancelEditing,
         sortMode = sortMode,
         onSortModeChange = {
+            sortDelayUntilMillis = 0L
             sortMode = it
         },
         hideCompleted = hideCompleted,
         onHideCompletedChange = {
+            sortDelayUntilMillis = 0L
             hideCompleted = it
         },
         onToggleTodo = { id ->
+            val now = System.currentTimeMillis()
+            displayOrderIds = if (sortDelayUntilMillis > now && displayOrderIds.isNotEmpty()) {
+                displayOrderIds
+            } else {
+                sortedVisibleIds
+            }
             updateTodos(toggleTodoCompletion(todos, id))
+            sortDelayUntilMillis = now + CompletionSortDelayMillis
         },
         onEditTodo = ::startEditing,
         onDeleteTodo = { id ->
-            updateTodos(deleteTodoItem(todos, id))
-            if (editingTodoId == id) {
-                resetEditor()
-                editorExpanded = false
+            todos.firstOrNull { it.id == id }?.let { item ->
+                deleteConfirmation = DeleteConfirmation.SingleTodo(item.id, item.title)
             }
         },
         onDeleteCompleted = {
-            updateTodos(deleteCompletedTodos(todos))
+            val completedCount = todos.count { it.completed }
+            if (completedCount > 0) {
+                deleteConfirmation = DeleteConfirmation.CompletedTodos(completedCount)
+            }
         },
+        displayOrderIds = displayOrderIds,
+        keepDisplayOrder = sortDelayUntilMillis > 0L,
+    )
+    DeleteConfirmationDialog(
+        confirmation = deleteConfirmation,
+        onConfirm = ::confirmDelete,
+        onDismiss = { deleteConfirmation = null },
     )
 }
 
@@ -318,6 +387,8 @@ private fun PixelDoneScreen(
     onEditTodo: (TodoItem) -> Unit,
     onDeleteTodo: (String) -> Unit,
     onDeleteCompleted: () -> Unit,
+    displayOrderIds: List<String>,
+    keepDisplayOrder: Boolean,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -355,6 +426,8 @@ private fun PixelDoneScreen(
                 onEditTodo = onEditTodo,
                 onDeleteTodo = onDeleteTodo,
                 onDeleteCompleted = onDeleteCompleted,
+                displayOrderIds = displayOrderIds,
+                keepDisplayOrder = keepDisplayOrder,
                 modifier = Modifier.weight(1f),
             )
             if (editorExpanded || isEditing) {
@@ -430,7 +503,9 @@ private fun TaskEditorPanel(
     val scrollState = rememberScrollState()
 
     LaunchedEffect(isEditing) {
-        titleFocusRequester.requestFocus()
+        if (!isEditing) {
+            titleFocusRequester.requestFocus()
+        }
     }
 
     PixelPanel {
@@ -490,9 +565,7 @@ private fun TaskEditorPanel(
                 ),
                 keyboardActions = KeyboardActions(
                     onDone = {
-                        if (onSubmitTodo()) {
-                            focusManager.clearFocus()
-                        }
+                        focusManager.clearFocus()
                     },
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -611,9 +684,20 @@ private fun TodoListPanel(
     onEditTodo: (TodoItem) -> Unit,
     onDeleteTodo: (String) -> Unit,
     onDeleteCompleted: () -> Unit,
+    displayOrderIds: List<String>,
+    keepDisplayOrder: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val visibleItems = visibleTodos(todos, sortMode, hideCompleted)
+    val sortedVisibleItems = visibleTodos(todos, sortMode, hideCompleted)
+    val visibleItems = if (keepDisplayOrder) {
+        orderedTodosForDisplay(
+            todos = todos,
+            sortedVisibleItems = sortedVisibleItems,
+            displayOrderIds = displayOrderIds,
+        )
+    } else {
+        sortedVisibleItems
+    }
 
     PixelPanel(modifier = modifier) {
         Row(
@@ -669,6 +753,20 @@ private fun TodoListPanel(
             }
         }
     }
+}
+
+private fun orderedTodosForDisplay(
+    todos: List<TodoItem>,
+    sortedVisibleItems: List<TodoItem>,
+    displayOrderIds: List<String>,
+): List<TodoItem> {
+    if (displayOrderIds.isEmpty()) return sortedVisibleItems
+
+    val todosById = todos.associateBy { it.id }
+    val orderedItems = displayOrderIds.mapNotNull { todosById[it] }
+    val orderedIds = orderedItems.mapTo(mutableSetOf()) { it.id }
+    val appendedItems = sortedVisibleItems.filterNot { it.id in orderedIds }
+    return orderedItems + appendedItems
 }
 
 @Composable
@@ -763,6 +861,59 @@ private fun Footer() {
             color = ClaudeSlateLight,
         )
     }
+}
+
+@Composable
+private fun DeleteConfirmationDialog(
+    confirmation: DeleteConfirmation?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (confirmation == null) return
+
+    val titleText = when (confirmation) {
+        is DeleteConfirmation.SingleTodo -> "Delete task?"
+        is DeleteConfirmation.CompletedTodos -> "Delete done tasks?"
+    }
+    val bodyText = when (confirmation) {
+        is DeleteConfirmation.SingleTodo -> "This will remove \"${confirmation.title}\"."
+        is DeleteConfirmation.CompletedTodos -> "This will remove ${confirmation.count} completed task(s)."
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = titleText,
+                style = MaterialTheme.typography.titleMedium,
+                color = ClaudeSlateDark,
+            )
+        },
+        text = {
+            Text(
+                text = bodyText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = ClaudeSlateLight,
+            )
+        },
+        confirmButton = {
+            PixelButton(
+                text = "DELETE",
+                onClick = onConfirm,
+                destructive = true,
+            )
+        },
+        dismissButton = {
+            PixelButton(
+                text = "CANCEL",
+                onClick = onDismiss,
+                primary = false,
+            )
+        },
+        shape = RectangleShape,
+        containerColor = ClaudeGray100,
+        tonalElevation = 0.dp,
+    )
 }
 
 @Composable
@@ -1066,6 +1217,8 @@ private fun PhonePreview() {
             onEditTodo = {},
             onDeleteTodo = {},
             onDeleteCompleted = {},
+            displayOrderIds = emptyList(),
+            keepDisplayOrder = false,
         )
     }
 }
@@ -1098,6 +1251,8 @@ private fun TabletPreview() {
             onEditTodo = {},
             onDeleteTodo = {},
             onDeleteCompleted = {},
+            displayOrderIds = emptyList(),
+            keepDisplayOrder = false,
         )
     }
 }
