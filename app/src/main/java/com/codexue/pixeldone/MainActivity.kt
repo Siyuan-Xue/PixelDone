@@ -25,10 +25,12 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -63,6 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -325,6 +328,8 @@ private fun PixelDoneScreen(
             .padding(16.dp),
     ) {
         val isTablet = maxWidth >= 720.dp
+        val density = LocalDensity.current
+        val imeVisible = WindowInsets.ime.getBottom(density) > 0
         val editorMaxHeight = when {
             isTablet -> 420.dp
             maxHeight < 620.dp -> 260.dp
@@ -338,6 +343,19 @@ private fun PixelDoneScreen(
             Header(
                 activeCount = activeCount,
                 completedCount = completedCount,
+            )
+            TodoListPanel(
+                todos = todos,
+                sortMode = sortMode,
+                onSortModeChange = onSortModeChange,
+                hideCompleted = hideCompleted,
+                onHideCompletedChange = onHideCompletedChange,
+                completedCount = completedCount,
+                onToggleTodo = onToggleTodo,
+                onEditTodo = onEditTodo,
+                onDeleteTodo = onDeleteTodo,
+                onDeleteCompleted = onDeleteCompleted,
+                modifier = Modifier.weight(1f),
             )
             if (editorExpanded || isEditing) {
                 TaskEditorPanel(
@@ -353,22 +371,9 @@ private fun PixelDoneScreen(
                     onCancelEdit = onCancelEdit,
                     onCloseNewTask = { onEditorExpandedChange(false) },
                     editorMaxHeight = editorMaxHeight,
+                    compactForKeyboard = imeVisible,
                 )
-            }
-            TodoListPanel(
-                todos = todos,
-                sortMode = sortMode,
-                onSortModeChange = onSortModeChange,
-                hideCompleted = hideCompleted,
-                onHideCompletedChange = onHideCompletedChange,
-                completedCount = completedCount,
-                onToggleTodo = onToggleTodo,
-                onEditTodo = onEditTodo,
-                onDeleteTodo = onDeleteTodo,
-                onDeleteCompleted = onDeleteCompleted,
-                modifier = Modifier.weight(1f),
-            )
-            if (!editorExpanded && !isEditing) {
+            } else {
                 NewTaskBar(onOpenEditor = { onEditorExpandedChange(true) })
             }
             Footer()
@@ -418,6 +423,7 @@ private fun TaskEditorPanel(
     onCancelEdit: () -> Unit,
     onCloseNewTask: () -> Unit,
     editorMaxHeight: Dp,
+    compactForKeyboard: Boolean,
 ) {
     val focusManager = LocalFocusManager.current
     val titleFocusRequester = remember { FocusRequester() }
@@ -457,15 +463,17 @@ private fun TaskEditorPanel(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = editorMaxHeight)
-                .verticalScroll(scrollState),
+                .heightIn(max = if (compactForKeyboard) 76.dp else editorMaxHeight)
+                .then(if (compactForKeyboard) Modifier else Modifier.verticalScroll(scrollState)),
         ) {
-            Text(
-                text = "DETAILS",
-                style = MaterialTheme.typography.labelMedium,
-                color = ClaudeSlateLight,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            if (!compactForKeyboard) {
+                Text(
+                    text = "DETAILS",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = ClaudeSlateLight,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
             OutlinedTextField(
                 value = titleInput,
                 onValueChange = onTitleInputChange,
@@ -497,6 +505,9 @@ private fun TaskEditorPanel(
                     unfocusedLabelColor = ClaudeGray600,
                 ),
             )
+            if (compactForKeyboard) {
+                return@Column
+            }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "PRIORITY",
