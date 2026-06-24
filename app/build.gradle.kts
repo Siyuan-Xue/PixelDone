@@ -33,6 +33,21 @@ android {
     }
 }
 
+val semanticDebugApkName = "PixelDone-${android.defaultConfig.versionName}-debug.apk"
+val debugApkOutputDir = layout.buildDirectory.dir("outputs/apk/debug")
+val semanticDebugApkOutputDir = layout.buildDirectory.dir("outputs/apk/semantic/debug")
+
+val copySemanticDebugApk = tasks.register<Copy>("copySemanticDebugApk") {
+    dependsOn("assembleDebug")
+    from(debugApkOutputDir.map { it.file("app-debug.apk") })
+    into(semanticDebugApkOutputDir)
+    rename("app-debug.apk", semanticDebugApkName)
+}
+
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    finalizedBy(copySemanticDebugApk)
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
