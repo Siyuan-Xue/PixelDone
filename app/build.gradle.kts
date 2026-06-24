@@ -33,19 +33,33 @@ android {
     }
 }
 
-val semanticDebugApkName = "PixelDone-${android.defaultConfig.versionName}-debug.apk"
-val debugApkOutputDir = layout.buildDirectory.dir("outputs/apk/debug")
-val semanticDebugApkOutputDir = layout.buildDirectory.dir("outputs/apk/semantic/debug")
+@org.gradle.work.DisableCachingByDefault(because = "Copies the already-built debug APK to its release asset name.")
+abstract class CopyVersionedApkTask : org.gradle.api.DefaultTask() {
+    @get:org.gradle.api.tasks.InputFile
+    abstract val inputApk: org.gradle.api.file.RegularFileProperty
 
-val copySemanticDebugApk = tasks.register<Copy>("copySemanticDebugApk") {
+    @get:org.gradle.api.tasks.OutputFile
+    abstract val outputApk: org.gradle.api.file.RegularFileProperty
+
+    @org.gradle.api.tasks.TaskAction
+    fun copyApk() {
+        inputApk.get().asFile.copyTo(outputApk.get().asFile, overwrite = true)
+    }
+}
+
+val versionedDebugApkName = "PixelDone-${android.defaultConfig.versionName}-debug.apk"
+val debugApkOutputDir = layout.buildDirectory.dir("outputs/apk/debug")
+val defaultDebugApk = debugApkOutputDir.map { it.file("app-debug.apk") }
+val versionedDebugApk = debugApkOutputDir.map { it.file(versionedDebugApkName) }
+
+val copyVersionedDebugApk = tasks.register<CopyVersionedApkTask>("copyVersionedDebugApk") {
     dependsOn("assembleDebug")
-    from(debugApkOutputDir.map { it.file("app-debug.apk") })
-    into(semanticDebugApkOutputDir)
-    rename("app-debug.apk", semanticDebugApkName)
+    inputApk.set(defaultDebugApk)
+    outputApk.set(versionedDebugApk)
 }
 
 tasks.matching { it.name == "assembleDebug" }.configureEach {
-    finalizedBy(copySemanticDebugApk)
+    finalizedBy(copyVersionedDebugApk)
 }
 
 dependencies {
