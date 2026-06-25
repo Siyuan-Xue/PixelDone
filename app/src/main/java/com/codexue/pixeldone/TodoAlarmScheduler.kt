@@ -17,8 +17,9 @@ object TodoAlarmScheduler {
             .filterNot { it.id in currentIds }
             .forEach { cancel(context, it.id) }
 
+        val nowMillis = System.currentTimeMillis()
         currentItems.forEach { item ->
-            if (shouldScheduleTodoAlarm(item, System.currentTimeMillis())) {
+            if (shouldScheduleTodoAlarm(item, nowMillis)) {
                 schedule(context, item)
             } else {
                 cancel(context, item.id)

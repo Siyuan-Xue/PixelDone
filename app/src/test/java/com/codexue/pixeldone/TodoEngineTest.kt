@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 class TodoEngineTest {
     @Test
@@ -211,6 +213,26 @@ class TodoEngineTest {
         val decoded = TodoJsonCodec.decode(TodoJsonCodec.encode(items))
 
         assertEquals(items, decoded)
+    }
+
+    @Test
+    fun defaultDueAtMillisUsesSameTimeTomorrowRoundedToMinute() {
+        val zone = ZoneId.systemDefault()
+        val now = LocalDateTime.of(2026, 6, 25, 9, 30, 42, 123_000_000)
+            .atZone(zone)
+            .toInstant()
+            .toEpochMilli()
+        val expected = LocalDateTime.of(2026, 6, 26, 9, 30)
+            .atZone(zone)
+            .toInstant()
+            .toEpochMilli()
+
+        assertEquals(expected, defaultDueAtMillis(now))
+    }
+
+    @Test
+    fun completionSortDelayIsTwoSeconds() {
+        assertEquals(2_000L, CompletionSortDelayMillis)
     }
 
     private fun item(

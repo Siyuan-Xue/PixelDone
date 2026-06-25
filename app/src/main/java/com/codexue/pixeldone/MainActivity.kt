@@ -102,7 +102,7 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlinx.coroutines.delay
 
-private const val CompletionSortDelayMillis = 1_500L
+internal const val CompletionSortDelayMillis = 2_000L
 
 private sealed interface DeleteConfirmation {
     data class SingleTodo(val id: String, val title: String) : DeleteConfirmation
@@ -128,13 +128,14 @@ private fun PixelDoneApp() {
     var todos by remember { mutableStateOf(storage.loadTodos()) }
     var titleInput by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TodoPriority.MEDIUM) }
-    var dueAtMillis by remember { mutableStateOf(defaultDueAtMillis()) }
+    var dueAtMillis by remember { mutableStateOf(0L) }
     var sortMode by remember { mutableStateOf(SortMode.PRIORITY) }
     var hideCompleted by remember { mutableStateOf(false) }
     var editorExpanded by remember { mutableStateOf(false) }
     var editingTodoId by remember { mutableStateOf<String?>(null) }
     var displayOrderIds by remember { mutableStateOf<List<String>>(emptyList()) }
-    var sortDelayUntilMillis by remember { mutableStateOf(0L) }
+    var keepDisplayOrderDuringSortDelay by remember { mutableStateOf(false) }
+    var sortDelayTick by remember { mutableStateOf(0) }
     var deleteConfirmation by remember { mutableStateOf<DeleteConfirmation?>(null) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -151,19 +152,16 @@ private fun PixelDoneApp() {
 
     val sortedVisibleIds = visibleTodos(todos, sortMode, hideCompleted).map { it.id }
 
-    LaunchedEffect(sortedVisibleIds, sortDelayUntilMillis) {
-        if (sortDelayUntilMillis == 0L) {
+    LaunchedEffect(sortedVisibleIds, keepDisplayOrderDuringSortDelay) {
+        if (!keepDisplayOrderDuringSortDelay) {
             displayOrderIds = sortedVisibleIds
         }
     }
 
-    LaunchedEffect(sortDelayUntilMillis) {
-        if (sortDelayUntilMillis > 0L) {
-            val remainingDelay = sortDelayUntilMillis - System.currentTimeMillis()
-            if (remainingDelay > 0L) {
-                delay(remainingDelay)
-            }
-            sortDelayUntilMillis = 0L
+    LaunchedEffect(sortDelayTick) {
+        if (sortDelayTick > 0) {
+            delay(CompletionSortDelayMillis)
+            keepDisplayOrderDuringSortDelay = false
         }
     }
 
@@ -182,19 +180,25 @@ private fun PixelDoneApp() {
 
     fun requestNotificationPermissionIfNeeded(updatedTodos: List<TodoItem>) {
         if (hasNotificationPermission()) return
+        val nowMillis = System.currentTimeMillis()
         val hasFutureAlarm = updatedTodos.any {
-            shouldScheduleTodoAlarm(it, System.currentTimeMillis())
+            shouldScheduleTodoAlarm(it, nowMillis)
         }
         if (hasFutureAlarm) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
-    fun resetEditor(nowMillis: Long = System.currentTimeMillis()) {
+    fun clearEditor() {
         editingTodoId = null
         titleInput = ""
         selectedPriority = TodoPriority.MEDIUM
-        dueAtMillis = defaultDueAtMillis(nowMillis)
+    }
+
+    fun openNewTaskEditor() {
+        clearEditor()
+        dueAtMillis = defaultDueAtMillis()
+        editorExpanded = true
     }
 
     fun showDatePicker() {
@@ -233,15 +237,17 @@ private fun PixelDoneApp() {
     }
 
     fun submitTodo(): Boolean {
-        val now = System.currentTimeMillis()
         val editingId = editingTodoId
         val updatedTodos = if (editingId == null) {
+            if (titleInput.isBlank()) {
+                return false
+            }
             val item = createTodoItem(
                 id = UUID.randomUUID().toString(),
                 titleInput = titleInput,
                 priority = selectedPriority,
                 dueAtMillis = dueAtMillis,
-                createdAtMillis = now,
+                createdAtMillis = System.currentTimeMillis(),
             )
 
             if (item == null) {
@@ -262,7 +268,7 @@ private fun PixelDoneApp() {
 
         updateTodos(updatedTodos)
         requestNotificationPermissionIfNeeded(updatedTodos)
-        resetEditor(now)
+        clearEditor()
         editorExpanded = false
         return true
     }
@@ -276,7 +282,7 @@ private fun PixelDoneApp() {
     }
 
     fun cancelEditing() {
-        resetEditor()
+        clearEditor()
         editorExpanded = false
     }
 
@@ -285,7 +291,7 @@ private fun PixelDoneApp() {
             is DeleteConfirmation.SingleTodo -> {
                 updateTodos(deleteTodoItem(todos, confirmation.id))
                 if (editingTodoId == confirmation.id) {
-                    resetEditor()
+                    clearEditor()
                     editorExpanded = false
                 }
             }
@@ -293,7 +299,7 @@ private fun PixelDoneApp() {
                 val editingItem = todos.firstOrNull { it.id == editingTodoId }
                 updateTodos(deleteCompletedTodos(todos))
                 if (editingItem?.completed == true) {
-                    resetEditor()
+                    clearEditor()
                     editorExpanded = false
                 }
             }
@@ -315,30 +321,34 @@ private fun PixelDoneApp() {
         onPickTime = ::showTimePicker,
         editorExpanded = editorExpanded,
         onEditorExpandedChange = { expanded ->
-            editorExpanded = expanded
+            if (expanded && editingTodoId == null) {
+                openNewTaskEditor()
+            } else {
+                editorExpanded = expanded
+            }
         },
         isEditing = editingTodoId != null,
         onSubmitTodo = ::submitTodo,
         onCancelEdit = ::cancelEditing,
         sortMode = sortMode,
         onSortModeChange = {
-            sortDelayUntilMillis = 0L
+            keepDisplayOrderDuringSortDelay = false
             sortMode = it
         },
         hideCompleted = hideCompleted,
         onHideCompletedChange = {
-            sortDelayUntilMillis = 0L
+            keepDisplayOrderDuringSortDelay = false
             hideCompleted = it
         },
         onToggleTodo = { id ->
-            val now = System.currentTimeMillis()
-            displayOrderIds = if (sortDelayUntilMillis > now && displayOrderIds.isNotEmpty()) {
+            displayOrderIds = if (keepDisplayOrderDuringSortDelay && displayOrderIds.isNotEmpty()) {
                 displayOrderIds
             } else {
                 sortedVisibleIds
             }
             updateTodos(toggleTodoCompletion(todos, id))
-            sortDelayUntilMillis = now + CompletionSortDelayMillis
+            keepDisplayOrderDuringSortDelay = true
+            sortDelayTick += 1
         },
         onEditTodo = ::startEditing,
         onDeleteTodo = { id ->
@@ -353,7 +363,7 @@ private fun PixelDoneApp() {
             }
         },
         displayOrderIds = displayOrderIds,
-        keepDisplayOrder = sortDelayUntilMillis > 0L,
+        keepDisplayOrder = keepDisplayOrderDuringSortDelay,
     )
     DeleteConfirmationDialog(
         confirmation = deleteConfirmation,
@@ -737,6 +747,7 @@ private fun TodoListPanel(
                 modifier = Modifier.weight(1f),
             )
         } else {
+            val alarmNowMillis = System.currentTimeMillis()
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -748,6 +759,7 @@ private fun TodoListPanel(
                         onToggleTodo = onToggleTodo,
                         onEditTodo = onEditTodo,
                         onDeleteTodo = onDeleteTodo,
+                        nowMillis = alarmNowMillis,
                     )
                 }
             }
@@ -775,9 +787,10 @@ private fun TodoRow(
     onToggleTodo: (String) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
     onDeleteTodo: (String) -> Unit,
+    nowMillis: Long,
 ) {
     val itemBackground = if (item.completed) ClaudeCactus.copy(alpha = 0.35f) else ClaudeIvory
-    val alarmText = if (shouldScheduleTodoAlarm(item, System.currentTimeMillis())) {
+    val alarmText = if (shouldScheduleTodoAlarm(item, nowMillis)) {
         "  ALARM"
     } else {
         ""
@@ -1160,8 +1173,9 @@ private val DateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 private val TimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 private val DateTimeUiFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
-private fun defaultDueAtMillis(nowMillis: Long = System.currentTimeMillis()): Long {
+internal fun defaultDueAtMillis(nowMillis: Long = System.currentTimeMillis()): Long {
     return nowMillis.toLocalDateTime()
+        .plusDays(1)
         .withSecond(0)
         .withNano(0)
         .toEpochMillis()
