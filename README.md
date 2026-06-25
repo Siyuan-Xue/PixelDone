@@ -33,7 +33,7 @@ PixelDone is a bright pixel-style Android todo planner for quickly adding, sorti
 `assembleDebug` also writes a versioned debug APK next to the default Gradle output:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-0.1.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-0.1.3-debug.apk
 ```
 
 ## Install
@@ -41,7 +41,7 @@ app/build/outputs/apk/debug/PixelDone-0.1.2-debug.apk
 Install the debug APK from:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-0.1.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-0.1.3-debug.apk
 ```
 
 ## Release
@@ -49,7 +49,7 @@ app/build/outputs/apk/debug/PixelDone-0.1.2-debug.apk
 GitHub releases should include both the source tag and the versioned debug APK asset. For the current app version, upload:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-0.1.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-0.1.3-debug.apk
 ```
 
 ## Status

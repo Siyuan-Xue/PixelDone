@@ -3,28 +3,34 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#4B463E"
-        android:pathData="M34,28h40v52h-40z" />
-    <path
-        android:fillColor="#FAF9F5"
-        android:pathData="M37,31h34v46h-34z" />
-    <path
-        android:fillColor="#D97757"
-        android:pathData="M44,24h20v10h-20z" />
-    <path
-        android:fillColor="#141413"
-        android:pathData="M41,38h7v7h-7zM41,51h7v7h-7zM41,64h7v7h-7z" />
-    <path
-        android:fillColor="#D97757"
-        android:pathData="M52,39h12v3h-12z" />
-    <path
-        android:fillColor="#6A9BCC"
-        android:pathData="M52,52h12v3h-12z" />
-    <path
-        android:fillColor="#629987"
-        android:pathData="M42,66h4v4h-4zM46,70h4v4h-4zM50,66h4v4h-4zM54,62h4v4h-4zM58,58h4v4h-4z" />
-    <path
-        android:fillColor="#141413"
-        android:pathData="M64,64h3v4h-3zM64,69h3v4h-3z" />
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="1.07"
+        android:scaleY="1.07">
+        <path
+            android:fillColor="#4B463E"
+            android:pathData="M34,28h40v52h-40z" />
+        <path
+            android:fillColor="#FAF9F5"
+            android:pathData="M37,31h34v46h-34z" />
+        <path
+            android:fillColor="#D97757"
+            android:pathData="M44,24h20v10h-20z" />
+        <path
+            android:fillColor="#141413"
+            android:pathData="M41,38h7v7h-7zM41,51h7v7h-7zM41,64h7v7h-7z" />
+        <path
+            android:fillColor="#D97757"
+            android:pathData="M52,39h12v3h-12z" />
+        <path
+            android:fillColor="#6A9BCC"
+            android:pathData="M52,52h12v3h-12z" />
+        <path
+            android:fillColor="#629987"
+            android:pathData="M42,66h4v4h-4zM46,70h4v4h-4zM50,66h4v4h-4zM54,62h4v4h-4zM58,58h4v4h-4z" />
+        <path
+            android:fillColor="#141413"
+            android:pathData="M64,64h3v4h-3zM64,69h3v4h-3z" />
+    </group>
 </vector>
