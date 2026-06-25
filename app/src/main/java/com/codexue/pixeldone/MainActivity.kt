@@ -68,13 +68,17 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.verticalScroll
 import com.codexue.pixeldone.ui.theme.ClaudeCactus
 import com.codexue.pixeldone.ui.theme.ClaudeClay
@@ -103,6 +107,8 @@ import java.util.UUID
 import kotlinx.coroutines.delay
 
 internal const val CompletionSortDelayMillis = 2_000L
+
+private const val DeveloperCredit = "CODEX & XUE"
 
 private sealed interface DeleteConfirmation {
     data class SingleTodo(val id: String, val title: String) : DeleteConfirmation
@@ -406,7 +412,7 @@ private fun PixelDoneScreen(
             .background(ClaudeIvory)
             .systemBarsPadding()
             .imePadding()
-            .padding(16.dp),
+            .padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 0.dp),
     ) {
         val isTablet = maxWidth >= 720.dp
         val density = LocalDensity.current
@@ -419,7 +425,7 @@ private fun PixelDoneScreen(
 
         Column(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Header(
                 activeCount = activeCount,
@@ -469,17 +475,20 @@ private fun Header(activeCount: Int, completedCount: Int) {
     PixelPanel(
         color = ClaudeGray100,
         borderWidth = 2.dp,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+        contentPadding = PaddingValues(8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "PixelDone",
-                style = MaterialTheme.typography.titleLarge,
+                text = "TASKS",
+                style = MaterialTheme.typography.labelLarge,
                 color = ClaudeSlateDark,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "ACTIVE $activeCount  DONE $completedCount",
@@ -864,14 +873,31 @@ private fun EmptyState(text: String, modifier: Modifier = Modifier) {
 @Composable
 private fun Footer() {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "CODEX & XUE",
-            style = MaterialTheme.typography.labelSmall,
-            color = ClaudeSlateLight,
+            text = "PIXELDONE",
+            color = ClaudeSlateDark,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.sp,
+            maxLines = 1,
+        )
+        Text(
+            text = DeveloperCredit,
+            color = ClaudeClay,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
         )
     }
 }
