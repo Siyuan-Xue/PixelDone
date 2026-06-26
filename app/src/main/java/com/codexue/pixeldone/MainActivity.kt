@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -109,11 +110,26 @@ import kotlinx.coroutines.delay
 internal const val CompletionSortDelayMillis = 2_000L
 
 private const val DeveloperCredit = "CODEX & XUE"
+private val PixelReadTopBarHeight = 52.dp
+private val PixelReadTopBarContentHeight = 36.dp
+private val PixelReadFrameInset = 8.dp
+private val PixelDoneFooterHeight = 18.dp
 
 private sealed interface DeleteConfirmation {
     data class SingleTodo(val id: String, val title: String) : DeleteConfirmation
     data class CompletedTodos(val count: Int) : DeleteConfirmation
 }
+
+private sealed interface TodoListScrollIntent {
+    data object KeepPosition : TodoListScrollIntent
+    data object ScrollToTop : TodoListScrollIntent
+    data class RevealTodo(val id: String) : TodoListScrollIntent
+}
+
+private data class TodoListScrollRequest(
+    val sequence: Int,
+    val intent: TodoListScrollIntent,
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -143,6 +159,15 @@ private fun PixelDoneApp() {
     var keepDisplayOrderDuringSortDelay by remember { mutableStateOf(false) }
     var sortDelayTick by remember { mutableStateOf(0) }
     var deleteConfirmation by remember { mutableStateOf<DeleteConfirmation?>(null) }
+    var scrollRequestSequence by remember { mutableStateOf(0) }
+    var todoListScrollRequest by remember {
+        mutableStateOf(
+            TodoListScrollRequest(
+                sequence = 0,
+                intent = TodoListScrollIntent.KeepPosition,
+            ),
+        )
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -176,6 +201,14 @@ private fun PixelDoneApp() {
         todos = updatedTodos
         storage.saveTodos(updatedTodos)
         TodoAlarmScheduler.sync(context, previousTodos, updatedTodos)
+    }
+
+    fun requestTodoListScroll(intent: TodoListScrollIntent) {
+        scrollRequestSequence += 1
+        todoListScrollRequest = TodoListScrollRequest(
+            sequence = scrollRequestSequence,
+            intent = intent,
+        )
     }
 
     fun hasNotificationPermission(): Boolean {
@@ -244,12 +277,15 @@ private fun PixelDoneApp() {
 
     fun submitTodo(): Boolean {
         val editingId = editingTodoId
+        var affectedTodoId = editingId
         val updatedTodos = if (editingId == null) {
             if (titleInput.isBlank()) {
                 return false
             }
+            val newTodoId = UUID.randomUUID().toString()
+            affectedTodoId = newTodoId
             val item = createTodoItem(
-                id = UUID.randomUUID().toString(),
+                id = newTodoId,
                 titleInput = titleInput,
                 priority = selectedPriority,
                 dueAtMillis = dueAtMillis,
@@ -273,6 +309,9 @@ private fun PixelDoneApp() {
         }
 
         updateTodos(updatedTodos)
+        affectedTodoId?.let { id ->
+            requestTodoListScroll(TodoListScrollIntent.RevealTodo(id))
+        }
         requestNotificationPermissionIfNeeded(updatedTodos)
         clearEditor()
         editorExpanded = false
@@ -295,6 +334,7 @@ private fun PixelDoneApp() {
     fun confirmDelete() {
         when (val confirmation = deleteConfirmation) {
             is DeleteConfirmation.SingleTodo -> {
+                requestTodoListScroll(TodoListScrollIntent.KeepPosition)
                 updateTodos(deleteTodoItem(todos, confirmation.id))
                 if (editingTodoId == confirmation.id) {
                     clearEditor()
@@ -302,6 +342,7 @@ private fun PixelDoneApp() {
                 }
             }
             is DeleteConfirmation.CompletedTodos -> {
+                requestTodoListScroll(TodoListScrollIntent.KeepPosition)
                 val editingItem = todos.firstOrNull { it.id == editingTodoId }
                 updateTodos(deleteCompletedTodos(todos))
                 if (editingItem?.completed == true) {
@@ -338,15 +379,18 @@ private fun PixelDoneApp() {
         onCancelEdit = ::cancelEditing,
         sortMode = sortMode,
         onSortModeChange = {
+            requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
             keepDisplayOrderDuringSortDelay = false
             sortMode = it
         },
         hideCompleted = hideCompleted,
         onHideCompletedChange = {
+            requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
             keepDisplayOrderDuringSortDelay = false
             hideCompleted = it
         },
         onToggleTodo = { id ->
+            requestTodoListScroll(TodoListScrollIntent.KeepPosition)
             displayOrderIds = if (keepDisplayOrderDuringSortDelay && displayOrderIds.isNotEmpty()) {
                 displayOrderIds
             } else {
@@ -370,6 +414,7 @@ private fun PixelDoneApp() {
         },
         displayOrderIds = displayOrderIds,
         keepDisplayOrder = keepDisplayOrderDuringSortDelay,
+        todoListScrollRequest = todoListScrollRequest,
     )
     DeleteConfirmationDialog(
         confirmation = deleteConfirmation,
@@ -405,6 +450,7 @@ private fun PixelDoneScreen(
     onDeleteCompleted: () -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
+    todoListScrollRequest: TodoListScrollRequest,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -431,7 +477,7 @@ private fun PixelDoneScreen(
                 activeCount = activeCount,
                 completedCount = completedCount,
             )
-            TodoListPanel(
+            TaskWorkspacePanel(
                 todos = todos,
                 sortMode = sortMode,
                 onSortModeChange = onSortModeChange,
@@ -444,27 +490,23 @@ private fun PixelDoneScreen(
                 onDeleteCompleted = onDeleteCompleted,
                 displayOrderIds = displayOrderIds,
                 keepDisplayOrder = keepDisplayOrder,
+                todoListScrollRequest = todoListScrollRequest,
+                editorExpanded = editorExpanded,
+                isEditing = isEditing,
+                titleInput = titleInput,
+                onTitleInputChange = onTitleInputChange,
+                selectedPriority = selectedPriority,
+                onPriorityChange = onPriorityChange,
+                dueAtMillis = dueAtMillis,
+                onPickDate = onPickDate,
+                onPickTime = onPickTime,
+                onSubmitTodo = onSubmitTodo,
+                onCancelEdit = onCancelEdit,
+                onEditorExpandedChange = onEditorExpandedChange,
+                editorMaxHeight = editorMaxHeight,
+                compactForKeyboard = imeVisible,
                 modifier = Modifier.weight(1f),
             )
-            if (editorExpanded || isEditing) {
-                TaskEditorPanel(
-                    titleInput = titleInput,
-                    onTitleInputChange = onTitleInputChange,
-                    selectedPriority = selectedPriority,
-                    onPriorityChange = onPriorityChange,
-                    dueAtMillis = dueAtMillis,
-                    onPickDate = onPickDate,
-                    onPickTime = onPickTime,
-                    isEditing = isEditing,
-                    onSubmitTodo = onSubmitTodo,
-                    onCancelEdit = onCancelEdit,
-                    onCloseNewTask = { onEditorExpandedChange(false) },
-                    editorMaxHeight = editorMaxHeight,
-                    compactForKeyboard = imeVisible,
-                )
-            } else {
-                NewTaskBar(onOpenEditor = { onEditorExpandedChange(true) })
-            }
             Footer()
         }
     }
@@ -473,19 +515,25 @@ private fun PixelDoneScreen(
 @Composable
 private fun Header(activeCount: Int, completedCount: Int) {
     PixelPanel(
+        modifier = Modifier.height(PixelReadTopBarHeight),
         color = ClaudeGray100,
         borderWidth = 2.dp,
-        contentPadding = PaddingValues(8.dp),
+        contentPadding = PaddingValues(PixelReadFrameInset),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(PixelReadTopBarContentHeight),
+            horizontalArrangement = Arrangement.spacedBy(PixelReadFrameInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = "TASKS",
-                style = MaterialTheme.typography.labelLarge,
                 color = ClaudeSlateDark,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -497,6 +545,79 @@ private fun Header(activeCount: Int, completedCount: Int) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+@Composable
+private fun TaskWorkspacePanel(
+    todos: List<TodoItem>,
+    sortMode: SortMode,
+    onSortModeChange: (SortMode) -> Unit,
+    hideCompleted: Boolean,
+    onHideCompletedChange: (Boolean) -> Unit,
+    completedCount: Int,
+    onToggleTodo: (String) -> Unit,
+    onEditTodo: (TodoItem) -> Unit,
+    onDeleteTodo: (String) -> Unit,
+    onDeleteCompleted: () -> Unit,
+    displayOrderIds: List<String>,
+    keepDisplayOrder: Boolean,
+    todoListScrollRequest: TodoListScrollRequest,
+    editorExpanded: Boolean,
+    isEditing: Boolean,
+    titleInput: String,
+    onTitleInputChange: (String) -> Unit,
+    selectedPriority: TodoPriority,
+    onPriorityChange: (TodoPriority) -> Unit,
+    dueAtMillis: Long,
+    onPickDate: () -> Unit,
+    onPickTime: () -> Unit,
+    onSubmitTodo: () -> Boolean,
+    onCancelEdit: () -> Unit,
+    onEditorExpandedChange: (Boolean) -> Unit,
+    editorMaxHeight: Dp,
+    compactForKeyboard: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(PixelReadFrameInset),
+    ) {
+        TodoListPanel(
+            todos = todos,
+            sortMode = sortMode,
+            onSortModeChange = onSortModeChange,
+            hideCompleted = hideCompleted,
+            onHideCompletedChange = onHideCompletedChange,
+            completedCount = completedCount,
+            onToggleTodo = onToggleTodo,
+            onEditTodo = onEditTodo,
+            onDeleteTodo = onDeleteTodo,
+            onDeleteCompleted = onDeleteCompleted,
+            displayOrderIds = displayOrderIds,
+            keepDisplayOrder = keepDisplayOrder,
+            todoListScrollRequest = todoListScrollRequest,
+            modifier = Modifier.weight(1f),
+        )
+        if (editorExpanded || isEditing) {
+            TaskEditorPanel(
+                titleInput = titleInput,
+                onTitleInputChange = onTitleInputChange,
+                selectedPriority = selectedPriority,
+                onPriorityChange = onPriorityChange,
+                dueAtMillis = dueAtMillis,
+                onPickDate = onPickDate,
+                onPickTime = onPickTime,
+                isEditing = isEditing,
+                onSubmitTodo = onSubmitTodo,
+                onCancelEdit = onCancelEdit,
+                onCloseNewTask = { onEditorExpandedChange(false) },
+                editorMaxHeight = editorMaxHeight,
+                compactForKeyboard = compactForKeyboard,
+            )
+        } else {
+            NewTaskBar(onOpenEditor = { onEditorExpandedChange(true) })
         }
     }
 }
@@ -705,6 +826,7 @@ private fun TodoListPanel(
     onDeleteCompleted: () -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
+    todoListScrollRequest: TodoListScrollRequest,
     modifier: Modifier = Modifier,
 ) {
     val sortedVisibleItems = visibleTodos(todos, sortMode, hideCompleted)
@@ -716,6 +838,25 @@ private fun TodoListPanel(
         )
     } else {
         sortedVisibleItems
+    }
+    val visibleItemIds = visibleItems.map { it.id }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(todoListScrollRequest.sequence, visibleItemIds, keepDisplayOrder) {
+        when (val intent = todoListScrollRequest.intent) {
+            TodoListScrollIntent.KeepPosition -> Unit
+            TodoListScrollIntent.ScrollToTop -> {
+                if (visibleItems.isNotEmpty()) {
+                    listState.scrollToItem(0)
+                }
+            }
+            is TodoListScrollIntent.RevealTodo -> {
+                val itemIndex = visibleItemIds.indexOf(intent.id)
+                if (itemIndex >= 0) {
+                    listState.scrollToItem(itemIndex)
+                }
+            }
+        }
     }
 
     PixelPanel(modifier = modifier) {
@@ -759,6 +900,7 @@ private fun TodoListPanel(
             val alarmNowMillis = System.currentTimeMillis()
             LazyColumn(
                 modifier = Modifier.weight(1f),
+                state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 4.dp),
             ) {
@@ -875,7 +1017,7 @@ private fun Footer() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(14.dp),
+            .height(PixelDoneFooterHeight),
         horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1259,6 +1401,7 @@ private fun PhonePreview() {
             onDeleteCompleted = {},
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
+            todoListScrollRequest = previewScrollRequest(),
         )
     }
 }
@@ -1293,6 +1436,7 @@ private fun TabletPreview() {
             onDeleteCompleted = {},
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
+            todoListScrollRequest = previewScrollRequest(),
         )
     }
 }
@@ -1303,5 +1447,12 @@ private fun previewTodos(): List<TodoItem> {
         TodoItem("1", "Send the build to the test phone", TodoPriority.HIGH, now, false, 1L),
         TodoItem("2", "Plan tomorrow's tiny wins", TodoPriority.MEDIUM, now + 3_600_000L, false, 2L),
         TodoItem("3", "Archive finished notes", TodoPriority.LOW, now - 3_600_000L, true, 3L),
+    )
+}
+
+private fun previewScrollRequest(): TodoListScrollRequest {
+    return TodoListScrollRequest(
+        sequence = 0,
+        intent = TodoListScrollIntent.KeepPosition,
     )
 }
