@@ -3,7 +3,9 @@ package com.milesxue.pixeldone
 import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -16,6 +18,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -56,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +74,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -106,6 +113,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 internal const val CompletionSortDelayMillis = 2_000L
 
@@ -113,7 +121,38 @@ private const val DeveloperCredit = "CODEX & XUE"
 private val PixelReadTopBarHeight = 52.dp
 private val PixelReadTopBarContentHeight = 36.dp
 private val PixelReadFrameInset = 8.dp
-private val PixelDoneFooterHeight = 18.dp
+private val PixelDoneFooterHeight = 24.dp
+
+private enum class UpdateUiStatus {
+    Idle,
+    Checking,
+    Latest,
+    Available,
+    Offline,
+}
+
+private data class AppUpdateUiState(
+    val status: UpdateUiStatus = UpdateUiStatus.Idle,
+    val info: AppUpdateInfo? = null,
+) {
+    val label: String?
+        get() = when (status) {
+            UpdateUiStatus.Idle -> null
+            UpdateUiStatus.Checking -> "CHECK"
+            UpdateUiStatus.Latest -> "LATEST"
+            UpdateUiStatus.Available -> "GET"
+            UpdateUiStatus.Offline -> "OFFLINE"
+        }
+
+    val contentDescription: String
+        get() = when (status) {
+            UpdateUiStatus.Idle -> "CHECK UPDATE"
+            UpdateUiStatus.Checking -> "CHECKING UPDATE"
+            UpdateUiStatus.Latest -> "LATEST VERSION"
+            UpdateUiStatus.Available -> "GET UPDATE"
+            UpdateUiStatus.Offline -> "UPDATE CHECK UNAVAILABLE"
+        }
+}
 
 private sealed interface DeleteConfirmation {
     data class SingleTodo(val id: String, val title: String) : DeleteConfirmation
@@ -146,6 +185,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun PixelDoneApp() {
     val context = LocalContext.current
+    val updateScope = rememberCoroutineScope()
     val storage = remember { TodoPreferences.create(context) }
     var todos by remember { mutableStateOf(storage.loadTodos()) }
     var titleInput by remember { mutableStateOf("") }
@@ -159,6 +199,7 @@ private fun PixelDoneApp() {
     var keepDisplayOrderDuringSortDelay by remember { mutableStateOf(false) }
     var sortDelayTick by remember { mutableStateOf(0) }
     var deleteConfirmation by remember { mutableStateOf<DeleteConfirmation?>(null) }
+    var updateUiState by remember { mutableStateOf(AppUpdateUiState()) }
     var scrollRequestSequence by remember { mutableStateOf(0) }
     var todoListScrollRequest by remember {
         mutableStateOf(
@@ -355,6 +396,33 @@ private fun PixelDoneApp() {
         deleteConfirmation = null
     }
 
+    fun openUpdateUrl(info: AppUpdateInfo) {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(info.actionUrl)),
+        )
+    }
+
+    fun handleUpdateClick() {
+        val availableInfo = updateUiState.info
+        if (updateUiState.status == UpdateUiStatus.Available && availableInfo != null) {
+            openUpdateUrl(availableInfo)
+            return
+        }
+        if (updateUiState.status == UpdateUiStatus.Checking) return
+
+        updateUiState = AppUpdateUiState(status = UpdateUiStatus.Checking)
+        updateScope.launch {
+            updateUiState = when (val result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME)) {
+                is AppUpdateCheckResult.Available -> AppUpdateUiState(
+                    status = UpdateUiStatus.Available,
+                    info = result.info,
+                )
+                AppUpdateCheckResult.Current -> AppUpdateUiState(status = UpdateUiStatus.Latest)
+                AppUpdateCheckResult.Unavailable -> AppUpdateUiState(status = UpdateUiStatus.Offline)
+            }
+        }
+    }
+
     PixelDoneScreen(
         todos = todos,
         activeCount = todos.count { !it.completed },
@@ -415,6 +483,8 @@ private fun PixelDoneApp() {
         displayOrderIds = displayOrderIds,
         keepDisplayOrder = keepDisplayOrderDuringSortDelay,
         todoListScrollRequest = todoListScrollRequest,
+        updateUiState = updateUiState,
+        onUpdateClick = ::handleUpdateClick,
     )
     DeleteConfirmationDialog(
         confirmation = deleteConfirmation,
@@ -451,6 +521,8 @@ private fun PixelDoneScreen(
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
+    updateUiState: AppUpdateUiState,
+    onUpdateClick: () -> Unit,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -507,7 +579,10 @@ private fun PixelDoneScreen(
                 compactForKeyboard = imeVisible,
                 modifier = Modifier.weight(1f),
             )
-            Footer()
+            Footer(
+                updateUiState = updateUiState,
+                onUpdateClick = onUpdateClick,
+            )
         }
     }
 }
@@ -1013,7 +1088,10 @@ private fun EmptyState(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Footer() {
+private fun Footer(
+    updateUiState: AppUpdateUiState,
+    onUpdateClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1040,6 +1118,103 @@ private fun Footer() {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.End,
+        )
+        UpdateMark(
+            state = updateUiState,
+            onClick = onUpdateClick,
+            idleColor = ClaudeSlateLight,
+            activeColor = ClaudeClay,
+            errorColor = PixelError,
+        )
+    }
+}
+
+@Composable
+private fun UpdateMark(
+    state: AppUpdateUiState,
+    onClick: () -> Unit,
+    idleColor: Color,
+    activeColor: Color,
+    errorColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val color = when (state.status) {
+        UpdateUiStatus.Available -> activeColor
+        UpdateUiStatus.Offline -> errorColor
+        else -> idleColor
+    }
+    val displayColor = if (pressed && state.status != UpdateUiStatus.Checking) activeColor else color
+
+    Row(
+        modifier = modifier.height(PixelDoneFooterHeight),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clickable(
+                    enabled = state.status != UpdateUiStatus.Checking,
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                )
+                .semantics { contentDescription = state.contentDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            UpdateGlyph(
+                color = displayColor,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+        state.label?.let { label ->
+            Text(
+                text = label,
+                color = displayColor,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun UpdateGlyph(
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = 1.5.dp.toPx()
+        val centerX = size.width / 2f
+        drawLine(
+            color = color,
+            start = Offset(centerX, 1.dp.toPx()),
+            end = Offset(centerX, 9.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(centerX, 9.dp.toPx()),
+            end = Offset(3.dp.toPx(), 5.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(centerX, 9.dp.toPx()),
+            end = Offset(11.dp.toPx(), 5.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(2.dp.toPx(), 12.dp.toPx()),
+            end = Offset(12.dp.toPx(), 12.dp.toPx()),
+            strokeWidth = strokeWidth,
         )
     }
 }
@@ -1402,6 +1577,8 @@ private fun PhonePreview() {
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),
+            updateUiState = AppUpdateUiState(),
+            onUpdateClick = {},
         )
     }
 }
@@ -1437,6 +1614,8 @@ private fun TabletPreview() {
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),
+            updateUiState = AppUpdateUiState(status = UpdateUiStatus.Available),
+            onUpdateClick = {},
         )
     }
 }

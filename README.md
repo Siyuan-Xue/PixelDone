@@ -14,6 +14,7 @@ Developer identity: CODEX & XUE.
 - Hide completed todos.
 - Delete all completed todos from the top list controls.
 - Schedule a local alarm notification for each active future todo.
+- Check GitHub Releases manually from the small update icon beside the product identity.
 - Persist todos locally on the device with SharedPreferences JSON.
 
 ## Tech Stack
@@ -39,16 +40,16 @@ Release signing is configured through the local, untracked `signing/release-sign
 The signed private release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-1.0.0-release.apk
+app/build/outputs/apk/release/PixelDone-1.1.0-release.apk
 ```
 
 ## Install
 
-For the first private 1.0 release, uninstall the old prototype package before installing:
+If the old prototype package is still installed, uninstall it before installing:
 
 ```powershell
 adb uninstall com.codexue.pixeldone
-adb install -r app/build/outputs/apk/release/PixelDone-1.0.0-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-1.1.0-release.apk
 ```
 
 The formal package name is:
@@ -59,4 +60,4 @@ com.milesxue.pixeldone
 
 ## Status
 
-Private 1.0 release.
+Private 1.1 release.
