@@ -1,4 +1,4 @@
-package com.codexue.pixeldone
+package com.milesxue.pixeldone
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -6,10 +6,10 @@ import android.content.Context
 import android.content.Intent
 
 object TodoAlarmScheduler {
-    const val EXTRA_TODO_ID = "com.codexue.pixeldone.extra.TODO_ID"
-    const val EXTRA_TODO_TITLE = "com.codexue.pixeldone.extra.TODO_TITLE"
-    const val EXTRA_TODO_PRIORITY = "com.codexue.pixeldone.extra.TODO_PRIORITY"
-    const val EXTRA_TODO_DUE_AT = "com.codexue.pixeldone.extra.TODO_DUE_AT"
+    const val EXTRA_TODO_ID = "com.milesxue.pixeldone.extra.TODO_ID"
+    const val EXTRA_TODO_TITLE = "com.milesxue.pixeldone.extra.TODO_TITLE"
+    const val EXTRA_TODO_PRIORITY = "com.milesxue.pixeldone.extra.TODO_PRIORITY"
+    const val EXTRA_TODO_DUE_AT = "com.milesxue.pixeldone.extra.TODO_DUE_AT"
 
     fun sync(context: Context, previousItems: List<TodoItem>, currentItems: List<TodoItem>) {
         val currentIds = currentItems.map { it.id }.toSet()

@@ -1,4 +1,4 @@
-package com.codexue.pixeldone
+package com.milesxue.pixeldone
 
 data class TodoItem(
     val id: String,

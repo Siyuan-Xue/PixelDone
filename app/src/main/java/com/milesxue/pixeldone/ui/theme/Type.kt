@@ -1,4 +1,4 @@
-package com.codexue.pixeldone.ui.theme
+package com.milesxue.pixeldone.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle

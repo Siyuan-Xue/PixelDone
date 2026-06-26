@@ -1,4 +1,4 @@
-package com.codexue.pixeldone
+package com.milesxue.pixeldone
 
 import android.content.Context
 import android.content.SharedPreferences

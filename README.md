@@ -1,8 +1,10 @@
 # PixelDone
 
-PixelDone is a bright pixel-style Android todo planner for quickly adding, sorting, completing, hiding, and clearing local tasks.
+PixelDone is a private Android todo planner for quickly adding, sorting, completing, hiding, and clearing local tasks.
 
-## Current features
+Developer identity: CODEX & XUE.
+
+## Current Features
 
 - Add todos with a name, priority, and date/time.
 - Tap a todo row to edit it in the bottom editor.
@@ -14,7 +16,7 @@ PixelDone is a bright pixel-style Android todo planner for quickly adding, sorti
 - Schedule a local alarm notification for each active future todo.
 - Persist todos locally on the device with SharedPreferences JSON.
 
-## Tech stack
+## Tech Stack
 
 - Kotlin
 - Jetpack Compose
@@ -25,35 +27,36 @@ PixelDone is a bright pixel-style Android todo planner for quickly adding, sorti
 
 ## Build
 
+From the project root:
+
 ```powershell
 .\gradlew.bat testDebugUnitTest
-.\gradlew.bat assembleDebug
+.\gradlew.bat assembleRelease
 ```
 
-`assembleDebug` also writes a versioned debug APK next to the default Gradle output:
+Release signing is configured through the local, untracked `signing/release-signing.properties` file.
+
+The signed private release APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-0.1.4-debug.apk
+app/build/outputs/apk/release/PixelDone-1.0.0-release.apk
 ```
 
 ## Install
 
-Install the debug APK from:
+For the first private 1.0 release, uninstall the old prototype package before installing:
 
-```text
-app/build/outputs/apk/debug/PixelDone-0.1.4-debug.apk
+```powershell
+adb uninstall com.codexue.pixeldone
+adb install -r app/build/outputs/apk/release/PixelDone-1.0.0-release.apk
 ```
 
-## Release
-
-GitHub releases should include both the source tag and the versioned debug APK asset. For the current app version, upload:
+The formal package name is:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-0.1.4-debug.apk
+com.milesxue.pixeldone
 ```
 
 ## Status
 
-MVP prototype.
-
-CODEX & XUE
+Private 1.0 release.

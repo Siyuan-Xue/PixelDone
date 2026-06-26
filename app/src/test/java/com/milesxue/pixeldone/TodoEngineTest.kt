@@ -1,4 +1,4 @@
-package com.codexue.pixeldone
+package com.milesxue.pixeldone
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

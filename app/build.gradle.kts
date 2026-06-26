@@ -1,24 +1,61 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
 
+val releaseSigningPropertiesFile = rootProject.file("signing/release-signing.properties")
+val releaseSigningProperties = Properties()
+val releaseSigningRequested = gradle.startParameter.taskNames.any {
+    it.contains("Release", ignoreCase = true)
+}
+
+if (releaseSigningPropertiesFile.isFile) {
+    releaseSigningPropertiesFile.inputStream().use(releaseSigningProperties::load)
+} else if (releaseSigningRequested) {
+    throw org.gradle.api.GradleException(
+        "Missing release signing properties: ${releaseSigningPropertiesFile.absolutePath}"
+    )
+}
+
+fun releaseSigningProperty(name: String): String =
+    releaseSigningProperties.getProperty(name)
+        ?: throw org.gradle.api.GradleException(
+            "Missing release signing property '$name' in ${releaseSigningPropertiesFile.absolutePath}"
+        )
+
 android {
-    namespace = "com.codexue.pixeldone"
+    namespace = "com.milesxue.pixeldone"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.codexue.pixeldone"
+        applicationId = "com.milesxue.pixeldone"
         minSdk = 26
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.1.4"
+        versionCode = 6
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (releaseSigningPropertiesFile.isFile) {
+                storeFile = rootProject.file(releaseSigningProperty("storeFile"))
+                storePassword = releaseSigningProperty("storePassword")
+                keyAlias = releaseSigningProperty("keyAlias")
+                keyPassword = releaseSigningProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            isDebuggable = false
+            if (releaseSigningPropertiesFile.isFile) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                 enable = false
             }
@@ -51,6 +88,10 @@ val versionedDebugApkName = "PixelDone-${android.defaultConfig.versionName}-debu
 val debugApkOutputDir = layout.buildDirectory.dir("outputs/apk/debug")
 val defaultDebugApk = debugApkOutputDir.map { it.file("app-debug.apk") }
 val versionedDebugApk = debugApkOutputDir.map { it.file(versionedDebugApkName) }
+val versionedReleaseApkName = "PixelDone-${android.defaultConfig.versionName}-release.apk"
+val releaseApkOutputDir = layout.buildDirectory.dir("outputs/apk/release")
+val defaultReleaseApk = releaseApkOutputDir.map { it.file("app-release.apk") }
+val versionedReleaseApk = releaseApkOutputDir.map { it.file(versionedReleaseApkName) }
 
 val copyVersionedDebugApk = tasks.register<CopyVersionedApkTask>("copyVersionedDebugApk") {
     dependsOn("assembleDebug")
@@ -58,8 +99,18 @@ val copyVersionedDebugApk = tasks.register<CopyVersionedApkTask>("copyVersionedD
     outputApk.set(versionedDebugApk)
 }
 
+val copyVersionedReleaseApk = tasks.register<CopyVersionedApkTask>("copyVersionedReleaseApk") {
+    dependsOn("assembleRelease")
+    inputApk.set(defaultReleaseApk)
+    outputApk.set(versionedReleaseApk)
+}
+
 tasks.matching { it.name == "assembleDebug" }.configureEach {
     finalizedBy(copyVersionedDebugApk)
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    finalizedBy(copyVersionedReleaseApk)
 }
 
 dependencies {

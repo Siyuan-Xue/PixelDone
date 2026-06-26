@@ -1,4 +1,4 @@
-package com.codexue.pixeldone
+package com.milesxue.pixeldone
 
 import android.Manifest
 import android.app.Notification

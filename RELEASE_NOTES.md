@@ -1,8 +1,10 @@
-PixelDone v0.1.4 is a bug-fix debug build that stabilizes the task workspace layout and list position behavior.
+PixelDone v1.0.0 is the first private signed release for direct APK distribution.
 
 Highlights:
-- Keeps the editor and task list in one PixelRead-aligned workspace so the page height stays consistent.
-- Reveals newly added or edited tasks without jumping unexpectedly during normal completion and deletion flows.
-- Preserves the existing local todo, sorting, completion, and alarm behavior.
+- Moves the formal app identity to `com.milesxue.pixeldone`.
+- Ships as a signed release APK instead of a debug build.
+- Keeps the local todo, sorting, completion, hiding, clearing, and alarm behavior from the prototype series.
 
-The attached APK is a debug build for testing and demo use.
+Install note: uninstall the old `com.codexue.pixeldone` prototype build before installing this private release.
+
+CODEX & XUE
