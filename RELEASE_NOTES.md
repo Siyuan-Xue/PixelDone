@@ -1,8 +1,8 @@
-PixelDone v0.1.3 is a bug-fix debug build that refreshes the launcher foreground icon scale.
+PixelDone v0.1.4 is a bug-fix debug build that stabilizes the task workspace layout and list position behavior.
 
 Highlights:
-- Enlarges the PixelDone task-mark foreground while keeping the adaptive icon geometry simple.
-- Keeps the existing local todo, sorting, completion, and alarm flows unchanged.
-- Ignores local Android Studio project state so release commits stay focused.
+- Keeps the editor and task list in one PixelRead-aligned workspace so the page height stays consistent.
+- Reveals newly added or edited tasks without jumping unexpectedly during normal completion and deletion flows.
+- Preserves the existing local todo, sorting, completion, and alarm behavior.
 
 The attached APK is a debug build for testing and demo use.
