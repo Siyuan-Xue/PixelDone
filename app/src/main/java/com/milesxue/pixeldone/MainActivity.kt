@@ -122,6 +122,7 @@ private val PixelReadTopBarHeight = 52.dp
 private val PixelReadTopBarContentHeight = 36.dp
 private val PixelReadFrameInset = 8.dp
 private val PixelDoneFooterHeight = 24.dp
+private const val UpdateStatusVisibleMillis = 3_000L
 
 private enum class UpdateUiStatus {
     Idle,
@@ -234,6 +235,21 @@ private fun PixelDoneApp() {
         if (sortDelayTick > 0) {
             delay(CompletionSortDelayMillis)
             keepDisplayOrderDuringSortDelay = false
+        }
+    }
+
+    LaunchedEffect(updateUiState.status, updateUiState.info?.version) {
+        when (updateUiState.status) {
+            UpdateUiStatus.Latest,
+            UpdateUiStatus.Available,
+            -> {
+                delay(UpdateStatusVisibleMillis)
+                updateUiState = AppUpdateUiState()
+            }
+            UpdateUiStatus.Idle,
+            UpdateUiStatus.Checking,
+            UpdateUiStatus.Offline,
+            -> Unit
         }
     }
 
