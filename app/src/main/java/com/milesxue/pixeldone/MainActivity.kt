@@ -15,9 +15,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
@@ -120,7 +122,6 @@ import kotlinx.coroutines.launch
 internal const val CompletionSortDelayMillis = 2_000L
 
 private const val DeveloperCredit = "CODEX & XUE"
-private val PixelReadTopBarHeight = 52.dp
 private val PixelReadTopBarContentHeight = 36.dp
 private val PixelReadFrameInset = 8.dp
 private val PixelDoneFooterHeight = 24.dp
@@ -162,6 +163,7 @@ private data class AppUpdateUiState(
 private sealed interface DeleteConfirmation {
     data class SingleTodo(val id: String, val title: String) : DeleteConfirmation
     data class CompletedTodos(val count: Int) : DeleteConfirmation
+    data class Checklist(val id: String, val name: String, val todoCount: Int) : DeleteConfirmation
 }
 
 private sealed interface TodoListScrollIntent {
@@ -174,6 +176,14 @@ private data class TodoListScrollRequest(
     val sequence: Int,
     val intent: TodoListScrollIntent,
 )
+
+private sealed interface EditorMode {
+    data object None : EditorMode
+    data object NewTask : EditorMode
+    data class EditTask(val id: String) : EditorMode
+    data object NewChecklist : EditorMode
+    data class EditChecklist(val id: String) : EditorMode
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -192,14 +202,16 @@ private fun PixelDoneApp() {
     val context = LocalContext.current
     val updateScope = rememberCoroutineScope()
     val storage = remember { TodoPreferences.create(context) }
-    var todos by remember { mutableStateOf(storage.loadTodos()) }
+    var checklistState by remember { mutableStateOf(storage.loadTodoState()) }
     var titleInput by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TodoPriority.MEDIUM) }
     var dueAtMillis by remember { mutableStateOf(0L) }
+    var checklistNameInput by remember { mutableStateOf("") }
+    var checklistEditorError by remember { mutableStateOf<String?>(null) }
+    var headerExpanded by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf(SortMode.PRIORITY) }
     var hideCompleted by remember { mutableStateOf(false) }
-    var editorExpanded by remember { mutableStateOf(false) }
-    var editingTodoId by remember { mutableStateOf<String?>(null) }
+    var editorMode by remember { mutableStateOf<EditorMode>(EditorMode.None) }
     var displayOrderIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var keepDisplayOrderDuringSortDelay by remember { mutableStateOf(false) }
     var sortDelayTick by remember { mutableStateOf(0) }
@@ -217,22 +229,32 @@ private fun PixelDoneApp() {
             ),
         )
     }
+    val selectedChecklist = selectedChecklistOf(checklistState)
+    val todos = selectedChecklist.items
+    val allCurrentTodos = allTodos(checklistState)
+    val activeCount = activeTodoCount(selectedChecklist)
+    val completedCount = completedTodoCount(selectedChecklist)
+    val editingTaskId = (editorMode as? EditorMode.EditTask)?.id
+    val editingChecklistId = (editorMode as? EditorMode.EditChecklist)?.id
+    val taskEditorVisible = editorMode is EditorMode.NewTask || editorMode is EditorMode.EditTask
+    val checklistEditorVisible =
+        editorMode is EditorMode.NewChecklist || editorMode is EditorMode.EditChecklist
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            TodoAlarmScheduler.sync(context, emptyList(), todos)
+            TodoAlarmScheduler.sync(context, emptyList(), allTodos(checklistState))
         }
     }
 
     LaunchedEffect(Unit) {
-        TodoAlarmScheduler.sync(context, emptyList(), todos)
+        TodoAlarmScheduler.sync(context, emptyList(), allCurrentTodos)
     }
 
     val sortedVisibleIds = visibleTodos(todos, sortMode, hideCompleted).map { it.id }
 
-    LaunchedEffect(sortedVisibleIds, keepDisplayOrderDuringSortDelay) {
+    LaunchedEffect(selectedChecklist.id, sortedVisibleIds, keepDisplayOrderDuringSortDelay) {
         if (!keepDisplayOrderDuringSortDelay) {
             displayOrderIds = sortedVisibleIds
         }
@@ -260,11 +282,22 @@ private fun PixelDoneApp() {
         }
     }
 
-    fun updateTodos(updatedTodos: List<TodoItem>) {
-        val previousTodos = todos
-        todos = updatedTodos
-        storage.saveTodos(updatedTodos)
+    fun updateChecklistState(updatedState: TodoChecklistState) {
+        val previousTodos = allTodos(checklistState)
+        val updatedTodos = allTodos(updatedState)
+        checklistState = updatedState
+        storage.saveTodoState(updatedState)
         TodoAlarmScheduler.sync(context, previousTodos, updatedTodos)
+    }
+
+    fun updateSelectedTodos(updatedTodos: List<TodoItem>): TodoChecklistState? {
+        val updatedState = updateChecklistItems(
+            state = checklistState,
+            checklistId = selectedChecklist.id,
+            items = updatedTodos,
+        ) ?: return null
+        updateChecklistState(updatedState)
+        return updatedState
     }
 
     fun requestTodoListScroll(intent: TodoListScrollIntent) {
@@ -293,15 +326,22 @@ private fun PixelDoneApp() {
     }
 
     fun clearEditor() {
-        editingTodoId = null
         titleInput = ""
         selectedPriority = TodoPriority.MEDIUM
+        checklistNameInput = ""
+        checklistEditorError = null
     }
 
     fun openNewTaskEditor() {
         clearEditor()
         dueAtMillis = defaultDueAtMillis()
-        editorExpanded = true
+        editorMode = EditorMode.NewTask
+    }
+
+    fun openNewChecklistEditor() {
+        clearEditor()
+        headerExpanded = true
+        editorMode = EditorMode.NewChecklist
     }
 
     fun showDatePicker() {
@@ -340,7 +380,7 @@ private fun PixelDoneApp() {
     }
 
     fun submitTodo(): Boolean {
-        val editingId = editingTodoId
+        val editingId = editingTaskId
         var affectedTodoId = editingId
         val updatedTodos = if (editingId == null) {
             if (titleInput.isBlank()) {
@@ -372,46 +412,113 @@ private fun PixelDoneApp() {
             }
         }
 
-        updateTodos(updatedTodos)
+        val updatedState = updateSelectedTodos(updatedTodos) ?: return false
         affectedTodoId?.let { id ->
             requestTodoListScroll(TodoListScrollIntent.RevealTodo(id))
         }
-        requestNotificationPermissionIfNeeded(updatedTodos)
+        requestNotificationPermissionIfNeeded(allTodos(updatedState))
         clearEditor()
-        editorExpanded = false
+        editorMode = EditorMode.None
         return true
     }
 
     fun startEditing(item: TodoItem) {
-        editingTodoId = item.id
+        editorMode = EditorMode.EditTask(item.id)
         titleInput = item.title
         selectedPriority = item.priority
         dueAtMillis = item.dueAtMillis
-        editorExpanded = true
+    }
+
+    fun startEditingChecklist(checklist: TodoChecklist) {
+        headerExpanded = true
+        editorMode = EditorMode.EditChecklist(checklist.id)
+        checklistNameInput = checklist.name
+        checklistEditorError = null
+    }
+
+    fun submitChecklist(): Boolean {
+        val editingId = editingChecklistId
+        val trimmedName = checklistNameInput.trim()
+        checklistEditorError = when {
+            trimmedName.isEmpty() -> "Name is required."
+            !isChecklistNameAvailable(checklistState, trimmedName, editingId) -> "Name already exists."
+            else -> null
+        }
+        if (checklistEditorError != null) return false
+
+        val updatedState = if (editingId == null) {
+            createTodoChecklist(
+                state = checklistState,
+                id = UUID.randomUUID().toString(),
+                nameInput = trimmedName,
+                createdAtMillis = System.currentTimeMillis(),
+            )
+        } else {
+            renameTodoChecklist(
+                state = checklistState,
+                id = editingId,
+                nameInput = trimmedName,
+            )
+        } ?: run {
+            checklistEditorError = "Could not save list."
+            return false
+        }
+
+        updateChecklistState(updatedState)
+        requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
+        keepDisplayOrderDuringSortDelay = false
+        displayOrderIds = emptyList()
+        clearEditor()
+        editorMode = EditorMode.None
+        return true
     }
 
     fun cancelEditing() {
         clearEditor()
-        editorExpanded = false
+        editorMode = EditorMode.None
+    }
+
+    fun selectChecklist(id: String) {
+        val updatedState = selectTodoChecklist(checklistState, id) ?: return
+        updateChecklistState(updatedState)
+        clearEditor()
+        editorMode = EditorMode.None
+        keepDisplayOrderDuringSortDelay = false
+        displayOrderIds = emptyList()
+        requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
+        headerExpanded = false
     }
 
     fun confirmDelete() {
         when (val confirmation = deleteConfirmation) {
             is DeleteConfirmation.SingleTodo -> {
                 requestTodoListScroll(TodoListScrollIntent.KeepPosition)
-                updateTodos(deleteTodoItem(todos, confirmation.id))
-                if (editingTodoId == confirmation.id) {
+                updateSelectedTodos(deleteTodoItem(todos, confirmation.id))
+                if (editingTaskId == confirmation.id) {
                     clearEditor()
-                    editorExpanded = false
+                    editorMode = EditorMode.None
                 }
             }
             is DeleteConfirmation.CompletedTodos -> {
                 requestTodoListScroll(TodoListScrollIntent.KeepPosition)
-                val editingItem = todos.firstOrNull { it.id == editingTodoId }
-                updateTodos(deleteCompletedTodos(todos))
+                val editingItem = todos.firstOrNull { it.id == editingTaskId }
+                updateSelectedTodos(deleteCompletedTodos(todos))
                 if (editingItem?.completed == true) {
                     clearEditor()
-                    editorExpanded = false
+                    editorMode = EditorMode.None
+                }
+            }
+            is DeleteConfirmation.Checklist -> {
+                val updatedState = deleteTodoChecklist(checklistState, confirmation.id)
+                if (updatedState != null) {
+                    updateChecklistState(updatedState)
+                    requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
+                    keepDisplayOrderDuringSortDelay = false
+                    displayOrderIds = emptyList()
+                    if (editingChecklistId == confirmation.id) {
+                        clearEditor()
+                        editorMode = EditorMode.None
+                    }
                 }
             }
             null -> Unit
@@ -502,9 +609,18 @@ private fun PixelDoneApp() {
     }
 
     PixelDoneScreen(
+        checklists = checklistState.lists,
+        selectedChecklistId = selectedChecklist.id,
+        selectedChecklistName = selectedChecklist.name,
+        headerExpanded = headerExpanded,
+        onHeaderExpandedChange = { headerExpanded = it },
+        onSelectChecklist = ::selectChecklist,
+        onEditChecklist = { id ->
+            checklistState.lists.firstOrNull { it.id == id }?.let(::startEditingChecklist)
+        },
         todos = todos,
-        activeCount = todos.count { !it.completed },
-        completedCount = todos.count { it.completed },
+        activeCount = activeCount,
+        completedCount = completedCount,
         titleInput = titleInput,
         onTitleInputChange = { titleInput = it },
         selectedPriority = selectedPriority,
@@ -512,17 +628,33 @@ private fun PixelDoneApp() {
         dueAtMillis = dueAtMillis,
         onPickDate = ::showDatePicker,
         onPickTime = ::showTimePicker,
-        editorExpanded = editorExpanded,
-        onEditorExpandedChange = { expanded ->
-            if (expanded && editingTodoId == null) {
-                openNewTaskEditor()
-            } else {
-                editorExpanded = expanded
-            }
-        },
-        isEditing = editingTodoId != null,
+        taskEditorVisible = taskEditorVisible,
+        isEditingTask = editingTaskId != null,
+        onOpenTaskEditor = ::openNewTaskEditor,
+        onOpenChecklistEditor = ::openNewChecklistEditor,
         onSubmitTodo = ::submitTodo,
         onCancelEdit = ::cancelEditing,
+        checklistNameInput = checklistNameInput,
+        onChecklistNameInputChange = {
+            checklistNameInput = it
+            checklistEditorError = null
+        },
+        checklistEditorVisible = checklistEditorVisible,
+        isEditingChecklist = editingChecklistId != null,
+        checklistEditorError = checklistEditorError,
+        canDeleteChecklist = checklistState.lists.size > 1,
+        onSubmitChecklist = ::submitChecklist,
+        onDeleteChecklist = {
+            editingChecklistId?.let { id ->
+                checklistState.lists.firstOrNull { it.id == id }?.let { checklist ->
+                    deleteConfirmation = DeleteConfirmation.Checklist(
+                        id = checklist.id,
+                        name = checklist.name,
+                        todoCount = checklist.items.size,
+                    )
+                }
+            }
+        },
         sortMode = sortMode,
         onSortModeChange = {
             requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
@@ -542,7 +674,7 @@ private fun PixelDoneApp() {
             } else {
                 sortedVisibleIds
             }
-            updateTodos(toggleTodoCompletion(todos, id))
+            updateSelectedTodos(toggleTodoCompletion(todos, id))
             keepDisplayOrderDuringSortDelay = true
             sortDelayTick += 1
         },
@@ -581,6 +713,13 @@ private fun PixelDoneApp() {
 
 @Composable
 private fun PixelDoneScreen(
+    checklists: List<TodoChecklist>,
+    selectedChecklistId: String,
+    selectedChecklistName: String,
+    headerExpanded: Boolean,
+    onHeaderExpandedChange: (Boolean) -> Unit,
+    onSelectChecklist: (String) -> Unit,
+    onEditChecklist: (String) -> Unit,
     todos: List<TodoItem>,
     activeCount: Int,
     completedCount: Int,
@@ -591,11 +730,20 @@ private fun PixelDoneScreen(
     dueAtMillis: Long,
     onPickDate: () -> Unit,
     onPickTime: () -> Unit,
-    editorExpanded: Boolean,
-    onEditorExpandedChange: (Boolean) -> Unit,
-    isEditing: Boolean,
+    taskEditorVisible: Boolean,
+    isEditingTask: Boolean,
+    onOpenTaskEditor: () -> Unit,
+    onOpenChecklistEditor: () -> Unit,
     onSubmitTodo: () -> Boolean,
     onCancelEdit: () -> Unit,
+    checklistNameInput: String,
+    onChecklistNameInputChange: (String) -> Unit,
+    checklistEditorVisible: Boolean,
+    isEditingChecklist: Boolean,
+    checklistEditorError: String?,
+    canDeleteChecklist: Boolean,
+    onSubmitChecklist: () -> Boolean,
+    onDeleteChecklist: () -> Unit,
     sortMode: SortMode,
     onSortModeChange: (SortMode) -> Unit,
     hideCompleted: Boolean,
@@ -632,8 +780,15 @@ private fun PixelDoneScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Header(
+                checklists = checklists,
+                selectedChecklistId = selectedChecklistId,
+                selectedChecklistName = selectedChecklistName,
                 activeCount = activeCount,
                 completedCount = completedCount,
+                expanded = headerExpanded,
+                onExpandedChange = onHeaderExpandedChange,
+                onSelectChecklist = onSelectChecklist,
+                onEditChecklist = onEditChecklist,
             )
             TaskWorkspacePanel(
                 todos = todos,
@@ -649,8 +804,10 @@ private fun PixelDoneScreen(
                 displayOrderIds = displayOrderIds,
                 keepDisplayOrder = keepDisplayOrder,
                 todoListScrollRequest = todoListScrollRequest,
-                editorExpanded = editorExpanded,
-                isEditing = isEditing,
+                taskEditorVisible = taskEditorVisible,
+                isEditingTask = isEditingTask,
+                onOpenTaskEditor = onOpenTaskEditor,
+                onOpenChecklistEditor = onOpenChecklistEditor,
                 titleInput = titleInput,
                 onTitleInputChange = onTitleInputChange,
                 selectedPriority = selectedPriority,
@@ -660,7 +817,14 @@ private fun PixelDoneScreen(
                 onPickTime = onPickTime,
                 onSubmitTodo = onSubmitTodo,
                 onCancelEdit = onCancelEdit,
-                onEditorExpandedChange = onEditorExpandedChange,
+                checklistNameInput = checklistNameInput,
+                onChecklistNameInputChange = onChecklistNameInputChange,
+                checklistEditorVisible = checklistEditorVisible,
+                isEditingChecklist = isEditingChecklist,
+                checklistEditorError = checklistEditorError,
+                canDeleteChecklist = canDeleteChecklist,
+                onSubmitChecklist = onSubmitChecklist,
+                onDeleteChecklist = onDeleteChecklist,
                 editorMaxHeight = editorMaxHeight,
                 compactForKeyboard = imeVisible,
                 modifier = Modifier.weight(1f),
@@ -674,22 +838,34 @@ private fun PixelDoneScreen(
 }
 
 @Composable
-private fun Header(activeCount: Int, completedCount: Int) {
+private fun Header(
+    checklists: List<TodoChecklist>,
+    selectedChecklistId: String,
+    selectedChecklistName: String,
+    activeCount: Int,
+    completedCount: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelectChecklist: (String) -> Unit,
+    onEditChecklist: (String) -> Unit,
+) {
+    val scrollState = rememberScrollState()
+
     PixelPanel(
-        modifier = Modifier.height(PixelReadTopBarHeight),
         color = ClaudeGray100,
         borderWidth = 2.dp,
-        contentPadding = PaddingValues(PixelReadFrameInset),
+        contentPadding = PaddingValues(12.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(PixelReadTopBarContentHeight),
+                .height(PixelReadTopBarContentHeight)
+                .clickable { onExpandedChange(!expanded) },
             horizontalArrangement = Arrangement.spacedBy(PixelReadFrameInset),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "TASKS",
+                text = selectedChecklistName,
                 color = ClaudeSlateDark,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
@@ -707,6 +883,72 @@ private fun Header(activeCount: Int, completedCount: Int) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        if (expanded) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 184.dp)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                checklists.forEach { checklist ->
+                    ChecklistPickerRow(
+                        checklist = checklist,
+                        selected = checklist.id == selectedChecklistId,
+                        onSelect = { onSelectChecklist(checklist.id) },
+                        onEdit = { onEditChecklist(checklist.id) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChecklistPickerRow(
+    checklist: TodoChecklist,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    val borderColor = if (selected) ClaudeClayInteractive else ClaudeGray300
+    val backgroundColor = if (selected) ClaudeOat else ClaudeIvory
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(if (selected) 2.dp else 1.dp, borderColor, RectangleShape)
+            .background(backgroundColor)
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onSelect),
+        ) {
+            Text(
+                text = checklist.name,
+                color = ClaudeSlateDark,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "ACTIVE ${activeTodoCount(checklist)}  DONE ${completedTodoCount(checklist)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = ClaudeSlateLight,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        PixelSettingsButton(onClick = onEdit)
     }
 }
 
@@ -725,8 +967,10 @@ private fun TaskWorkspacePanel(
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
-    editorExpanded: Boolean,
-    isEditing: Boolean,
+    taskEditorVisible: Boolean,
+    isEditingTask: Boolean,
+    onOpenTaskEditor: () -> Unit,
+    onOpenChecklistEditor: () -> Unit,
     titleInput: String,
     onTitleInputChange: (String) -> Unit,
     selectedPriority: TodoPriority,
@@ -736,7 +980,14 @@ private fun TaskWorkspacePanel(
     onPickTime: () -> Unit,
     onSubmitTodo: () -> Boolean,
     onCancelEdit: () -> Unit,
-    onEditorExpandedChange: (Boolean) -> Unit,
+    checklistNameInput: String,
+    onChecklistNameInputChange: (String) -> Unit,
+    checklistEditorVisible: Boolean,
+    isEditingChecklist: Boolean,
+    checklistEditorError: String?,
+    canDeleteChecklist: Boolean,
+    onSubmitChecklist: () -> Boolean,
+    onDeleteChecklist: () -> Unit,
     editorMaxHeight: Dp,
     compactForKeyboard: Boolean,
     modifier: Modifier = Modifier,
@@ -759,11 +1010,12 @@ private fun TaskWorkspacePanel(
             displayOrderIds = displayOrderIds,
             keepDisplayOrder = keepDisplayOrder,
             todoListScrollRequest = todoListScrollRequest,
-            showNewTaskButton = !editorExpanded && !isEditing,
-            onOpenEditor = { onEditorExpandedChange(true) },
+            showNewTaskButton = !taskEditorVisible && !checklistEditorVisible,
+            onOpenTaskEditor = onOpenTaskEditor,
+            onOpenChecklistEditor = onOpenChecklistEditor,
             modifier = Modifier.weight(1f),
         )
-        if (editorExpanded || isEditing) {
+        if (taskEditorVisible) {
             TaskEditorPanel(
                 titleInput = titleInput,
                 onTitleInputChange = onTitleInputChange,
@@ -772,10 +1024,23 @@ private fun TaskWorkspacePanel(
                 dueAtMillis = dueAtMillis,
                 onPickDate = onPickDate,
                 onPickTime = onPickTime,
-                isEditing = isEditing,
+                isEditing = isEditingTask,
                 onSubmitTodo = onSubmitTodo,
                 onCancelEdit = onCancelEdit,
-                onCloseNewTask = { onEditorExpandedChange(false) },
+                onCloseNewTask = onCancelEdit,
+                editorMaxHeight = editorMaxHeight,
+                compactForKeyboard = compactForKeyboard,
+            )
+        } else if (checklistEditorVisible) {
+            ChecklistEditorPanel(
+                nameInput = checklistNameInput,
+                onNameInputChange = onChecklistNameInputChange,
+                isEditing = isEditingChecklist,
+                errorText = checklistEditorError,
+                canDeleteChecklist = canDeleteChecklist,
+                onSubmitChecklist = onSubmitChecklist,
+                onCancelEdit = onCancelEdit,
+                onDeleteChecklist = onDeleteChecklist,
                 editorMaxHeight = editorMaxHeight,
                 compactForKeyboard = compactForKeyboard,
             )
@@ -949,6 +1214,155 @@ private fun TaskEditorPanel(
 }
 
 @Composable
+private fun ChecklistEditorPanel(
+    nameInput: String,
+    onNameInputChange: (String) -> Unit,
+    isEditing: Boolean,
+    errorText: String?,
+    canDeleteChecklist: Boolean,
+    onSubmitChecklist: () -> Boolean,
+    onCancelEdit: () -> Unit,
+    onDeleteChecklist: () -> Unit,
+    editorMaxHeight: Dp,
+    compactForKeyboard: Boolean,
+) {
+    val focusManager = LocalFocusManager.current
+    val hapticFeedback = LocalHapticFeedback.current
+    val nameFocusRequester = remember { FocusRequester() }
+    val scrollState = rememberScrollState()
+
+    LaunchedEffect(isEditing) {
+        nameFocusRequester.requestFocus()
+    }
+
+    PixelPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCancelEdit() },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (isEditing) "EDIT LIST" else "NEW LIST",
+                style = MaterialTheme.typography.labelLarge,
+                color = ClaudeSlateLight,
+            )
+            Text(
+                text = "CANCEL",
+                style = MaterialTheme.typography.labelLarge,
+                color = ClaudeClayInteractive,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = if (compactForKeyboard) 96.dp else editorMaxHeight)
+                .then(if (compactForKeyboard) Modifier else Modifier.verticalScroll(scrollState)),
+        ) {
+            if (!compactForKeyboard) {
+                Text(
+                    text = "DETAILS",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = ClaudeSlateLight,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            OutlinedTextField(
+                value = nameInput,
+                onValueChange = onNameInputChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(nameFocusRequester),
+                singleLine = true,
+                isError = errorText != null,
+                shape = RectangleShape,
+                textStyle = MaterialTheme.typography.bodyLarge,
+                label = { Text("List name") },
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Characters,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        focusManager.clearFocus()
+                    },
+                ),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = ClaudeClay,
+                    unfocusedBorderColor = ClaudeGray300,
+                    errorBorderColor = PixelError,
+                    focusedContainerColor = ClaudeIvory,
+                    unfocusedContainerColor = ClaudeIvory,
+                    errorContainerColor = ClaudeIvory,
+                    cursorColor = ClaudeClayInteractive,
+                    focusedLabelColor = ClaudeClayInteractive,
+                    unfocusedLabelColor = ClaudeGray600,
+                    errorLabelColor = PixelError,
+                ),
+            )
+            errorText?.let { text ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = PixelError,
+                )
+            }
+            if (compactForKeyboard) {
+                return@Column
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PixelButton(
+                    text = "SAVE",
+                    onClick = {
+                        if (onSubmitChecklist()) {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                            focusManager.clearFocus()
+                        } else {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.Reject)
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    primary = true,
+                )
+                PixelButton(
+                    text = "CANCEL",
+                    onClick = {
+                        focusManager.clearFocus()
+                        onCancelEdit()
+                    },
+                    modifier = Modifier.weight(1f),
+                    primary = false,
+                )
+            }
+            if (isEditing) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "DELETE",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = PixelError,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                PixelButton(
+                    text = if (canDeleteChecklist) "DELETE LIST" else "KEEP ONE LIST",
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onDeleteChecklist()
+                    },
+                    enabled = canDeleteChecklist,
+                    modifier = Modifier.fillMaxWidth(),
+                    destructive = true,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun TodoListPanel(
     todos: List<TodoItem>,
     sortMode: SortMode,
@@ -964,7 +1378,8 @@ private fun TodoListPanel(
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
     showNewTaskButton: Boolean,
-    onOpenEditor: () -> Unit,
+    onOpenTaskEditor: () -> Unit,
+    onOpenChecklistEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sortedVisibleItems = visibleTodos(todos, sortMode, hideCompleted)
@@ -1065,7 +1480,8 @@ private fun TodoListPanel(
             }
             if (showNewTaskButton) {
                 FloatingNewTaskButton(
-                    onClick = onOpenEditor,
+                    onClick = onOpenTaskEditor,
+                    onLongClick = onOpenChecklistEditor,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 8.dp),
@@ -1398,10 +1814,13 @@ private fun DeleteConfirmationDialog(
     val titleText = when (confirmation) {
         is DeleteConfirmation.SingleTodo -> "Delete task?"
         is DeleteConfirmation.CompletedTodos -> "Delete done tasks?"
+        is DeleteConfirmation.Checklist -> "Delete list?"
     }
     val bodyText = when (confirmation) {
         is DeleteConfirmation.SingleTodo -> "This will remove \"${confirmation.title}\"."
         is DeleteConfirmation.CompletedTodos -> "This will remove ${confirmation.count} completed task(s)."
+        is DeleteConfirmation.Checklist ->
+            "This will remove \"${confirmation.name}\" and ${confirmation.todoCount} task(s)."
     }
 
     AlertDialog(
@@ -1468,6 +1887,24 @@ private fun PixelBatchDeleteDoneButton(
 }
 
 @Composable
+private fun PixelSettingsButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .border(1.dp, ClaudeGray300, RectangleShape)
+            .background(ClaudeIvoryMedium)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "EDIT LIST" },
+        contentAlignment = Alignment.Center,
+    ) {
+        PixelSettingsIcon(color = ClaudeSlateDark)
+    }
+}
+
+@Composable
 private fun PixelItemDeleteButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1485,24 +1922,62 @@ private fun PixelItemDeleteButton(
 }
 
 @Composable
+private fun PixelSettingsIcon(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(18.dp)) {
+        val strokeWidth = 1.8.dp.toPx()
+        drawLine(
+            color = color,
+            start = Offset(3.dp.toPx(), 5.dp.toPx()),
+            end = Offset(15.dp.toPx(), 5.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawRect(
+            color = color,
+            topLeft = Offset(6.dp.toPx(), 3.dp.toPx()),
+            size = Size(3.dp.toPx(), 4.dp.toPx()),
+            style = Stroke(width = strokeWidth),
+        )
+        drawLine(
+            color = color,
+            start = Offset(3.dp.toPx(), 13.dp.toPx()),
+            end = Offset(15.dp.toPx(), 13.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawRect(
+            color = color,
+            topLeft = Offset(10.dp.toPx(), 11.dp.toPx()),
+            size = Size(3.dp.toPx(), 4.dp.toPx()),
+            style = Stroke(width = strokeWidth),
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun FloatingNewTaskButton(
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val hapticFeedback = LocalHapticFeedback.current
 
     Box(
         modifier = modifier
             .size(56.dp)
             .background(if (pressed) ClaudeClayInteractive else ClaudeClay, RectangleShape)
             .border(2.dp, ClaudeSlateDark, RectangleShape)
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
+                onLongClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                },
             )
-            .semantics { contentDescription = "NEW TASK" },
+            .semantics { contentDescription = "NEW TASK OR LIST" },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -1752,8 +2227,16 @@ private fun Long.formatDateTime(): String {
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun PhonePreview() {
+    val checklists = previewChecklists()
     PixelDoneTheme {
         PixelDoneScreen(
+            checklists = checklists,
+            selectedChecklistId = checklists.first().id,
+            selectedChecklistName = checklists.first().name,
+            headerExpanded = false,
+            onHeaderExpandedChange = {},
+            onSelectChecklist = {},
+            onEditChecklist = {},
             todos = previewTodos(),
             activeCount = 2,
             completedCount = 1,
@@ -1764,11 +2247,20 @@ private fun PhonePreview() {
             dueAtMillis = defaultDueAtMillis(),
             onPickDate = {},
             onPickTime = {},
-            editorExpanded = false,
-            onEditorExpandedChange = {},
-            isEditing = false,
+            taskEditorVisible = false,
+            isEditingTask = false,
+            onOpenTaskEditor = {},
+            onOpenChecklistEditor = {},
             onSubmitTodo = { true },
             onCancelEdit = {},
+            checklistNameInput = "",
+            onChecklistNameInputChange = {},
+            checklistEditorVisible = false,
+            isEditingChecklist = false,
+            checklistEditorError = null,
+            canDeleteChecklist = true,
+            onSubmitChecklist = { true },
+            onDeleteChecklist = {},
             sortMode = SortMode.PRIORITY,
             onSortModeChange = {},
             hideCompleted = false,
@@ -1789,8 +2281,16 @@ private fun PhonePreview() {
 @Preview(showBackground = true, widthDp = 900, heightDp = 600)
 @Composable
 private fun TabletPreview() {
+    val checklists = previewChecklists()
     PixelDoneTheme {
         PixelDoneScreen(
+            checklists = checklists,
+            selectedChecklistId = checklists.first().id,
+            selectedChecklistName = checklists.first().name,
+            headerExpanded = true,
+            onHeaderExpandedChange = {},
+            onSelectChecklist = {},
+            onEditChecklist = {},
             todos = previewTodos(),
             activeCount = 2,
             completedCount = 1,
@@ -1801,11 +2301,20 @@ private fun TabletPreview() {
             dueAtMillis = defaultDueAtMillis(),
             onPickDate = {},
             onPickTime = {},
-            editorExpanded = true,
-            onEditorExpandedChange = {},
-            isEditing = true,
+            taskEditorVisible = true,
+            isEditingTask = true,
+            onOpenTaskEditor = {},
+            onOpenChecklistEditor = {},
             onSubmitTodo = { true },
             onCancelEdit = {},
+            checklistNameInput = "WORK",
+            onChecklistNameInputChange = {},
+            checklistEditorVisible = false,
+            isEditingChecklist = false,
+            checklistEditorError = null,
+            canDeleteChecklist = true,
+            onSubmitChecklist = { true },
+            onDeleteChecklist = {},
             sortMode = SortMode.TIME,
             onSortModeChange = {},
             hideCompleted = false,
@@ -1829,6 +2338,24 @@ private fun previewTodos(): List<TodoItem> {
         TodoItem("1", "Send the build to the test phone", TodoPriority.HIGH, now, false, 1L),
         TodoItem("2", "Plan tomorrow's tiny wins", TodoPriority.MEDIUM, now + 3_600_000L, false, 2L),
         TodoItem("3", "Archive finished notes", TodoPriority.LOW, now - 3_600_000L, true, 3L),
+    )
+}
+
+private fun previewChecklists(): List<TodoChecklist> {
+    val todos = previewTodos()
+    return listOf(
+        TodoChecklist(
+            id = DefaultChecklistId,
+            name = DefaultChecklistName,
+            items = todos,
+            createdAtMillis = 1L,
+        ),
+        TodoChecklist(
+            id = "work",
+            name = "WORK",
+            items = todos.take(1),
+            createdAtMillis = 2L,
+        ),
     )
 }
 

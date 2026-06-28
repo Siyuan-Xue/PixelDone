@@ -216,6 +216,113 @@ class TodoEngineTest {
     }
 
     @Test
+    fun initialChecklistStateWrapsLegacyTodosInMainList() {
+        val legacyTodos = listOf(item("legacy", TodoPriority.MEDIUM, due = 1L))
+
+        val state = createInitialChecklistState(legacyTodos, createdAtMillis = 42L)
+
+        assertEquals(DefaultChecklistId, state.selectedListId)
+        assertEquals(DefaultChecklistName, state.lists.single().name)
+        assertEquals(42L, state.lists.single().createdAtMillis)
+        assertEquals(legacyTodos, state.lists.single().items)
+    }
+
+    @Test
+    fun createChecklistTrimsNamesSelectsNewListAndRejectsInvalidNames() {
+        val state = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+
+        val withWork = createTodoChecklist(
+            state = state,
+            id = "work",
+            nameInput = "  Work  ",
+            createdAtMillis = 2L,
+        )!!
+
+        assertEquals("work", withWork.selectedListId)
+        assertEquals("Work", withWork.lists.last().name)
+        assertNull(createTodoChecklist(withWork, "blank", " ", createdAtMillis = 3L))
+        assertNull(createTodoChecklist(withWork, "duplicate", "work", createdAtMillis = 3L))
+    }
+
+    @Test
+    fun renameChecklistKeepsNamesUniqueCaseInsensitively() {
+        val state = createTodoChecklist(
+            state = createInitialChecklistState(emptyList(), createdAtMillis = 1L),
+            id = "work",
+            nameInput = "Work",
+            createdAtMillis = 2L,
+        )!!
+
+        val renamed = renameTodoChecklist(state, DefaultChecklistId, "  Home  ")!!
+
+        assertEquals("Home", renamed.lists.first { it.id == DefaultChecklistId }.name)
+        assertNull(renameTodoChecklist(renamed, DefaultChecklistId, "WORK"))
+        assertNull(renameTodoChecklist(renamed, "missing", "Other"))
+    }
+
+    @Test
+    fun deleteChecklistKeepsAtLeastOneListAndFallsBackSelection() {
+        val state = createTodoChecklist(
+            state = createInitialChecklistState(emptyList(), createdAtMillis = 1L),
+            id = "work",
+            nameInput = "Work",
+            createdAtMillis = 2L,
+        )!!
+
+        val deletedSelected = deleteTodoChecklist(state, "work")!!
+
+        assertEquals(listOf(DefaultChecklistId), deletedSelected.lists.map { it.id })
+        assertEquals(DefaultChecklistId, deletedSelected.selectedListId)
+        assertNull(deleteTodoChecklist(deletedSelected, DefaultChecklistId))
+    }
+
+    @Test
+    fun updateChecklistItemsChangesOnlyTheMatchingListAndAllTodosFlattensLists() {
+        val mainTodo = item("main", TodoPriority.HIGH, due = 1L)
+        val workTodo = item("work-task", TodoPriority.LOW, due = 2L)
+        val state = createTodoChecklist(
+            state = createInitialChecklistState(listOf(mainTodo), createdAtMillis = 1L),
+            id = "work",
+            nameInput = "Work",
+            createdAtMillis = 2L,
+        )!!
+
+        val updated = updateChecklistItems(state, "work", listOf(workTodo))!!
+
+        assertEquals(listOf(mainTodo), updated.lists.first { it.id == DefaultChecklistId }.items)
+        assertEquals(listOf(workTodo), updated.lists.first { it.id == "work" }.items)
+        assertEquals(listOf(mainTodo, workTodo), allTodos(updated))
+    }
+
+    @Test
+    fun checklistJsonCodecRoundTripsNestedState() {
+        val state = TodoChecklistState(
+            lists = listOf(
+                TodoChecklist(
+                    id = DefaultChecklistId,
+                    name = DefaultChecklistName,
+                    items = listOf(item("one", TodoPriority.HIGH, due = 1L)),
+                    createdAtMillis = 1L,
+                ),
+                TodoChecklist(
+                    id = "work",
+                    name = "Work \"Escaped\"",
+                    items = listOf(item("two", TodoPriority.LOW, due = 2L, completed = true)),
+                    createdAtMillis = 2L,
+                ),
+            ),
+            selectedListId = "work",
+        )
+
+        val decoded = TodoJsonCodec.decodeState(
+            json = TodoJsonCodec.encodeState(state),
+            fallbackCreatedAtMillis = 99L,
+        )
+
+        assertEquals(state, decoded)
+    }
+
+    @Test
     fun defaultDueAtMillisUsesSameTimeTomorrowRoundedToMinute() {
         val zone = ZoneId.systemDefault()
         val now = LocalDateTime.of(2026, 6, 25, 9, 30, 42, 123_000_000)

@@ -9,6 +9,18 @@ data class TodoItem(
     val createdAtMillis: Long,
 )
 
+data class TodoChecklist(
+    val id: String,
+    val name: String,
+    val items: List<TodoItem>,
+    val createdAtMillis: Long,
+)
+
+data class TodoChecklistState(
+    val lists: List<TodoChecklist>,
+    val selectedListId: String,
+)
+
 enum class TodoPriority {
     HIGH,
     MEDIUM,
@@ -18,6 +30,166 @@ enum class TodoPriority {
 enum class SortMode {
     PRIORITY,
     TIME,
+}
+
+const val DefaultChecklistId = "main"
+const val DefaultChecklistName = "MAIN"
+
+fun createInitialChecklistState(
+    items: List<TodoItem>,
+    createdAtMillis: Long,
+): TodoChecklistState {
+    return TodoChecklistState(
+        lists = listOf(
+            TodoChecklist(
+                id = DefaultChecklistId,
+                name = DefaultChecklistName,
+                items = items,
+                createdAtMillis = createdAtMillis,
+            ),
+        ),
+        selectedListId = DefaultChecklistId,
+    )
+}
+
+fun selectedChecklistOf(state: TodoChecklistState): TodoChecklist {
+    return state.lists.firstOrNull { it.id == state.selectedListId } ?: state.lists.first()
+}
+
+fun allTodos(state: TodoChecklistState): List<TodoItem> {
+    return state.lists.flatMap { it.items }
+}
+
+fun activeTodoCount(checklist: TodoChecklist): Int {
+    return checklist.items.count { !it.completed }
+}
+
+fun completedTodoCount(checklist: TodoChecklist): Int {
+    return checklist.items.count { it.completed }
+}
+
+fun isChecklistNameAvailable(
+    state: TodoChecklistState,
+    nameInput: String,
+    editingId: String? = null,
+): Boolean {
+    val name = nameInput.trim()
+    if (name.isEmpty()) return false
+
+    return state.lists.none { checklist ->
+        checklist.id != editingId && checklist.name.equals(name, ignoreCase = true)
+    }
+}
+
+fun createTodoChecklist(
+    state: TodoChecklistState,
+    id: String,
+    nameInput: String,
+    createdAtMillis: Long,
+): TodoChecklistState? {
+    val name = nameInput.trim()
+    if (!isChecklistNameAvailable(state, name)) return null
+
+    val checklist = TodoChecklist(
+        id = id,
+        name = name,
+        items = emptyList(),
+        createdAtMillis = createdAtMillis,
+    )
+    return state.copy(
+        lists = state.lists + checklist,
+        selectedListId = checklist.id,
+    )
+}
+
+fun renameTodoChecklist(
+    state: TodoChecklistState,
+    id: String,
+    nameInput: String,
+): TodoChecklistState? {
+    val name = nameInput.trim()
+    if (!isChecklistNameAvailable(state, name, editingId = id)) return null
+
+    var found = false
+    val updatedLists = state.lists.map { checklist ->
+        if (checklist.id == id) {
+            found = true
+            checklist.copy(name = name)
+        } else {
+            checklist
+        }
+    }
+
+    return if (found) state.copy(lists = updatedLists) else null
+}
+
+fun selectTodoChecklist(state: TodoChecklistState, id: String): TodoChecklistState? {
+    if (state.lists.none { it.id == id }) return null
+    return state.copy(selectedListId = id)
+}
+
+fun deleteTodoChecklist(state: TodoChecklistState, id: String): TodoChecklistState? {
+    if (state.lists.size <= 1) return null
+
+    val updatedLists = state.lists.filterNot { it.id == id }
+    if (updatedLists.size == state.lists.size) return null
+
+    val selectedListId = if (state.selectedListId == id) {
+        updatedLists.first().id
+    } else {
+        state.selectedListId
+    }
+    return state.copy(
+        lists = updatedLists,
+        selectedListId = selectedListId,
+    )
+}
+
+fun updateChecklistItems(
+    state: TodoChecklistState,
+    checklistId: String,
+    items: List<TodoItem>,
+): TodoChecklistState? {
+    var found = false
+    val updatedLists = state.lists.map { checklist ->
+        if (checklist.id == checklistId) {
+            found = true
+            checklist.copy(items = items)
+        } else {
+            checklist
+        }
+    }
+
+    return if (found) state.copy(lists = updatedLists) else null
+}
+
+fun normalizeChecklistState(
+    state: TodoChecklistState,
+    fallbackCreatedAtMillis: Long,
+): TodoChecklistState {
+    val validLists = state.lists
+        .mapNotNull { checklist ->
+            val name = checklist.name.trim()
+            if (checklist.id.isBlank() || name.isEmpty()) {
+                null
+            } else {
+                checklist.copy(name = name)
+            }
+        }
+
+    if (validLists.isEmpty()) {
+        return createInitialChecklistState(emptyList(), fallbackCreatedAtMillis)
+    }
+
+    val selectedId = if (validLists.any { it.id == state.selectedListId }) {
+        state.selectedListId
+    } else {
+        validLists.first().id
+    }
+    return state.copy(
+        lists = validLists,
+        selectedListId = selectedId,
+    )
 }
 
 fun createTodoItem(

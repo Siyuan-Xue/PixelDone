@@ -2,42 +2,102 @@ package com.milesxue.pixeldone
 
 object TodoJsonCodec {
     fun encode(items: List<TodoItem>): String {
-        return items.joinToString(prefix = "[", postfix = "]") { item ->
-            buildString {
-                append("{")
-                append("\"id\":\"").append(escape(item.id)).append("\",")
-                append("\"title\":\"").append(escape(item.title)).append("\",")
-                append("\"priority\":\"").append(item.priority.name).append("\",")
-                append("\"dueAtMillis\":").append(item.dueAtMillis).append(",")
-                append("\"completed\":").append(item.completed).append(",")
-                append("\"createdAtMillis\":").append(item.createdAtMillis)
-                append("}")
-            }
-        }
+        return items.joinToString(prefix = "[", postfix = "]", transform = ::encodeTodoItem)
     }
 
     fun decode(json: String): List<TodoItem> {
         return runCatching {
-            JsonCursor(json).parseArray().mapNotNull { values ->
-                val id = values["id"] as? String ?: return@mapNotNull null
-                val title = values["title"] as? String ?: return@mapNotNull null
-                val priorityName = values["priority"] as? String ?: return@mapNotNull null
-                val priority = TodoPriority.entries.firstOrNull { it.name == priorityName }
-                    ?: return@mapNotNull null
-                val dueAtMillis = values["dueAtMillis"] as? Long ?: return@mapNotNull null
-                val completed = values["completed"] as? Boolean ?: return@mapNotNull null
-                val createdAtMillis = values["createdAtMillis"] as? Long ?: return@mapNotNull null
+            JsonCursor(json).parseArray().mapNotNull { value ->
+                todoFrom(value as? Map<*, *> ?: return@mapNotNull null)
+            }
+        }.getOrDefault(emptyList())
+    }
 
-                TodoItem(
+    fun encodeState(state: TodoChecklistState): String {
+        return buildString {
+            append("{")
+            append("\"selectedListId\":\"").append(escape(state.selectedListId)).append("\",")
+            append("\"lists\":")
+            append(
+                state.lists.joinToString(prefix = "[", postfix = "]") { checklist ->
+                    buildString {
+                        append("{")
+                        append("\"id\":\"").append(escape(checklist.id)).append("\",")
+                        append("\"name\":\"").append(escape(checklist.name)).append("\",")
+                        append("\"createdAtMillis\":").append(checklist.createdAtMillis).append(",")
+                        append("\"items\":").append(encode(checklist.items))
+                        append("}")
+                    }
+                },
+            )
+            append("}")
+        }
+    }
+
+    fun decodeState(json: String, fallbackCreatedAtMillis: Long): TodoChecklistState? {
+        return runCatching {
+            val values = JsonCursor(json).parseObject()
+            val selectedListId = values["selectedListId"] as? String ?: return null
+            val rawLists = values["lists"] as? List<*> ?: return null
+            val lists = rawLists.mapNotNull { rawList ->
+                val listValues = rawList as? Map<*, *> ?: return@mapNotNull null
+                val id = listValues["id"] as? String ?: return@mapNotNull null
+                val name = listValues["name"] as? String ?: return@mapNotNull null
+                val createdAtMillis =
+                    listValues["createdAtMillis"] as? Long ?: return@mapNotNull null
+                val rawItems = listValues["items"] as? List<*> ?: return@mapNotNull null
+                val items = rawItems.mapNotNull { rawItem ->
+                    todoFrom(rawItem as? Map<*, *> ?: return@mapNotNull null)
+                }
+
+                TodoChecklist(
                     id = id,
-                    title = title,
-                    priority = priority,
-                    dueAtMillis = dueAtMillis,
-                    completed = completed,
+                    name = name,
+                    items = items,
                     createdAtMillis = createdAtMillis,
                 )
             }
-        }.getOrDefault(emptyList())
+
+            normalizeChecklistState(
+                state = TodoChecklistState(
+                    lists = lists,
+                    selectedListId = selectedListId,
+                ),
+                fallbackCreatedAtMillis = fallbackCreatedAtMillis,
+            )
+        }.getOrNull()
+    }
+
+    private fun encodeTodoItem(item: TodoItem): String {
+        return buildString {
+            append("{")
+            append("\"id\":\"").append(escape(item.id)).append("\",")
+            append("\"title\":\"").append(escape(item.title)).append("\",")
+            append("\"priority\":\"").append(item.priority.name).append("\",")
+            append("\"dueAtMillis\":").append(item.dueAtMillis).append(",")
+            append("\"completed\":").append(item.completed).append(",")
+            append("\"createdAtMillis\":").append(item.createdAtMillis)
+            append("}")
+        }
+    }
+
+    private fun todoFrom(values: Map<*, *>): TodoItem? {
+        val id = values["id"] as? String ?: return null
+        val title = values["title"] as? String ?: return null
+        val priorityName = values["priority"] as? String ?: return null
+        val priority = TodoPriority.entries.firstOrNull { it.name == priorityName } ?: return null
+        val dueAtMillis = values["dueAtMillis"] as? Long ?: return null
+        val completed = values["completed"] as? Boolean ?: return null
+        val createdAtMillis = values["createdAtMillis"] as? Long ?: return null
+
+        return TodoItem(
+            id = id,
+            title = title,
+            priority = priority,
+            dueAtMillis = dueAtMillis,
+            completed = completed,
+            createdAtMillis = createdAtMillis,
+        )
     }
 
     private fun escape(value: String): String {
@@ -68,15 +128,30 @@ object TodoJsonCodec {
 private class JsonCursor(private val source: String) {
     private var index = 0
 
-    fun parseArray(): List<Map<String, Any>> {
+    fun parseArray(): List<Any> {
         skipWhitespace()
+        val items = parseArrayValue()
+        skipWhitespace()
+        if (index != source.length) error("Unexpected trailing content at $index")
+        return items
+    }
+
+    fun parseObject(): Map<String, Any> {
+        skipWhitespace()
+        val values = parseObjectValue()
+        skipWhitespace()
+        if (index != source.length) error("Unexpected trailing content at $index")
+        return values
+    }
+
+    private fun parseArrayValue(): List<Any> {
         expect('[')
-        val items = mutableListOf<Map<String, Any>>()
+        val items = mutableListOf<Any>()
         skipWhitespace()
         if (consumeIf(']')) return items
 
         while (true) {
-            items += parseObject()
+            items += parseValue()
             skipWhitespace()
             when {
                 consumeIf(',') -> continue
@@ -84,13 +159,10 @@ private class JsonCursor(private val source: String) {
                 else -> error("Expected array separator at $index")
             }
         }
-
-        skipWhitespace()
-        if (index != source.length) error("Unexpected trailing content at $index")
         return items
     }
 
-    private fun parseObject(): Map<String, Any> {
+    private fun parseObjectValue(): Map<String, Any> {
         skipWhitespace()
         expect('{')
         val values = mutableMapOf<String, Any>()
@@ -116,6 +188,8 @@ private class JsonCursor(private val source: String) {
         skipWhitespace()
         return when (peek()) {
             '"' -> parseString()
+            '[' -> parseArrayValue()
+            '{' -> parseObjectValue()
             't' -> {
                 expectLiteral("true")
                 true
