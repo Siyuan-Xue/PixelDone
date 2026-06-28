@@ -15,9 +15,19 @@ class TodoPreferences(private val sharedPreferences: SharedPreferences) {
             .apply()
     }
 
+    fun loadNeverShowUpdateDialog(): Boolean =
+        sharedPreferences.getBoolean(KEY_NEVER_SHOW_UPDATE_DIALOG, false)
+
+    fun saveNeverShowUpdateDialog(neverShow: Boolean) {
+        sharedPreferences.edit()
+            .putBoolean(KEY_NEVER_SHOW_UPDATE_DIALOG, neverShow)
+            .apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "pixel_done_todos"
         private const val KEY_TODOS = "todos"
+        private const val KEY_NEVER_SHOW_UPDATE_DIALOG = "never_show_update_dialog"
 
         fun create(context: Context): TodoPreferences {
             val prefs = context.applicationContext.getSharedPreferences(

@@ -1,17 +1,15 @@
-PixelDone v1.2.0 adds restrained haptic feedback for core task and list-state actions.
+PixelDone v1.3.0 adds automatic update discovery with a quiet in-app prompt.
 
 Highlights:
-- Adds a subtle confirmation when adding or saving a valid task.
-- Adds a rejection haptic when submitting an empty task title.
-- Uses a stronger confirmation when marking an active task done.
-- Leaves the done-to-active undo action silent.
-- Adds restrained haptic feedback to sorting and hide/show done controls.
-- Confirms final delete actions with one haptic feedback.
-- Keeps editing, date/time picking, and update checking silent.
-- Adds no new permissions, dependencies, or settings.
+- Checks the latest GitHub Release once when the app starts.
+- Shows a small update dot on the footer update button when a newer release is available.
+- Adds an update confirmation dialog with `UPDATE`, `NOT NOW`, and `Don't show again`.
+- Keeps automatic checks active even after update dialogs are permanently hidden.
+- Keeps the existing manual update button as a direct way to open the available release.
+- Adds no new permissions, dependencies, or settings screen.
 
 Install note: if you still have the old `com.codexue.pixeldone` prototype build, uninstall it before installing this private release.
 
-The attached `PixelDone-1.2.0-release.apk` asset is the signed private release APK for direct installation and app-internal updates.
+The attached `PixelDone-1.3.0-release.apk` asset is the signed private release APK for direct installation and app-internal updates.
 
 CODEX & XUE

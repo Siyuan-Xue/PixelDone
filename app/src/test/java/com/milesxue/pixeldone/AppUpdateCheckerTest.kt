@@ -59,4 +59,23 @@ class AppUpdateCheckerTest {
         )
         assertEquals("PixelDone-1.1.0-release.apk", release?.assets?.single()?.name)
     }
+
+    @Test
+    fun appUpdateInfo_actionUrlPrefersApkAndFallsBackToReleasePage() {
+        val withApk = AppUpdateInfo(
+            version = "1.3.0",
+            releasePageUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.0",
+            apkDownloadUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/download/v1.3.0/PixelDone-1.3.0-release.apk",
+        )
+        val withoutApk = withApk.copy(apkDownloadUrl = null)
+
+        assertEquals(
+            "https://github.com/Siyuan-Xue/PixelDone/releases/download/v1.3.0/PixelDone-1.3.0-release.apk",
+            withApk.actionUrl,
+        )
+        assertEquals(
+            "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.0",
+            withoutApk.actionUrl,
+        )
+    }
 }
