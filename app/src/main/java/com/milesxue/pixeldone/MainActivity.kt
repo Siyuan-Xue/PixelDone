@@ -45,7 +45,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -89,6 +88,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.verticalScroll
 import com.milesxue.pixeldone.ui.theme.ClaudeCactus
 import com.milesxue.pixeldone.ui.theme.ClaudeClay
@@ -124,6 +124,7 @@ private val PixelReadTopBarHeight = 52.dp
 private val PixelReadTopBarContentHeight = 36.dp
 private val PixelReadFrameInset = 8.dp
 private val PixelDoneFooterHeight = 24.dp
+private val PixelMaterialDialogPadding = PaddingValues(16.dp)
 private const val UpdateStatusVisibleMillis = 3_000L
 
 private enum class UpdateUiStatus {
@@ -1323,51 +1324,14 @@ private fun UpdateConfirmationDialog(
 
     var dontShowAgain by remember(info.version) { mutableStateOf(false) }
 
-    AlertDialog(
+    PixelMaterialDialog(
         onDismissRequest = { onDismiss(dontShowAgain) },
-        title = {
-            Text(
-                text = "Update available",
-                style = MaterialTheme.typography.titleMedium,
-                color = ClaudeSlateDark,
-            )
-        },
-        text = {
-            Column {
-                Text(
-                    text = "PixelDone ${info.version} is available.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = ClaudeSlateLight,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { dontShowAgain = !dontShowAgain },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Checkbox(
-                        checked = dontShowAgain,
-                        onCheckedChange = { dontShowAgain = it },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = ClaudeClay,
-                            uncheckedColor = ClaudeGray600,
-                            checkmarkColor = ClaudeIvory,
-                        ),
-                    )
-                    Text(
-                        text = "Don't show again",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = ClaudeSlateDark,
-                    )
-                }
-            }
-        },
+        title = "Update available",
         confirmButton = {
             PixelButton(
                 text = "UPDATE",
                 onClick = { onUpdate(info, dontShowAgain) },
+                primary = true,
             )
         },
         dismissButton = {
@@ -1377,10 +1341,35 @@ private fun UpdateConfirmationDialog(
                 primary = false,
             )
         },
-        shape = RectangleShape,
-        containerColor = ClaudeGray100,
-        tonalElevation = 0.dp,
-    )
+    ) {
+        Text(
+            text = "PixelDone ${info.version} is available.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = ClaudeSlateLight,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { dontShowAgain = !dontShowAgain },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Checkbox(
+                checked = dontShowAgain,
+                onCheckedChange = { dontShowAgain = it },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = ClaudeClay,
+                    uncheckedColor = ClaudeGray600,
+                    checkmarkColor = ClaudeIvory,
+                ),
+            )
+            Text(
+                text = "Don't show again",
+                style = MaterialTheme.typography.bodyMedium,
+                color = ClaudeSlateDark,
+            )
+        }
+    }
 }
 
 @Composable
@@ -1401,22 +1390,9 @@ private fun DeleteConfirmationDialog(
         is DeleteConfirmation.CompletedTodos -> "This will remove ${confirmation.count} completed task(s)."
     }
 
-    AlertDialog(
+    PixelMaterialDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = titleText,
-                style = MaterialTheme.typography.titleMedium,
-                color = ClaudeSlateDark,
-            )
-        },
-        text = {
-            Text(
-                text = bodyText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = ClaudeSlateLight,
-            )
-        },
+        title = titleText,
         confirmButton = {
             PixelButton(
                 text = "DELETE",
@@ -1434,10 +1410,57 @@ private fun DeleteConfirmationDialog(
                 primary = false,
             )
         },
-        shape = RectangleShape,
-        containerColor = ClaudeGray100,
-        tonalElevation = 0.dp,
-    )
+    ) {
+        Text(
+            text = bodyText,
+            style = MaterialTheme.typography.bodyMedium,
+            color = ClaudeSlateLight,
+        )
+    }
+}
+
+@Composable
+private fun PixelMaterialDialog(
+    onDismissRequest: () -> Unit,
+    title: String,
+    confirmButton: @Composable () -> Unit,
+    dismissButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PixelMaterialDialogPadding,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Dialog(onDismissRequest = onDismissRequest) {
+        Surface(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp),
+            color = ClaudeGray100,
+            shape = RectangleShape,
+            border = BorderStroke(1.dp, ClaudeGray600),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(contentPadding),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = ClaudeSlateDark,
+                )
+                content()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    dismissButton()
+                    confirmButton()
+                }
+            }
+        }
+    }
 }
 
 @Composable

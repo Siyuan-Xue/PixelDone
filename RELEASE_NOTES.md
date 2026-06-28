@@ -1,15 +1,14 @@
-PixelDone v1.3.1 hardens automatic update checks for unreliable network conditions.
+PixelDone v1.3.2 refines update dialog spacing and action emphasis.
 
 Highlights:
-- Keeps startup update checks quiet when the device is offline or GitHub times out.
-- Preserves coroutine cancellation while still treating ordinary network failures as unavailable updates.
-- Clears the manual `OFFLINE` update status after a short delay.
-- Adds unit coverage for update-check timeout and cancellation behavior.
-- Keeps the v1.3 automatic update dot and `Don't show again` dialog behavior unchanged.
+- Uses a shared Pixel material dialog with a 16dp default internal padding.
+- Keeps update and delete dialogs on the same compact pixel-style dialog surface.
+- Makes the update dialog's `UPDATE` action use the clay primary emphasis.
+- Keeps automatic update checks, update dots, and `Don't show again` behavior unchanged.
 - Adds no new permissions, dependencies, or settings screen.
 
 Install note: if you still have the old `com.codexue.pixeldone` prototype build, uninstall it before installing this private release.
 
-The attached `PixelDone-1.3.1-release.apk` asset is the signed private release APK for direct installation and app-internal updates.
+The attached `PixelDone-1.3.2-release.apk` asset is the signed private release APK for direct installation and app-internal updates.
 
 CODEX & XUE

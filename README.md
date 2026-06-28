@@ -42,7 +42,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The signed private release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-1.3.1-release.apk
+app/build/outputs/apk/release/PixelDone-1.3.2-release.apk
 ```
 
 ## Install
@@ -51,7 +51,7 @@ If the old prototype package is still installed, uninstall it before installing:
 
 ```powershell
 adb uninstall com.codexue.pixeldone
-adb install -r app/build/outputs/apk/release/PixelDone-1.3.1-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-1.3.2-release.apk
 ```
 
 The formal package name is:
@@ -62,4 +62,4 @@ com.milesxue.pixeldone
 
 ## Status
 
-Private 1.3.1 release.
+Private 1.3.2 release.
