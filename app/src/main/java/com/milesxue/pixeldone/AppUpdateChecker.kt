@@ -2,6 +2,7 @@ package com.milesxue.pixeldone
 
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -67,24 +68,32 @@ internal suspend fun checkAppUpdate(
     )
 }
 
-private suspend fun fetchLatestRelease(apiUrl: String): GitHubRelease? =
+internal suspend fun fetchLatestRelease(
+    apiUrl: String,
+    openConnection: (URL) -> HttpURLConnection = { url ->
+        url.openConnection() as HttpURLConnection
+    },
+): GitHubRelease? =
     withContext(Dispatchers.IO) {
-        runCatching {
-            val connection = (URL(apiUrl).openConnection() as HttpURLConnection).apply {
+        var connection: HttpURLConnection? = null
+        try {
+            connection = openConnection(URL(apiUrl)).apply {
                 requestMethod = "GET"
                 connectTimeout = 8_000
                 readTimeout = 8_000
                 setRequestProperty("Accept", "application/vnd.github+json")
                 setRequestProperty("User-Agent", PixelDoneProjectName)
             }
-            try {
-                if (connection.responseCode !in 200..299) return@runCatching null
-                val body = connection.inputStream.bufferedReader().use { it.readText() }
-                parseGitHubRelease(body)
-            } finally {
-                connection.disconnect()
-            }
-        }.getOrNull()
+            if (connection.responseCode !in 200..299) return@withContext null
+            val body = connection.inputStream.bufferedReader().use { it.readText() }
+            parseGitHubRelease(body)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection?.disconnect()
+        }
     }
 
 internal fun findReleaseApkUrl(

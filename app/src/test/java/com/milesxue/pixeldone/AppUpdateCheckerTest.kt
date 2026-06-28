@@ -1,5 +1,10 @@
 package com.milesxue.pixeldone
 
+import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.URL
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -63,19 +68,69 @@ class AppUpdateCheckerTest {
     @Test
     fun appUpdateInfo_actionUrlPrefersApkAndFallsBackToReleasePage() {
         val withApk = AppUpdateInfo(
-            version = "1.3.0",
-            releasePageUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.0",
-            apkDownloadUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/download/v1.3.0/PixelDone-1.3.0-release.apk",
+            version = "1.3.1",
+            releasePageUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.1",
+            apkDownloadUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/download/v1.3.1/PixelDone-1.3.1-release.apk",
         )
         val withoutApk = withApk.copy(apkDownloadUrl = null)
 
         assertEquals(
-            "https://github.com/Siyuan-Xue/PixelDone/releases/download/v1.3.0/PixelDone-1.3.0-release.apk",
+            "https://github.com/Siyuan-Xue/PixelDone/releases/download/v1.3.1/PixelDone-1.3.1-release.apk",
             withApk.actionUrl,
         )
         assertEquals(
-            "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.0",
+            "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.1",
             withoutApk.actionUrl,
         )
+    }
+
+    @Test
+    fun fetchLatestRelease_returnsNullWhenConnectionTimesOut() = runBlocking {
+        val release = fetchLatestRelease("https://example.test/releases/latest") { url ->
+            TimeoutConnection(url)
+        }
+
+        assertNull(release)
+    }
+
+    @Test
+    fun fetchLatestRelease_preservesCoroutineCancellation() {
+        var cancelled = false
+
+        try {
+            runBlocking {
+                fetchLatestRelease("https://example.test/releases/latest") { url ->
+                    CancellingConnection(url)
+                }
+            }
+        } catch (_: CancellationException) {
+            cancelled = true
+        }
+
+        assertTrue(cancelled)
+    }
+
+    private class TimeoutConnection(url: URL) : HttpURLConnection(url) {
+        override fun disconnect() = Unit
+
+        override fun usingProxy(): Boolean = false
+
+        override fun connect() = Unit
+
+        override fun getResponseCode(): Int {
+            throw SocketTimeoutException("timeout")
+        }
+    }
+
+    private class CancellingConnection(url: URL) : HttpURLConnection(url) {
+        override fun disconnect() = Unit
+
+        override fun usingProxy(): Boolean = false
+
+        override fun connect() = Unit
+
+        override fun getResponseCode(): Int {
+            throw CancellationException("cancelled")
+        }
     }
 }

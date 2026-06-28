@@ -262,14 +262,15 @@ private fun PixelDoneApp() {
 
     LaunchedEffect(updateUiState.status, updateUiState.info?.version) {
         when (updateUiState.status) {
-            UpdateUiStatus.Latest -> {
+            UpdateUiStatus.Latest,
+            UpdateUiStatus.Offline,
+            -> {
                 delay(UpdateStatusVisibleMillis)
                 updateUiState = AppUpdateUiState()
             }
             UpdateUiStatus.Idle,
             UpdateUiStatus.Checking,
             UpdateUiStatus.Available,
-            UpdateUiStatus.Offline,
             -> Unit
         }
     }
