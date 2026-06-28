@@ -2211,7 +2211,7 @@ private fun PrioritySlider(
                 activeTrackColor = selectedColor,
                 inactiveTrackColor = ClaudeGray300,
                 activeTickColor = ClaudeIvory,
-                inactiveTickColor = ClaudeGray600,
+                inactiveTickColor = selectedColor,
             ),
         )
         Row(
