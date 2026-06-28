@@ -759,6 +759,8 @@ private fun TaskWorkspacePanel(
             displayOrderIds = displayOrderIds,
             keepDisplayOrder = keepDisplayOrder,
             todoListScrollRequest = todoListScrollRequest,
+            showNewTaskButton = !editorExpanded && !isEditing,
+            onOpenEditor = { onEditorExpandedChange(true) },
             modifier = Modifier.weight(1f),
         )
         if (editorExpanded || isEditing) {
@@ -777,8 +779,6 @@ private fun TaskWorkspacePanel(
                 editorMaxHeight = editorMaxHeight,
                 compactForKeyboard = compactForKeyboard,
             )
-        } else {
-            NewTaskBar(onOpenEditor = { onEditorExpandedChange(true) })
         }
     }
 }
@@ -949,35 +949,6 @@ private fun TaskEditorPanel(
 }
 
 @Composable
-private fun NewTaskBar(onOpenEditor: () -> Unit) {
-    PixelPanel(
-        color = ClaudeIvoryMedium,
-        borderWidth = 1.dp,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 36.dp)
-                .clickable(onClick = onOpenEditor),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "NEW TASK",
-                style = MaterialTheme.typography.labelLarge,
-                color = ClaudeSlateLight,
-            )
-            Text(
-                text = "+",
-                style = MaterialTheme.typography.titleLarge,
-                color = ClaudeClayInteractive,
-            )
-        }
-    }
-}
-
-@Composable
 private fun TodoListPanel(
     todos: List<TodoItem>,
     sortMode: SortMode,
@@ -992,6 +963,8 @@ private fun TodoListPanel(
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
+    showNewTaskButton: Boolean,
+    onOpenEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sortedVisibleItems = visibleTodos(todos, sortMode, hideCompleted)
@@ -1057,32 +1030,46 @@ private fun TodoListPanel(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
-        if (visibleItems.isEmpty()) {
-            EmptyState(
-                text = if (todos.isEmpty()) {
-                    "Add a task to begin."
-                } else {
-                    "Done tasks are hidden."
-                },
-                modifier = Modifier.weight(1f),
-            )
-        } else {
-            val alarmNowMillis = System.currentTimeMillis()
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 4.dp),
-            ) {
-                items(visibleItems, key = { it.id }) { item ->
-                    TodoRow(
-                        item = item,
-                        onToggleTodo = onToggleTodo,
-                        onEditTodo = onEditTodo,
-                        onDeleteTodo = onDeleteTodo,
-                        nowMillis = alarmNowMillis,
-                    )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
+            if (visibleItems.isEmpty()) {
+                EmptyState(
+                    text = if (todos.isEmpty()) {
+                        "Add a task to begin."
+                    } else {
+                        "Done tasks are hidden."
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                val alarmNowMillis = System.currentTimeMillis()
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 4.dp),
+                ) {
+                    items(visibleItems, key = { it.id }) { item ->
+                        TodoRow(
+                            item = item,
+                            onToggleTodo = onToggleTodo,
+                            onEditTodo = onEditTodo,
+                            onDeleteTodo = onDeleteTodo,
+                            nowMillis = alarmNowMillis,
+                        )
+                    }
                 }
+            }
+            if (showNewTaskButton) {
+                FloatingNewTaskButton(
+                    onClick = onOpenEditor,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 8.dp),
+                )
             }
         }
     }
@@ -1494,6 +1481,38 @@ private fun PixelItemDeleteButton(
         contentAlignment = Alignment.Center,
     ) {
         PixelTrashIcon(color = PixelError)
+    }
+}
+
+@Composable
+private fun FloatingNewTaskButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+
+    Box(
+        modifier = modifier
+            .size(56.dp)
+            .background(if (pressed) ClaudeClayInteractive else ClaudeClay, RectangleShape)
+            .border(2.dp, ClaudeSlateDark, RectangleShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .semantics { contentDescription = "NEW TASK" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "+",
+            color = ClaudeSlateDark,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.sp,
+        )
     }
 }
 
