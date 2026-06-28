@@ -45,6 +45,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -88,7 +89,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.verticalScroll
 import com.milesxue.pixeldone.ui.theme.ClaudeCactus
 import com.milesxue.pixeldone.ui.theme.ClaudeClay
@@ -124,7 +124,8 @@ private val PixelReadTopBarHeight = 52.dp
 private val PixelReadTopBarContentHeight = 36.dp
 private val PixelReadFrameInset = 8.dp
 private val PixelDoneFooterHeight = 24.dp
-private val PixelMaterialDialogPadding = PaddingValues(16.dp)
+private const val InitialUpdateCheckDelayMillis = 600L
+private const val StartupUpdateRetryDelayMillis = 2_000L
 private const val UpdateStatusVisibleMillis = 3_000L
 
 private enum class UpdateUiStatus {
@@ -227,23 +228,6 @@ private fun PixelDoneApp() {
 
     LaunchedEffect(Unit) {
         TodoAlarmScheduler.sync(context, emptyList(), todos)
-    }
-
-    LaunchedEffect(Unit) {
-        when (val result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME)) {
-            is AppUpdateCheckResult.Available -> {
-                updateUiState = AppUpdateUiState(
-                    status = UpdateUiStatus.Available,
-                    info = result.info,
-                )
-                if (!neverShowUpdateDialog && !updatePromptDismissedThisSession) {
-                    updatePromptInfo = result.info
-                }
-            }
-            AppUpdateCheckResult.Current,
-            AppUpdateCheckResult.Unavailable,
-            -> Unit
-        }
     }
 
     val sortedVisibleIds = visibleTodos(todos, sortMode, hideCompleted).map { it.id }
@@ -456,6 +440,50 @@ private fun PixelDoneApp() {
         updatePromptInfo = null
     }
 
+    fun applyUpdateCheckResult(
+        result: AppUpdateCheckResult,
+        showCurrentOrOfflineStatus: Boolean,
+    ) {
+        when (result) {
+            is AppUpdateCheckResult.Available -> {
+                updateUiState = AppUpdateUiState(
+                    status = UpdateUiStatus.Available,
+                    info = result.info,
+                )
+                showUpdatePromptIfAllowed(result.info)
+            }
+            AppUpdateCheckResult.Current -> {
+                updatePromptInfo = null
+                if (showCurrentOrOfflineStatus) {
+                    updateUiState = AppUpdateUiState(status = UpdateUiStatus.Latest)
+                }
+            }
+            AppUpdateCheckResult.Unavailable -> {
+                updatePromptInfo = null
+                if (showCurrentOrOfflineStatus) {
+                    updateUiState = AppUpdateUiState(status = UpdateUiStatus.Offline)
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        delay(InitialUpdateCheckDelayMillis)
+        val firstResult = checkPixelDoneUpdate(BuildConfig.VERSION_NAME)
+        if (firstResult == AppUpdateCheckResult.Unavailable) {
+            delay(StartupUpdateRetryDelayMillis)
+            applyUpdateCheckResult(
+                result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME),
+                showCurrentOrOfflineStatus = false,
+            )
+        } else {
+            applyUpdateCheckResult(
+                result = firstResult,
+                showCurrentOrOfflineStatus = false,
+            )
+        }
+    }
+
     fun handleUpdateClick() {
         val availableInfo = updateUiState.info
         if (updateUiState.status == UpdateUiStatus.Available && availableInfo != null) {
@@ -466,23 +494,10 @@ private fun PixelDoneApp() {
 
         updateUiState = AppUpdateUiState(status = UpdateUiStatus.Checking)
         updateScope.launch {
-            when (val result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME)) {
-                is AppUpdateCheckResult.Available -> {
-                    updateUiState = AppUpdateUiState(
-                        status = UpdateUiStatus.Available,
-                        info = result.info,
-                    )
-                    showUpdatePromptIfAllowed(result.info)
-                }
-                AppUpdateCheckResult.Current -> {
-                    updatePromptInfo = null
-                    updateUiState = AppUpdateUiState(status = UpdateUiStatus.Latest)
-                }
-                AppUpdateCheckResult.Unavailable -> {
-                    updatePromptInfo = null
-                    updateUiState = AppUpdateUiState(status = UpdateUiStatus.Offline)
-                }
-            }
+            applyUpdateCheckResult(
+                result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME),
+                showCurrentOrOfflineStatus = true,
+            )
         }
     }
 
@@ -1324,9 +1339,46 @@ private fun UpdateConfirmationDialog(
 
     var dontShowAgain by remember(info.version) { mutableStateOf(false) }
 
-    PixelMaterialDialog(
+    AlertDialog(
         onDismissRequest = { onDismiss(dontShowAgain) },
-        title = "Update available",
+        title = {
+            Text(
+                text = "Update available",
+                style = MaterialTheme.typography.titleMedium,
+                color = ClaudeSlateDark,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "PixelDone ${info.version} is available.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ClaudeSlateLight,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { dontShowAgain = !dontShowAgain },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Checkbox(
+                        checked = dontShowAgain,
+                        onCheckedChange = { dontShowAgain = it },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = ClaudeClay,
+                            uncheckedColor = ClaudeGray600,
+                            checkmarkColor = ClaudeIvory,
+                        ),
+                    )
+                    Text(
+                        text = "Don't show again",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = ClaudeSlateDark,
+                    )
+                }
+            }
+        },
         confirmButton = {
             PixelButton(
                 text = "UPDATE",
@@ -1341,35 +1393,10 @@ private fun UpdateConfirmationDialog(
                 primary = false,
             )
         },
-    ) {
-        Text(
-            text = "PixelDone ${info.version} is available.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = ClaudeSlateLight,
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { dontShowAgain = !dontShowAgain },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Checkbox(
-                checked = dontShowAgain,
-                onCheckedChange = { dontShowAgain = it },
-                colors = CheckboxDefaults.colors(
-                    checkedColor = ClaudeClay,
-                    uncheckedColor = ClaudeGray600,
-                    checkmarkColor = ClaudeIvory,
-                ),
-            )
-            Text(
-                text = "Don't show again",
-                style = MaterialTheme.typography.bodyMedium,
-                color = ClaudeSlateDark,
-            )
-        }
-    }
+        shape = RectangleShape,
+        containerColor = ClaudeGray100,
+        tonalElevation = 0.dp,
+    )
 }
 
 @Composable
@@ -1390,9 +1417,22 @@ private fun DeleteConfirmationDialog(
         is DeleteConfirmation.CompletedTodos -> "This will remove ${confirmation.count} completed task(s)."
     }
 
-    PixelMaterialDialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        title = titleText,
+        title = {
+            Text(
+                text = titleText,
+                style = MaterialTheme.typography.titleMedium,
+                color = ClaudeSlateDark,
+            )
+        },
+        text = {
+            Text(
+                text = bodyText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = ClaudeSlateLight,
+            )
+        },
         confirmButton = {
             PixelButton(
                 text = "DELETE",
@@ -1410,57 +1450,10 @@ private fun DeleteConfirmationDialog(
                 primary = false,
             )
         },
-    ) {
-        Text(
-            text = bodyText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = ClaudeSlateLight,
-        )
-    }
-}
-
-@Composable
-private fun PixelMaterialDialog(
-    onDismissRequest: () -> Unit,
-    title: String,
-    confirmButton: @Composable () -> Unit,
-    dismissButton: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PixelMaterialDialogPadding,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Dialog(onDismissRequest = onDismissRequest) {
-        Surface(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 32.dp),
-            color = ClaudeGray100,
-            shape = RectangleShape,
-            border = BorderStroke(1.dp, ClaudeGray600),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-        ) {
-            Column(
-                modifier = Modifier.padding(contentPadding),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = ClaudeSlateDark,
-                )
-                content()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    dismissButton()
-                    confirmButton()
-                }
-            }
-        }
-    }
+        shape = RectangleShape,
+        containerColor = ClaudeGray100,
+        tonalElevation = 0.dp,
+    )
 }
 
 @Composable
