@@ -22,6 +22,9 @@ class TodoAlarmReceiver : BroadcastReceiver() {
             ?.lowercase()
             ?: "task"
         val dueAtMillis = intent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, 0L)
+        val reminderRepeat = intent.getStringExtra(TodoAlarmScheduler.EXTRA_TODO_REPEAT)
+            ?.let { name -> ReminderRepeat.entries.firstOrNull { it.name == name } }
+            ?: ReminderRepeat.NONE
         val todoId = intent.getStringExtra(TodoAlarmScheduler.EXTRA_TODO_ID) ?: title
 
         val notificationManager = context.getSystemService(NotificationManager::class.java)
@@ -45,7 +48,7 @@ class TodoAlarmReceiver : BroadcastReceiver() {
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
-            .setContentText("${priority.uppercase()}  ${dueAtMillis.formatAlarmTime()}")
+            .setContentText("${priority.uppercase()}  ${dueAtMillis.formatAlarmTime()}${reminderRepeat.notificationSuffix()}")
             .setContentIntent(openAppIntent)
             .setAutoCancel(true)
             .setShowWhen(true)
@@ -53,6 +56,7 @@ class TodoAlarmReceiver : BroadcastReceiver() {
             .build()
 
         notificationManager.notify(todoId.hashCode(), notification)
+        rescheduleRepeatingTodo(context, todoId, dueAtMillis)
     }
 
     private fun canPostNotifications(context: Context): Boolean {
@@ -69,6 +73,31 @@ class TodoAlarmReceiver : BroadcastReceiver() {
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
         } else {
             "Now"
+        }
+    }
+
+    private fun ReminderRepeat.notificationSuffix(): String {
+        return when (this) {
+            ReminderRepeat.NONE -> ""
+            ReminderRepeat.DAILY -> "  DAILY"
+            ReminderRepeat.WEEKLY -> "  WEEKLY"
+        }
+    }
+
+    private fun rescheduleRepeatingTodo(
+        context: Context,
+        todoId: String,
+        triggerAtMillis: Long,
+    ) {
+        val item = allTodos(TodoPreferences.create(context).loadTodoState())
+            .firstOrNull { it.id == todoId }
+
+        if (item != null && !item.completed && item.reminderRepeat != ReminderRepeat.NONE) {
+            TodoAlarmScheduler.schedule(
+                context = context,
+                item = item,
+                nowMillis = maxOf(System.currentTimeMillis(), triggerAtMillis),
+            )
         }
     }
 

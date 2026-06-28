@@ -18,6 +18,7 @@ Developer identity: CODEX & XUE.
 - Hide completed todos.
 - Delete all completed todos from the top list controls.
 - Schedule a local alarm notification for each active future todo.
+- Set reminder repeat per todo: none, daily, or weekly.
 - Use restrained haptic feedback for core task and list-state actions.
 - Check GitHub Releases automatically on app start and show a quiet update dot when a release is available.
 - Prompt for an optional update when a newer formal release is detected at app start.
@@ -40,24 +41,23 @@ From the project root:
 
 ```powershell
 .\gradlew.bat testDebugUnitTest
-.\gradlew.bat assembleRelease
+.\gradlew.bat assembleDebug
 ```
 
-Release signing is configured through the local, untracked `signing/release-signing.properties` file.
+Release signing is configured through the local, untracked `signing/release-signing.properties` file for formal releases.
 
-The signed private release APK is copied to:
+The current debug test APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.0.2-release.apk
+app/build/outputs/apk/debug/PixelDone-2.1.0-debug.apk
 ```
 
 ## Install
 
-If the old prototype package is still installed, uninstall it before installing:
+The debug build installs beside the formal app as:
 
 ```powershell
-adb uninstall com.codexue.pixeldone
-adb install -r app/build/outputs/apk/release/PixelDone-2.0.2-release.apk
+adb install -r -d app/build/outputs/apk/debug/PixelDone-2.1.0-debug.apk
 ```
 
 The formal package name is:
@@ -66,6 +66,12 @@ The formal package name is:
 com.milesxue.pixeldone
 ```
 
+The debug package name is:
+
+```text
+com.milesxue.pixeldone.debug
+```
+
 ## Status
 
-Private 2.0.2 release.
+2.1.0 debug candidate. Latest formal private release: 2.0.2.

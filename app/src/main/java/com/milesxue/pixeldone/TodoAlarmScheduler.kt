@@ -10,6 +10,7 @@ object TodoAlarmScheduler {
     const val EXTRA_TODO_TITLE = "com.milesxue.pixeldone.extra.TODO_TITLE"
     const val EXTRA_TODO_PRIORITY = "com.milesxue.pixeldone.extra.TODO_PRIORITY"
     const val EXTRA_TODO_DUE_AT = "com.milesxue.pixeldone.extra.TODO_DUE_AT"
+    const val EXTRA_TODO_REPEAT = "com.milesxue.pixeldone.extra.TODO_REPEAT"
 
     fun sync(context: Context, previousItems: List<TodoItem>, currentItems: List<TodoItem>) {
         val currentIds = currentItems.map { it.id }.toSet()
@@ -27,20 +28,29 @@ object TodoAlarmScheduler {
         }
     }
 
-    fun schedule(context: Context, item: TodoItem) {
+    fun schedule(
+        context: Context,
+        item: TodoItem,
+        nowMillis: Long = System.currentTimeMillis(),
+    ) {
+        val triggerAtMillis = nextReminderAtMillis(item, nowMillis) ?: run {
+            cancel(context, item.id)
+            return
+        }
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         val alarmIntent = pendingIntent(
             context = context,
             itemId = item.id,
             title = item.title,
             priority = item.priority,
-            dueAtMillis = item.dueAtMillis,
+            dueAtMillis = triggerAtMillis,
+            reminderRepeat = item.reminderRepeat,
             flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         ) ?: return
 
         alarmManager.setAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP,
-            item.dueAtMillis,
+            triggerAtMillis,
             alarmIntent,
         )
     }
@@ -52,6 +62,7 @@ object TodoAlarmScheduler {
             title = "",
             priority = TodoPriority.MEDIUM,
             dueAtMillis = 0L,
+            reminderRepeat = ReminderRepeat.NONE,
             flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
         ) ?: return
 
@@ -65,6 +76,7 @@ object TodoAlarmScheduler {
         title: String,
         priority: TodoPriority,
         dueAtMillis: Long,
+        reminderRepeat: ReminderRepeat,
         flags: Int,
     ): PendingIntent? {
         val intent = Intent(context, TodoAlarmReceiver::class.java).apply {
@@ -72,6 +84,7 @@ object TodoAlarmScheduler {
             putExtra(EXTRA_TODO_TITLE, title)
             putExtra(EXTRA_TODO_PRIORITY, priority.name)
             putExtra(EXTRA_TODO_DUE_AT, dueAtMillis)
+            putExtra(EXTRA_TODO_REPEAT, reminderRepeat.name)
         }
         return PendingIntent.getBroadcast(context, itemId.hashCode(), intent, flags)
     }

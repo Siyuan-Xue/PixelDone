@@ -31,6 +31,7 @@ class TodoEngineTest {
 
         assertEquals("Ship build", item?.title)
         assertFalse(item?.completed ?: true)
+        assertEquals(ReminderRepeat.NONE, item?.reminderRepeat)
     }
 
     @Test
@@ -124,12 +125,14 @@ class TodoEngineTest {
             titleInput = "  Updated task  ",
             priority = TodoPriority.HIGH,
             dueAtMillis = 99L,
+            reminderRepeat = ReminderRepeat.WEEKLY,
         )
 
         val changed = updated?.first { it.id == "one" }
         assertEquals("Updated task", changed?.title)
         assertEquals(TodoPriority.HIGH, changed?.priority)
         assertEquals(99L, changed?.dueAtMillis)
+        assertEquals(ReminderRepeat.WEEKLY, changed?.reminderRepeat)
         assertEquals(10L, changed?.createdAtMillis)
         assertTrue(changed?.completed ?: false)
         assertEquals(items.first { it.id == "two" }, updated?.first { it.id == "two" })
@@ -201,6 +204,52 @@ class TodoEngineTest {
                 nowMillis = 1_000L,
             ),
         )
+        assertTrue(
+            shouldScheduleTodoAlarm(
+                item(
+                    id = "past-daily",
+                    priority = TodoPriority.MEDIUM,
+                    due = 1_000L,
+                    repeat = ReminderRepeat.DAILY,
+                ),
+                nowMillis = 2_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun nextReminderAtMillisSupportsOneShotDailyAndWeeklyRules() {
+        assertEquals(
+            2_000L,
+            nextReminderAtMillis(
+                dueAtMillis = 2_000L,
+                reminderRepeat = ReminderRepeat.NONE,
+                nowMillis = 1_000L,
+            ),
+        )
+        assertNull(
+            nextReminderAtMillis(
+                dueAtMillis = 1_000L,
+                reminderRepeat = ReminderRepeat.NONE,
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            1_000L + DailyReminderIntervalMillis,
+            nextReminderAtMillis(
+                dueAtMillis = 1_000L,
+                reminderRepeat = ReminderRepeat.DAILY,
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            1_000L + WeeklyReminderIntervalMillis,
+            nextReminderAtMillis(
+                dueAtMillis = 1_000L,
+                reminderRepeat = ReminderRepeat.WEEKLY,
+                nowMillis = 1_000L + DailyReminderIntervalMillis,
+            ),
+        )
     }
 
     @Test
@@ -208,11 +257,12 @@ class TodoEngineTest {
         val items = listOf(
             item(
                 id = "quoted",
-                priority = TodoPriority.HIGH,
+                priority = TodoPriority.XHIGH,
                 due = 1_700_000_000_000L,
                 completed = false,
                 created = 1L,
                 title = "Review \"PixelDone\"\\notes\nnow",
+                repeat = ReminderRepeat.DAILY,
             ),
             item(
                 id = "done",
@@ -227,6 +277,26 @@ class TodoEngineTest {
         val decoded = TodoJsonCodec.decode(TodoJsonCodec.encode(items))
 
         assertEquals(items, decoded)
+    }
+
+    @Test
+    fun jsonCodecDefaultsMissingReminderRepeatToNone() {
+        val decoded = TodoJsonCodec.decode(
+            """
+            [
+              {
+                "id": "legacy",
+                "title": "Legacy task",
+                "priority": "HIGH",
+                "dueAtMillis": 1700000000000,
+                "completed": false,
+                "createdAtMillis": 1
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        assertEquals(ReminderRepeat.NONE, decoded.single().reminderRepeat)
     }
 
     @Test
@@ -363,6 +433,7 @@ class TodoEngineTest {
         completed: Boolean = false,
         created: Long = due,
         title: String = id,
+        repeat: ReminderRepeat = ReminderRepeat.NONE,
     ): TodoItem {
         return TodoItem(
             id = id,
@@ -371,6 +442,7 @@ class TodoEngineTest {
             dueAtMillis = due,
             completed = completed,
             createdAtMillis = created,
+            reminderRepeat = repeat,
         )
     }
 }

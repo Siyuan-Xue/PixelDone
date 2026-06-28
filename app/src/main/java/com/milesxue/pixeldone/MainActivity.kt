@@ -223,6 +223,7 @@ private fun PixelDoneApp() {
     var checklistState by remember { mutableStateOf(storage.loadTodoState()) }
     var titleInput by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TodoPriority.MEDIUM) }
+    var selectedReminderRepeat by remember { mutableStateOf(ReminderRepeat.NONE) }
     var dueAtMillis by remember { mutableStateOf(0L) }
     var checklistNameInput by remember { mutableStateOf("") }
     var checklistEditorError by remember { mutableStateOf<String?>(null) }
@@ -346,6 +347,7 @@ private fun PixelDoneApp() {
     fun clearEditor() {
         titleInput = ""
         selectedPriority = TodoPriority.MEDIUM
+        selectedReminderRepeat = ReminderRepeat.NONE
         checklistNameInput = ""
         checklistEditorError = null
     }
@@ -412,6 +414,7 @@ private fun PixelDoneApp() {
                 priority = selectedPriority,
                 dueAtMillis = dueAtMillis,
                 createdAtMillis = System.currentTimeMillis(),
+                reminderRepeat = selectedReminderRepeat,
             )
 
             if (item == null) {
@@ -425,6 +428,7 @@ private fun PixelDoneApp() {
                 titleInput = titleInput,
                 priority = selectedPriority,
                 dueAtMillis = dueAtMillis,
+                reminderRepeat = selectedReminderRepeat,
             ) ?: run {
                 return false
             }
@@ -444,6 +448,7 @@ private fun PixelDoneApp() {
         editorMode = EditorMode.EditTask(item.id)
         titleInput = item.title
         selectedPriority = item.priority
+        selectedReminderRepeat = item.reminderRepeat
         dueAtMillis = item.dueAtMillis
     }
 
@@ -643,6 +648,8 @@ private fun PixelDoneApp() {
         onTitleInputChange = { titleInput = it },
         selectedPriority = selectedPriority,
         onPriorityChange = { selectedPriority = it },
+        selectedReminderRepeat = selectedReminderRepeat,
+        onReminderRepeatChange = { selectedReminderRepeat = it },
         dueAtMillis = dueAtMillis,
         onPickDate = ::showDatePicker,
         onPickTime = ::showTimePicker,
@@ -745,6 +752,8 @@ private fun PixelDoneScreen(
     onTitleInputChange: (String) -> Unit,
     selectedPriority: TodoPriority,
     onPriorityChange: (TodoPriority) -> Unit,
+    selectedReminderRepeat: ReminderRepeat,
+    onReminderRepeatChange: (ReminderRepeat) -> Unit,
     dueAtMillis: Long,
     onPickDate: () -> Unit,
     onPickTime: () -> Unit,
@@ -830,6 +839,8 @@ private fun PixelDoneScreen(
                 onTitleInputChange = onTitleInputChange,
                 selectedPriority = selectedPriority,
                 onPriorityChange = onPriorityChange,
+                selectedReminderRepeat = selectedReminderRepeat,
+                onReminderRepeatChange = onReminderRepeatChange,
                 dueAtMillis = dueAtMillis,
                 onPickDate = onPickDate,
                 onPickTime = onPickTime,
@@ -993,6 +1004,8 @@ private fun TaskWorkspacePanel(
     onTitleInputChange: (String) -> Unit,
     selectedPriority: TodoPriority,
     onPriorityChange: (TodoPriority) -> Unit,
+    selectedReminderRepeat: ReminderRepeat,
+    onReminderRepeatChange: (ReminderRepeat) -> Unit,
     dueAtMillis: Long,
     onPickDate: () -> Unit,
     onPickTime: () -> Unit,
@@ -1039,6 +1052,8 @@ private fun TaskWorkspacePanel(
                 onTitleInputChange = onTitleInputChange,
                 selectedPriority = selectedPriority,
                 onPriorityChange = onPriorityChange,
+                selectedReminderRepeat = selectedReminderRepeat,
+                onReminderRepeatChange = onReminderRepeatChange,
                 dueAtMillis = dueAtMillis,
                 onPickDate = onPickDate,
                 onPickTime = onPickTime,
@@ -1072,6 +1087,8 @@ private fun TaskEditorPanel(
     onTitleInputChange: (String) -> Unit,
     selectedPriority: TodoPriority,
     onPriorityChange: (TodoPriority) -> Unit,
+    selectedReminderRepeat: ReminderRepeat,
+    onReminderRepeatChange: (ReminderRepeat) -> Unit,
     dueAtMillis: Long,
     onPickDate: () -> Unit,
     onPickTime: () -> Unit,
@@ -1198,6 +1215,19 @@ private fun TaskEditorPanel(
                     primary = false,
                 )
             }
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "REPEAT",
+                style = MaterialTheme.typography.labelMedium,
+                color = ClaudeSlateLight,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            PixelSegmentedControl(
+                options = ReminderRepeat.entries,
+                selected = selectedReminderRepeat,
+                label = { it.uiLabel() },
+                onSelected = onReminderRepeatChange,
+            )
             Spacer(modifier = Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PixelButton(
@@ -1536,6 +1566,11 @@ private fun TodoRow(
     } else {
         ""
     }
+    val repeatText = if (item.reminderRepeat != ReminderRepeat.NONE) {
+        "  ${item.reminderRepeat.uiLabel()}"
+    } else {
+        ""
+    }
 
     Row(
         modifier = Modifier
@@ -1578,7 +1613,7 @@ private fun TodoRow(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "${item.priority.uiLabel()}  ${item.dueAtMillis.formatDateTime()}$alarmText",
+                text = "${item.priority.uiLabel()}  ${item.dueAtMillis.formatDateTime()}$repeatText$alarmText",
                 style = MaterialTheme.typography.labelSmall,
                 color = ClaudeSlateLight,
                 maxLines = 1,
@@ -2258,6 +2293,14 @@ private fun TodoPriority.priorityColor(): Color {
     }
 }
 
+private fun ReminderRepeat.uiLabel(): String {
+    return when (this) {
+        ReminderRepeat.NONE -> "NONE"
+        ReminderRepeat.DAILY -> "DAILY"
+        ReminderRepeat.WEEKLY -> "WEEKLY"
+    }
+}
+
 private fun SortMode.uiLabel(): String {
     return when (this) {
         SortMode.PRIORITY -> "Priority"
@@ -2319,6 +2362,8 @@ private fun PhonePreview() {
             onTitleInputChange = {},
             selectedPriority = TodoPriority.MEDIUM,
             onPriorityChange = {},
+            selectedReminderRepeat = ReminderRepeat.NONE,
+            onReminderRepeatChange = {},
             dueAtMillis = defaultDueAtMillis(),
             onPickDate = {},
             onPickTime = {},
@@ -2373,6 +2418,8 @@ private fun TabletPreview() {
             onTitleInputChange = {},
             selectedPriority = TodoPriority.HIGH,
             onPriorityChange = {},
+            selectedReminderRepeat = ReminderRepeat.WEEKLY,
+            onReminderRepeatChange = {},
             dueAtMillis = defaultDueAtMillis(),
             onPickDate = {},
             onPickTime = {},

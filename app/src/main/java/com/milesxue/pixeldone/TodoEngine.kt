@@ -7,6 +7,7 @@ data class TodoItem(
     val dueAtMillis: Long,
     val completed: Boolean,
     val createdAtMillis: Long,
+    val reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
 )
 
 data class TodoChecklist(
@@ -28,10 +29,19 @@ enum class TodoPriority {
     LOW,
 }
 
+enum class ReminderRepeat {
+    NONE,
+    DAILY,
+    WEEKLY,
+}
+
 enum class SortMode {
     PRIORITY,
     TIME,
 }
+
+internal const val DailyReminderIntervalMillis = 24L * 60L * 60L * 1000L
+internal const val WeeklyReminderIntervalMillis = 7L * DailyReminderIntervalMillis
 
 const val DefaultChecklistId = "main"
 const val DefaultChecklistName = "MAIN"
@@ -199,6 +209,7 @@ fun createTodoItem(
     priority: TodoPriority,
     dueAtMillis: Long,
     createdAtMillis: Long,
+    reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
 ): TodoItem? {
     val title = titleInput.trim()
     if (title.isEmpty()) return null
@@ -210,6 +221,7 @@ fun createTodoItem(
         dueAtMillis = dueAtMillis,
         completed = false,
         createdAtMillis = createdAtMillis,
+        reminderRepeat = reminderRepeat,
     )
 }
 
@@ -243,6 +255,7 @@ fun updateTodoItem(
     titleInput: String,
     priority: TodoPriority,
     dueAtMillis: Long,
+    reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
 ): List<TodoItem>? {
     val title = titleInput.trim()
     if (title.isEmpty()) return null
@@ -255,6 +268,7 @@ fun updateTodoItem(
                 title = title,
                 priority = priority,
                 dueAtMillis = dueAtMillis,
+                reminderRepeat = reminderRepeat,
             )
         } else {
             item
@@ -273,7 +287,51 @@ fun deleteCompletedTodos(items: List<TodoItem>): List<TodoItem> {
 }
 
 fun shouldScheduleTodoAlarm(item: TodoItem, nowMillis: Long): Boolean {
-    return !item.completed && item.dueAtMillis > nowMillis
+    return nextReminderAtMillis(item, nowMillis) != null
+}
+
+fun nextReminderAtMillis(item: TodoItem, nowMillis: Long): Long? {
+    if (item.completed) return null
+    return nextReminderAtMillis(
+        dueAtMillis = item.dueAtMillis,
+        reminderRepeat = item.reminderRepeat,
+        nowMillis = nowMillis,
+    )
+}
+
+fun nextReminderAtMillis(
+    dueAtMillis: Long,
+    reminderRepeat: ReminderRepeat,
+    nowMillis: Long,
+): Long? {
+    if (dueAtMillis <= 0L) return null
+
+    return when (reminderRepeat) {
+        ReminderRepeat.NONE -> dueAtMillis.takeIf { it > nowMillis }
+        ReminderRepeat.DAILY -> nextRepeatingReminderAtMillis(
+            dueAtMillis = dueAtMillis,
+            intervalMillis = DailyReminderIntervalMillis,
+            nowMillis = nowMillis,
+        )
+        ReminderRepeat.WEEKLY -> nextRepeatingReminderAtMillis(
+            dueAtMillis = dueAtMillis,
+            intervalMillis = WeeklyReminderIntervalMillis,
+            nowMillis = nowMillis,
+        )
+    }
+}
+
+private fun nextRepeatingReminderAtMillis(
+    dueAtMillis: Long,
+    intervalMillis: Long,
+    nowMillis: Long,
+): Long? {
+    if (dueAtMillis > nowMillis) return dueAtMillis
+
+    val elapsedMillis = nowMillis - dueAtMillis
+    val elapsedIntervals = elapsedMillis / intervalMillis
+    val nextAtMillis = dueAtMillis + ((elapsedIntervals + 1L) * intervalMillis)
+    return nextAtMillis.takeIf { it > nowMillis }
 }
 
 private fun todoComparator(sortMode: SortMode): Comparator<TodoItem> {

@@ -75,6 +75,7 @@ object TodoJsonCodec {
             append("\"title\":\"").append(escape(item.title)).append("\",")
             append("\"priority\":\"").append(item.priority.name).append("\",")
             append("\"dueAtMillis\":").append(item.dueAtMillis).append(",")
+            append("\"reminderRepeat\":\"").append(item.reminderRepeat.name).append("\",")
             append("\"completed\":").append(item.completed).append(",")
             append("\"createdAtMillis\":").append(item.createdAtMillis)
             append("}")
@@ -87,6 +88,10 @@ object TodoJsonCodec {
         val priorityName = values["priority"] as? String ?: return null
         val priority = TodoPriority.entries.firstOrNull { it.name == priorityName } ?: return null
         val dueAtMillis = values["dueAtMillis"] as? Long ?: return null
+        val repeatName = values["reminderRepeat"] as? String
+        val reminderRepeat = repeatName
+            ?.let { name -> ReminderRepeat.entries.firstOrNull { it.name == name } }
+            ?: ReminderRepeat.NONE
         val completed = values["completed"] as? Boolean ?: return null
         val createdAtMillis = values["createdAtMillis"] as? Long ?: return null
 
@@ -97,6 +102,7 @@ object TodoJsonCodec {
             dueAtMillis = dueAtMillis,
             completed = completed,
             createdAtMillis = createdAtMillis,
+            reminderRepeat = reminderRepeat,
         )
     }
 

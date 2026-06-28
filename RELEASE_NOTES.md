@@ -1,13 +1,13 @@
-PixelDone v2.0.2 refines task priority selection and priority colors.
+PixelDone v2.1.0 debug adds repeat reminders for local todo alarms.
 
 Highlights:
-- Replaces the priority button group with a compact four-step slider.
-- Adds the new `XHIGH` priority above `HIGH`; new tasks still default to `MID`.
-- Refreshes task priority colors so higher urgency reads stronger without using the old pink high-priority bar.
-- Keeps existing saved todos compatible because priorities are stored by name.
+- Adds per-task repeat options: `NONE`, `DAILY`, and `WEEKLY`.
+- Keeps new tasks defaulting to no repeat reminders.
+- Stores repeat settings in local todo JSON while decoding older saved todos as `NONE`.
+- Re-schedules daily and weekly alarms after each notification when the todo is still active.
 
-Install note: if you still have the old `com.codexue.pixeldone` prototype build, uninstall it before installing this private release.
+Debug install note: install `PixelDone-2.1.0-debug.apk`; it uses the debug package name and can sit beside the formal app.
 
-The attached `PixelDone-2.0.2-release.apk` asset is the signed private release APK for direct installation and app-internal updates.
+This is a local debug validation build, not a formal GitHub release asset.
 
 CODEX & XUE
