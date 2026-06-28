@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -73,6 +74,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -188,13 +190,27 @@ private sealed interface EditorMode {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        applyPixelDoneSystemBars()
         setContent {
             PixelDoneTheme {
                 PixelDoneApp()
             }
         }
     }
+}
+
+fun ComponentActivity.applyPixelDoneSystemBars() {
+    val backgroundScrim = ClaudeIvory.toArgb()
+    enableEdgeToEdge(
+        statusBarStyle = SystemBarStyle.light(
+            scrim = android.graphics.Color.TRANSPARENT,
+            darkScrim = android.graphics.Color.TRANSPARENT,
+        ),
+        navigationBarStyle = SystemBarStyle.light(
+            scrim = backgroundScrim,
+            darkScrim = backgroundScrim,
+        ),
+    )
 }
 
 @Composable

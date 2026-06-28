@@ -22,6 +22,7 @@ Developer identity: CODEX & XUE.
 - Prompt for an optional update when a newer formal release is detected at app start.
 - Let users permanently hide automatic update dialogs while keeping the update-dot signal.
 - Persist checklists and todos locally on the device with SharedPreferences JSON.
+- Keep dark system bar icons explicit against the light PixelDone surface.
 
 ## Tech Stack
 
@@ -46,7 +47,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The signed private release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.0.0-release.apk
+app/build/outputs/apk/release/PixelDone-2.0.1-release.apk
 ```
 
 ## Install
@@ -55,7 +56,7 @@ If the old prototype package is still installed, uninstall it before installing:
 
 ```powershell
 adb uninstall com.codexue.pixeldone
-adb install -r app/build/outputs/apk/release/PixelDone-2.0.0-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.0.1-release.apk
 ```
 
 The formal package name is:
@@ -66,4 +67,4 @@ com.milesxue.pixeldone
 
 ## Status
 
-Private 2.0.0 release.
+Private 2.0.1 release.
