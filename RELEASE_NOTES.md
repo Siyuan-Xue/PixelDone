@@ -1,11 +1,17 @@
-PixelDone v1.1.1 refines the manual update status behavior beside the product identity.
+PixelDone v1.2.0 adds restrained haptic feedback for core task and list-state actions.
 
 Highlights:
-- Keeps the small update icon beside `PIXELDONE` / `CODEX & XUE`.
-- Clears `LATEST` after 3 seconds and returns to the icon-only state.
-- Clears available-update status after 3 seconds and returns to the icon-only state.
-- Keeps task creation, sorting, completion, hiding, clearing, and alarm behavior unchanged.
+- Adds a subtle confirmation when adding or saving a valid task.
+- Adds a rejection haptic when submitting an empty task title.
+- Uses a stronger confirmation when marking an active task done.
+- Leaves the done-to-active undo action silent.
+- Adds restrained haptic feedback to sorting and hide/show done controls.
+- Confirms final delete actions with one haptic feedback.
+- Keeps editing, date/time picking, and update checking silent.
+- Adds no new permissions, dependencies, or settings.
 
 Install note: if you still have the old `com.codexue.pixeldone` prototype build, uninstall it before installing this private release.
+
+The attached `PixelDone-1.2.0-release.apk` asset is the signed private release APK for direct installation and app-internal updates.
 
 CODEX & XUE

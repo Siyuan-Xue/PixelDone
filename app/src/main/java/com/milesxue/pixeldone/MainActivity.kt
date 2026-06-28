@@ -71,9 +71,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -730,6 +732,7 @@ private fun TaskEditorPanel(
     compactForKeyboard: Boolean,
 ) {
     val focusManager = LocalFocusManager.current
+    val hapticFeedback = LocalHapticFeedback.current
     val titleFocusRequester = remember { FocusRequester() }
     val scrollState = rememberScrollState()
 
@@ -852,7 +855,10 @@ private fun TaskEditorPanel(
                     text = if (isEditing) "SAVE" else "ADD",
                     onClick = {
                         if (onSubmitTodo()) {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                             focusManager.clearFocus()
+                        } else {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.Reject)
                         }
                     },
                     modifier = Modifier.weight(1f),
@@ -932,6 +938,7 @@ private fun TodoListPanel(
     }
     val visibleItemIds = visibleItems.map { it.id }
     val listState = rememberLazyListState()
+    val hapticFeedback = LocalHapticFeedback.current
 
     LaunchedEffect(todoListScrollRequest.sequence, visibleItemIds, keepDisplayOrder) {
         when (val intent = todoListScrollRequest.intent) {
@@ -959,6 +966,7 @@ private fun TodoListPanel(
             PixelButton(
                 text = if (sortMode == SortMode.PRIORITY) "PRI" else "TIME",
                 onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
                     onSortModeChange(
                         if (sortMode == SortMode.PRIORITY) SortMode.TIME else SortMode.PRIORITY,
                     )
@@ -968,7 +976,10 @@ private fun TodoListPanel(
             )
             PixelButton(
                 text = if (hideCompleted) "UNHIDE" else "HIDE",
-                onClick = { onHideCompletedChange(!hideCompleted) },
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    onHideCompletedChange(!hideCompleted)
+                },
                 modifier = Modifier.weight(1f),
                 selected = hideCompleted,
             )
@@ -1031,6 +1042,7 @@ private fun TodoRow(
     onDeleteTodo: (String) -> Unit,
     nowMillis: Long,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
     val itemBackground = if (item.completed) ClaudeCactus.copy(alpha = 0.35f) else ClaudeIvory
     val alarmText = if (shouldScheduleTodoAlarm(item, nowMillis)) {
         "  ALARM"
@@ -1056,7 +1068,12 @@ private fun TodoRow(
         )
         Checkbox(
             checked = item.completed,
-            onCheckedChange = { onToggleTodo(item.id) },
+            onCheckedChange = { checked ->
+                if (checked) {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                }
+                onToggleTodo(item.id)
+            },
             colors = CheckboxDefaults.colors(
                 checkedColor = ClaudeMineral,
                 uncheckedColor = ClaudeGray600,
@@ -1243,6 +1260,7 @@ private fun DeleteConfirmationDialog(
 ) {
     if (confirmation == null) return
 
+    val hapticFeedback = LocalHapticFeedback.current
     val titleText = when (confirmation) {
         is DeleteConfirmation.SingleTodo -> "Delete task?"
         is DeleteConfirmation.CompletedTodos -> "Delete done tasks?"
@@ -1271,7 +1289,10 @@ private fun DeleteConfirmationDialog(
         confirmButton = {
             PixelButton(
                 text = "DELETE",
-                onClick = onConfirm,
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onConfirm()
+                },
                 destructive = true,
             )
         },
