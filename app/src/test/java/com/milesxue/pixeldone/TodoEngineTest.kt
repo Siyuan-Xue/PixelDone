@@ -40,6 +40,7 @@ class TodoEngineTest {
             item("low", TodoPriority.LOW, due = 10L, created = 2L),
             item("high-late", TodoPriority.HIGH, due = 30L, created = 3L),
             item("high-early", TodoPriority.HIGH, due = 20L, created = 4L),
+            item("xhigh", TodoPriority.XHIGH, due = 40L, created = 6L),
             item("mid", TodoPriority.MEDIUM, due = 5L, created = 5L),
         )
 
@@ -47,9 +48,22 @@ class TodoEngineTest {
             .map { it.id }
 
         assertEquals(
-            listOf("high-early", "high-late", "mid", "low", "done-high"),
+            listOf("xhigh", "high-early", "high-late", "mid", "low", "done-high"),
             sortedIds,
         )
+    }
+
+    @Test
+    fun xhighPrioritySortsAboveHigh() {
+        val items = listOf(
+            item("high", TodoPriority.HIGH, due = 1L),
+            item("xhigh", TodoPriority.XHIGH, due = 99L),
+        )
+
+        val sortedIds = visibleTodos(items, SortMode.PRIORITY, hideCompleted = false)
+            .map { it.id }
+
+        assertEquals(listOf("xhigh", "high"), sortedIds)
     }
 
     @Test

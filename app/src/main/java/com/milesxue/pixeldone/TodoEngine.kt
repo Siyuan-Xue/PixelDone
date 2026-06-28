@@ -22,6 +22,7 @@ data class TodoChecklistState(
 )
 
 enum class TodoPriority {
+    XHIGH,
     HIGH,
     MEDIUM,
     LOW,
@@ -290,8 +291,9 @@ private fun todoComparator(sortMode: SortMode): Comparator<TodoItem> {
 
 private fun priorityRank(priority: TodoPriority): Int {
     return when (priority) {
-        TodoPriority.HIGH -> 0
-        TodoPriority.MEDIUM -> 1
-        TodoPriority.LOW -> 2
+        TodoPriority.XHIGH -> 0
+        TodoPriority.HIGH -> 1
+        TodoPriority.MEDIUM -> 2
+        TodoPriority.LOW -> 3
     }
 }

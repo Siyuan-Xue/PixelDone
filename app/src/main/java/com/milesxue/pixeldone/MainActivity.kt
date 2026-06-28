@@ -56,6 +56,8 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
@@ -98,7 +100,6 @@ import com.milesxue.pixeldone.ui.theme.ClaudeCactus
 import com.milesxue.pixeldone.ui.theme.ClaudeClay
 import com.milesxue.pixeldone.ui.theme.ClaudeClayInteractive
 import com.milesxue.pixeldone.ui.theme.ClaudeCoral
-import com.milesxue.pixeldone.ui.theme.ClaudeFig
 import com.milesxue.pixeldone.ui.theme.ClaudeGray100
 import com.milesxue.pixeldone.ui.theme.ClaudeGray200
 import com.milesxue.pixeldone.ui.theme.ClaudeGray300
@@ -118,6 +119,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -1171,10 +1173,8 @@ private fun TaskEditorPanel(
                 color = ClaudeSlateLight,
             )
             Spacer(modifier = Modifier.height(6.dp))
-            PixelSegmentedControl(
-                options = TodoPriority.entries,
+            PrioritySlider(
                 selected = selectedPriority,
-                label = { it.uiLabel() },
                 onSelected = onPriorityChange,
             )
             Spacer(modifier = Modifier.height(12.dp))
@@ -2137,6 +2137,63 @@ private fun <T> PixelSegmentedControl(
     }
 }
 
+private val PrioritySliderValues = listOf(
+    TodoPriority.LOW,
+    TodoPriority.MEDIUM,
+    TodoPriority.HIGH,
+    TodoPriority.XHIGH,
+)
+
+@Composable
+private fun PrioritySlider(
+    selected: TodoPriority,
+    onSelected: (TodoPriority) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedIndex = PrioritySliderValues.indexOf(selected)
+        .takeIf { it >= 0 }
+        ?: PrioritySliderValues.indexOf(TodoPriority.MEDIUM)
+    val selectedColor = selected.priorityColor()
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Slider(
+            value = selectedIndex.toFloat(),
+            onValueChange = { value ->
+                val priority = PrioritySliderValues[
+                    value.roundToInt().coerceIn(0, PrioritySliderValues.lastIndex)
+                ]
+                if (priority != selected) {
+                    onSelected(priority)
+                }
+            },
+            valueRange = 0f..PrioritySliderValues.lastIndex.toFloat(),
+            steps = PrioritySliderValues.size - 2,
+            colors = SliderDefaults.colors(
+                thumbColor = selectedColor,
+                activeTrackColor = selectedColor,
+                inactiveTrackColor = ClaudeGray300,
+                activeTickColor = ClaudeIvory,
+                inactiveTickColor = ClaudeGray600,
+            ),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            PrioritySliderValues.forEach { priority ->
+                Text(
+                    text = priority.uiLabel(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (priority == selected) ClaudeSlateDark else ClaudeSlateLight,
+                    fontWeight = if (priority == selected) FontWeight.Bold else FontWeight.Normal,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun PixelButton(
     text: String,
@@ -2185,6 +2242,7 @@ private fun PixelButton(
 
 private fun TodoPriority.uiLabel(): String {
     return when (this) {
+        TodoPriority.XHIGH -> "XHIGH"
         TodoPriority.HIGH -> "HIGH"
         TodoPriority.MEDIUM -> "MID"
         TodoPriority.LOW -> "LOW"
@@ -2193,7 +2251,8 @@ private fun TodoPriority.uiLabel(): String {
 
 private fun TodoPriority.priorityColor(): Color {
     return when (this) {
-        TodoPriority.HIGH -> ClaudeFig
+        TodoPriority.XHIGH -> PixelError
+        TodoPriority.HIGH -> ClaudeClayInteractive
         TodoPriority.MEDIUM -> ClaudeClay
         TodoPriority.LOW -> ClaudeSky
     }

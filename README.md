@@ -6,13 +6,14 @@ Developer identity: CODEX & XUE.
 
 ## Current Features
 
-- Add todos with a name, priority, and date/time.
+- Add todos with a name, four-step priority, and date/time.
 - Keep multiple local checklists, starting from a default `MAIN` list.
 - Expand the top bar to switch checklists and edit checklist names.
 - Long-press the `+` control to create a new checklist while short press still creates a task.
 - Tap a todo row to edit it in the bottom editor.
 - Sort by priority or time.
-- Priority sorting uses High, Medium, Low, then due time.
+- Adjust priority with a compact slider: Low, Mid, High, and XHigh.
+- Priority sorting uses XHigh, High, Mid, Low, then due time.
 - Tap a row checkbox to mark a todo done or active again.
 - Hide completed todos.
 - Delete all completed todos from the top list controls.
@@ -47,7 +48,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The signed private release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.0.1-release.apk
+app/build/outputs/apk/release/PixelDone-2.0.2-release.apk
 ```
 
 ## Install
@@ -56,7 +57,7 @@ If the old prototype package is still installed, uninstall it before installing:
 
 ```powershell
 adb uninstall com.codexue.pixeldone
-adb install -r app/build/outputs/apk/release/PixelDone-2.0.1-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.0.2-release.apk
 ```
 
 The formal package name is:
@@ -67,4 +68,4 @@ com.milesxue.pixeldone
 
 ## Status
 
-Private 2.0.1 release.
+Private 2.0.2 release.
