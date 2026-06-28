@@ -1,12 +1,11 @@
-PixelDone v2.1.0 debug adds repeat reminders for local todo alarms.
+PixelDone v2.1.1 debug updates priority status colors for local validation.
 
 Highlights:
-- Adds per-task repeat options: `NONE`, `DAILY`, and `WEEKLY`.
-- Keeps new tasks defaulting to no repeat reminders.
-- Stores repeat settings in local todo JSON while decoding older saved todos as `NONE`.
-- Re-schedules daily and weekly alarms after each notification when the todo is still active.
+- Maps priority colors to the approved Google status tokens: Low green, Mid blue, High yellow, and XHigh red.
+- Applies the same semantic priority color to the editor slider and todo-row priority stripe.
+- Keeps repeat reminders from the 2.1.0 debug candidate unchanged.
 
-Debug install note: install `PixelDone-2.1.0-debug.apk`; it uses the debug package name and can sit beside the formal app.
+Debug install note: install `PixelDone-2.1.1-debug.apk`; it uses the debug package name and can sit beside the formal app.
 
 This is a local debug validation build, not a formal GitHub release asset.
 

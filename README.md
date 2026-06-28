@@ -14,6 +14,7 @@ Developer identity: CODEX & XUE.
 - Sort by priority or time.
 - Adjust priority with a compact slider: Low, Mid, High, and XHigh.
 - Priority sorting uses XHigh, High, Mid, Low, then due time.
+- Show priority with approved Google status colors: Low green, Mid blue, High yellow, and XHigh red.
 - Tap a row checkbox to mark a todo done or active again.
 - Hide completed todos.
 - Delete all completed todos from the top list controls.
@@ -49,7 +50,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current debug test APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.1.0-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.1.1-debug.apk
 ```
 
 ## Install
@@ -57,7 +58,7 @@ app/build/outputs/apk/debug/PixelDone-2.1.0-debug.apk
 The debug build installs beside the formal app as:
 
 ```powershell
-adb install -r -d app/build/outputs/apk/debug/PixelDone-2.1.0-debug.apk
+adb install -r -d app/build/outputs/apk/debug/PixelDone-2.1.1-debug.apk
 ```
 
 The formal package name is:
@@ -74,4 +75,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.1.0 debug candidate. Latest formal private release: 2.0.2.
+2.1.1 local debug candidate. Latest formal private release: 2.0.2.

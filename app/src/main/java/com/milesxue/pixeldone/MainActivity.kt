@@ -109,9 +109,12 @@ import com.milesxue.pixeldone.ui.theme.ClaudeIvoryDark
 import com.milesxue.pixeldone.ui.theme.ClaudeIvoryMedium
 import com.milesxue.pixeldone.ui.theme.ClaudeMineral
 import com.milesxue.pixeldone.ui.theme.ClaudeOat
-import com.milesxue.pixeldone.ui.theme.ClaudeSky
 import com.milesxue.pixeldone.ui.theme.ClaudeSlateDark
 import com.milesxue.pixeldone.ui.theme.ClaudeSlateLight
+import com.milesxue.pixeldone.ui.theme.GoogleBlue
+import com.milesxue.pixeldone.ui.theme.GoogleGreen
+import com.milesxue.pixeldone.ui.theme.GoogleRed
+import com.milesxue.pixeldone.ui.theme.GoogleYellow
 import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
 import com.milesxue.pixeldone.ui.theme.PixelError
 import java.time.Instant
@@ -2286,10 +2289,10 @@ private fun TodoPriority.uiLabel(): String {
 
 private fun TodoPriority.priorityColor(): Color {
     return when (this) {
-        TodoPriority.XHIGH -> PixelError
-        TodoPriority.HIGH -> ClaudeClayInteractive
-        TodoPriority.MEDIUM -> ClaudeClay
-        TodoPriority.LOW -> ClaudeSky
+        TodoPriority.XHIGH -> GoogleRed
+        TodoPriority.HIGH -> GoogleYellow
+        TodoPriority.MEDIUM -> GoogleBlue
+        TodoPriority.LOW -> GoogleGreen
     }
 }
 
