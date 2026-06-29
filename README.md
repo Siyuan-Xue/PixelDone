@@ -12,6 +12,7 @@ Developer identity: CODEX & XUE.
 - Long-press the `+` control to create a new checklist while short press still creates a task.
 - Tap a todo row to edit it in the bottom editor.
 - Sort by priority or time.
+- Switch the todo subtitle row into a DDL countdown view showing days, hours, and minutes until each deadline.
 - Adjust priority with a compact slider: Low, Mid, High, and XHigh.
 - Priority sorting uses XHigh, High, Mid, Low, then due time.
 - Show priority with approved Google status colors: Low green, Mid blue, High yellow, and XHigh red.
@@ -44,31 +45,31 @@ From the project root:
 
 ```powershell
 .\gradlew.bat testDebugUnitTest
-.\gradlew.bat assembleRelease
+.\gradlew.bat assembleDebug
 ```
 
 Release signing is configured through the local, untracked `signing/release-signing.properties` file for formal releases.
 
-The current signed release APK is copied to:
+The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.1.3-release.apk
+app/build/outputs/apk/debug/PixelDone-2.2.0-debug.apk
 ```
 
 ## Install
 
-Install the signed release build with:
+Install the local debug build with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.1.3-release.apk
+adb install -r -d app/build/outputs/apk/debug/PixelDone-2.2.0-debug.apk
 ```
 
-The formal package name is:
+The debug package name is:
 
 ```text
-com.milesxue.pixeldone
+com.milesxue.pixeldone.debug
 ```
 
 ## Status
 
-2.1.3 private signed release.
+2.2.0 local debug validation.

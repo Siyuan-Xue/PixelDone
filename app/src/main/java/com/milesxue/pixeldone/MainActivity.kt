@@ -237,6 +237,7 @@ private fun PixelDoneApp() {
     var headerExpanded by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf(SortMode.PRIORITY) }
     var hideCompleted by remember { mutableStateOf(false) }
+    var showDeadlineCountdown by remember { mutableStateOf(false) }
     var editorMode by remember { mutableStateOf<EditorMode>(EditorMode.None) }
     var displayOrderIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var keepDisplayOrderDuringSortDelay by remember { mutableStateOf(false) }
@@ -706,6 +707,8 @@ private fun PixelDoneApp() {
             keepDisplayOrderDuringSortDelay = false
             hideCompleted = it
         },
+        showDeadlineCountdown = showDeadlineCountdown,
+        onDeadlineCountdownChange = { showDeadlineCountdown = it },
         onToggleTodo = { id ->
             requestTodoListScroll(TodoListScrollIntent.KeepPosition)
             displayOrderIds = if (keepDisplayOrderDuringSortDelay && displayOrderIds.isNotEmpty()) {
@@ -789,6 +792,8 @@ private fun PixelDoneScreen(
     onSortModeChange: (SortMode) -> Unit,
     hideCompleted: Boolean,
     onHideCompletedChange: (Boolean) -> Unit,
+    showDeadlineCountdown: Boolean,
+    onDeadlineCountdownChange: (Boolean) -> Unit,
     onToggleTodo: (String) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
     onDeleteTodo: (String) -> Unit,
@@ -831,6 +836,8 @@ private fun PixelDoneScreen(
                 onSortModeChange = onSortModeChange,
                 hideCompleted = hideCompleted,
                 onHideCompletedChange = onHideCompletedChange,
+                showDeadlineCountdown = showDeadlineCountdown,
+                onDeadlineCountdownChange = onDeadlineCountdownChange,
                 completedCount = completedCount,
                 onToggleTodo = onToggleTodo,
                 onEditTodo = onEditTodo,
@@ -1005,6 +1012,8 @@ private fun TaskWorkspacePanel(
     onSortModeChange: (SortMode) -> Unit,
     hideCompleted: Boolean,
     onHideCompletedChange: (Boolean) -> Unit,
+    showDeadlineCountdown: Boolean,
+    onDeadlineCountdownChange: (Boolean) -> Unit,
     completedCount: Int,
     onToggleTodo: (String) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
@@ -1049,6 +1058,8 @@ private fun TaskWorkspacePanel(
             onSortModeChange = onSortModeChange,
             hideCompleted = hideCompleted,
             onHideCompletedChange = onHideCompletedChange,
+            showDeadlineCountdown = showDeadlineCountdown,
+            onDeadlineCountdownChange = onDeadlineCountdownChange,
             completedCount = completedCount,
             onToggleTodo = onToggleTodo,
             onEditTodo = onEditTodo,
@@ -1403,6 +1414,8 @@ private fun TodoListPanel(
     onSortModeChange: (SortMode) -> Unit,
     hideCompleted: Boolean,
     onHideCompletedChange: (Boolean) -> Unit,
+    showDeadlineCountdown: Boolean,
+    onDeadlineCountdownChange: (Boolean) -> Unit,
     completedCount: Int,
     onToggleTodo: (String) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
@@ -1473,6 +1486,15 @@ private fun TodoListPanel(
                 modifier = Modifier.weight(1f),
                 selected = hideCompleted,
             )
+            PixelButton(
+                text = "DDL",
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    onDeadlineCountdownChange(!showDeadlineCountdown)
+                },
+                modifier = Modifier.weight(1f),
+                selected = showDeadlineCountdown,
+            )
             PixelBatchDeleteDoneButton(
                 onClick = onDeleteCompleted,
                 enabled = completedCount > 0,
@@ -1508,6 +1530,7 @@ private fun TodoListPanel(
                             onEditTodo = onEditTodo,
                             onDeleteTodo = onDeleteTodo,
                             nowMillis = nowMillis,
+                            showDeadlineCountdown = showDeadlineCountdown,
                         )
                     }
                 }
@@ -1546,6 +1569,7 @@ private fun TodoRow(
     onEditTodo: (TodoItem) -> Unit,
     onDeleteTodo: (String) -> Unit,
     nowMillis: Long,
+    showDeadlineCountdown: Boolean,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val itemBackground = if (item.completed) ClaudeCactus.copy(alpha = 0.35f) else ClaudeIvory
@@ -1598,14 +1622,13 @@ private fun TodoRow(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = buildAnnotatedString {
-                    append(item.priority.uiLabel())
-                    append("  ")
-                    withStyle(SpanStyle(color = dueDateTimeColor)) {
-                        append(dueDateTime)
-                    }
-                    append(repeatText)
-                },
+                text = item.subtitleText(
+                    nowMillis = nowMillis,
+                    dueDateTime = dueDateTime,
+                    dueDateTimeColor = dueDateTimeColor,
+                    repeatText = repeatText,
+                    showDeadlineCountdown = showDeadlineCountdown,
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = ClaudeSlateLight,
                 maxLines = 1,
@@ -2338,6 +2361,53 @@ private fun Long.isExpired(nowMillis: Long): Boolean {
     return this > 0L && this < nowMillis
 }
 
+internal fun formatDeadlineCountdown(dueAtMillis: Long, nowMillis: Long): String {
+    if (dueAtMillis <= 0L) return "DDL --"
+
+    val millisUntilDue = dueAtMillis - nowMillis
+    val absoluteMillis = if (millisUntilDue < 0L) {
+        -millisUntilDue
+    } else {
+        millisUntilDue
+    }
+    val totalMinutes = absoluteMillis / 60_000L
+    val days = totalMinutes / (24L * 60L)
+    val hours = (totalMinutes % (24L * 60L)) / 60L
+    val minutes = totalMinutes % 60L
+    val value = "${days}D ${hours.toTwoDigits()}H ${minutes.toTwoDigits()}M"
+
+    return if (millisUntilDue < 0L) {
+        "DDL OVERDUE $value"
+    } else {
+        "DDL $value"
+    }
+}
+
+private fun Long.toTwoDigits(): String {
+    return toString().padStart(2, '0')
+}
+
+private fun TodoItem.subtitleText(
+    nowMillis: Long,
+    dueDateTime: String,
+    dueDateTimeColor: Color,
+    repeatText: String,
+    showDeadlineCountdown: Boolean,
+) = buildAnnotatedString {
+    if (showDeadlineCountdown) {
+        withStyle(SpanStyle(color = if (dueAtMillis.isExpired(nowMillis)) PixelError else ClaudeSlateLight)) {
+            append(formatDeadlineCountdown(dueAtMillis, nowMillis))
+        }
+    } else {
+        append(priority.uiLabel())
+        append("  ")
+        withStyle(SpanStyle(color = dueDateTimeColor)) {
+            append(dueDateTime)
+        }
+        append(repeatText)
+    }
+}
+
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
 private fun PhonePreview() {
@@ -2381,6 +2451,8 @@ private fun PhonePreview() {
             onSortModeChange = {},
             hideCompleted = false,
             onHideCompletedChange = {},
+            showDeadlineCountdown = false,
+            onDeadlineCountdownChange = {},
             onToggleTodo = {},
             onEditTodo = {},
             onDeleteTodo = {},
@@ -2437,6 +2509,8 @@ private fun TabletPreview() {
             onSortModeChange = {},
             hideCompleted = false,
             onHideCompletedChange = {},
+            showDeadlineCountdown = true,
+            onDeadlineCountdownChange = {},
             onToggleTodo = {},
             onEditTodo = {},
             onDeleteTodo = {},

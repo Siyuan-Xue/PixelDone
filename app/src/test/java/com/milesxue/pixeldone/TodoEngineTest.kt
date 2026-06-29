@@ -527,6 +527,26 @@ class TodoEngineTest {
     }
 
     @Test
+    fun formatDeadlineCountdownShowsRemainingDaysHoursAndMinutes() {
+        val now = 1_000_000L
+        val due = now + (3L * 24L * 60L * 60L * 1000L) +
+            (4L * 60L * 60L * 1000L) +
+            (5L * 60L * 1000L)
+
+        assertEquals("DDL 3D 04H 05M", formatDeadlineCountdown(due, now))
+    }
+
+    @Test
+    fun formatDeadlineCountdownMarksOverdueItems() {
+        val now = 200_000_000L
+        val due = now - (1L * 24L * 60L * 60L * 1000L) -
+            (2L * 60L * 60L * 1000L) -
+            (3L * 60L * 1000L)
+
+        assertEquals("DDL OVERDUE 1D 02H 03M", formatDeadlineCountdown(due, now))
+    }
+
+    @Test
     fun completionSortDelayIsTwoSeconds() {
         assertEquals(2_000L, CompletionSortDelayMillis)
     }
