@@ -8,6 +8,7 @@ data class TodoItem(
     val completed: Boolean,
     val createdAtMillis: Long,
     val reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
+    val imageFileName: String? = null,
 )
 
 data class TodoChecklist(
@@ -270,6 +271,25 @@ fun updateTodoItem(
                 dueAtMillis = dueAtMillis,
                 reminderRepeat = reminderRepeat,
             )
+        } else {
+            item
+        }
+    }
+
+    return if (found) updatedItems else null
+}
+
+fun updateTodoImageFileName(
+    items: List<TodoItem>,
+    id: String,
+    imageFileName: String?,
+): List<TodoItem>? {
+    val normalizedFileName = imageFileName?.takeIf { it.isNotBlank() }
+    var found = false
+    val updatedItems = items.map { item ->
+        if (item.id == id) {
+            found = true
+            item.copy(imageFileName = normalizedFileName)
         } else {
             item
         }

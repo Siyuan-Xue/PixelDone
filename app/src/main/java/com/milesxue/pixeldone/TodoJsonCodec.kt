@@ -76,6 +76,9 @@ object TodoJsonCodec {
             append("\"priority\":\"").append(item.priority.name).append("\",")
             append("\"dueAtMillis\":").append(item.dueAtMillis).append(",")
             append("\"reminderRepeat\":\"").append(item.reminderRepeat.name).append("\",")
+            item.imageFileName?.let { fileName ->
+                append("\"imageFileName\":\"").append(escape(fileName)).append("\",")
+            }
             append("\"completed\":").append(item.completed).append(",")
             append("\"createdAtMillis\":").append(item.createdAtMillis)
             append("}")
@@ -94,6 +97,7 @@ object TodoJsonCodec {
             ?: ReminderRepeat.NONE
         val completed = values["completed"] as? Boolean ?: return null
         val createdAtMillis = values["createdAtMillis"] as? Long ?: return null
+        val imageFileName = (values["imageFileName"] as? String)?.takeIf { it.isNotBlank() }
 
         return TodoItem(
             id = id,
@@ -103,6 +107,7 @@ object TodoJsonCodec {
             completed = completed,
             createdAtMillis = createdAtMillis,
             reminderRepeat = reminderRepeat,
+            imageFileName = imageFileName,
         )
     }
 

@@ -133,6 +133,7 @@ class TodoEngineTest {
         assertEquals(TodoPriority.HIGH, changed?.priority)
         assertEquals(99L, changed?.dueAtMillis)
         assertEquals(ReminderRepeat.WEEKLY, changed?.reminderRepeat)
+        assertNull(changed?.imageFileName)
         assertEquals(10L, changed?.createdAtMillis)
         assertTrue(changed?.completed ?: false)
         assertEquals(items.first { it.id == "two" }, updated?.first { it.id == "two" })
@@ -160,6 +161,22 @@ class TodoEngineTest {
                 dueAtMillis = 2L,
             ),
         )
+    }
+
+    @Test
+    fun updateTodoImageFileNameChangesOnlyTheMatchingTodo() {
+        val items = listOf(
+            item("one", TodoPriority.MEDIUM, due = 1L, imageFileName = "old.img"),
+            item("two", TodoPriority.HIGH, due = 2L),
+        )
+
+        val withImage = updateTodoImageFileName(items, "two", "new.img")
+        assertEquals("new.img", withImage?.first { it.id == "two" }?.imageFileName)
+        assertEquals("old.img", withImage?.first { it.id == "one" }?.imageFileName)
+
+        val withoutImage = updateTodoImageFileName(withImage.orEmpty(), "two", null)
+        assertNull(withoutImage?.first { it.id == "two" }?.imageFileName)
+        assertNull(updateTodoImageFileName(items, "missing", "new.img"))
     }
 
     @Test
@@ -368,6 +385,7 @@ class TodoEngineTest {
                 created = 1L,
                 title = "Review \"PixelDone\"\\notes\nnow",
                 repeat = ReminderRepeat.DAILY,
+                imageFileName = "quoted.img",
             ),
             item(
                 id = "done",
@@ -402,6 +420,7 @@ class TodoEngineTest {
         )
 
         assertEquals(ReminderRepeat.NONE, decoded.single().reminderRepeat)
+        assertNull(decoded.single().imageFileName)
     }
 
     @Test
@@ -559,6 +578,7 @@ class TodoEngineTest {
         created: Long = due,
         title: String = id,
         repeat: ReminderRepeat = ReminderRepeat.NONE,
+        imageFileName: String? = null,
     ): TodoItem {
         return TodoItem(
             id = id,
@@ -568,6 +588,7 @@ class TodoEngineTest {
             completed = completed,
             createdAtMillis = created,
             reminderRepeat = repeat,
+            imageFileName = imageFileName,
         )
     }
 }

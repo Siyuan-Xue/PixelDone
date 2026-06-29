@@ -5,6 +5,7 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -13,10 +14,12 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -76,9 +79,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -227,6 +232,7 @@ private fun PixelDoneApp() {
     val context = LocalContext.current
     val updateScope = rememberCoroutineScope()
     val storage = remember { TodoPreferences.create(context) }
+    val imageStore = remember { TodoImageStore(context) }
     var checklistState by remember { mutableStateOf(storage.loadTodoState()) }
     var titleInput by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TodoPriority.MEDIUM) }
@@ -243,6 +249,8 @@ private fun PixelDoneApp() {
     var keepDisplayOrderDuringSortDelay by remember { mutableStateOf(false) }
     var sortDelayTick by remember { mutableStateOf(0) }
     var deleteConfirmation by remember { mutableStateOf<DeleteConfirmation?>(null) }
+    var imagePreviewTodoId by remember { mutableStateOf<String?>(null) }
+    var pendingImageTodoId by remember { mutableStateOf<String?>(null) }
     var updateUiState by remember { mutableStateOf(AppUpdateUiState()) }
     var updatePromptInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var neverShowUpdateDialog by remember { mutableStateOf(storage.loadNeverShowUpdateDialog()) }
@@ -266,6 +274,7 @@ private fun PixelDoneApp() {
     val taskEditorVisible = editorMode is EditorMode.NewTask || editorMode is EditorMode.EditTask
     val checklistEditorVisible =
         editorMode is EditorMode.NewChecklist || editorMode is EditorMode.EditChecklist
+    val imagePreviewItem = todos.firstOrNull { it.id == imagePreviewTodoId }
 
     DisposableEffect(storage) {
         val unregister = storage.observeTodoState {
@@ -357,6 +366,55 @@ private fun PixelDoneApp() {
         if (hasFutureAlarm) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    fun setTodoImageFileName(todoId: String, imageFileName: String?): TodoItem? {
+        val updatedTodos = updateTodoImageFileName(
+            items = todos,
+            id = todoId,
+            imageFileName = imageFileName,
+        ) ?: return null
+        updateSelectedTodos(updatedTodos)
+        requestTodoListScroll(TodoListScrollIntent.KeepPosition)
+        return updatedTodos.firstOrNull { it.id == todoId }
+    }
+
+    fun attachPickedImage(todoId: String, uri: Uri) {
+        val previousImageFileName = todos.firstOrNull { it.id == todoId }?.imageFileName
+        val newImageFileName = imageStore.copyImage(uri) ?: return
+        val updatedItem = setTodoImageFileName(todoId, newImageFileName)
+        if (updatedItem == null) {
+            imageStore.deleteImage(newImageFileName)
+            return
+        }
+        imageStore.deleteImage(previousImageFileName)
+        imagePreviewTodoId = updatedItem.id
+    }
+
+    fun removeTodoImage(todoId: String) {
+        val previousImageFileName = todos.firstOrNull { it.id == todoId }?.imageFileName
+        val updatedItem = setTodoImageFileName(todoId, null)
+        if (updatedItem != null) {
+            imageStore.deleteImage(previousImageFileName)
+            imagePreviewTodoId = null
+        }
+    }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        val todoId = pendingImageTodoId
+        pendingImageTodoId = null
+        if (uri != null && todoId != null) {
+            attachPickedImage(todoId, uri)
+        }
+    }
+
+    fun openTodoImagePicker(todoId: String) {
+        pendingImageTodoId = todoId
+        imagePickerLauncher.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        )
     }
 
     fun clearEditor() {
@@ -531,7 +589,12 @@ private fun PixelDoneApp() {
         when (val confirmation = deleteConfirmation) {
             is DeleteConfirmation.SingleTodo -> {
                 requestTodoListScroll(TodoListScrollIntent.KeepPosition)
+                val deletedImageFileName = todos.firstOrNull { it.id == confirmation.id }?.imageFileName
                 updateSelectedTodos(deleteTodoItem(todos, confirmation.id))
+                imageStore.deleteImage(deletedImageFileName)
+                if (imagePreviewTodoId == confirmation.id) {
+                    imagePreviewTodoId = null
+                }
                 if (editingTaskId == confirmation.id) {
                     clearEditor()
                     editorMode = EditorMode.None
@@ -540,16 +603,30 @@ private fun PixelDoneApp() {
             is DeleteConfirmation.CompletedTodos -> {
                 requestTodoListScroll(TodoListScrollIntent.KeepPosition)
                 val editingItem = todos.firstOrNull { it.id == editingTaskId }
+                val deletedImageFileNames = todos
+                    .filter { it.completed }
+                    .mapNotNull { it.imageFileName }
                 updateSelectedTodos(deleteCompletedTodos(todos))
+                deletedImageFileNames.forEach(imageStore::deleteImage)
+                if (imagePreviewTodoId != null && todos.any { it.id == imagePreviewTodoId && it.completed }) {
+                    imagePreviewTodoId = null
+                }
                 if (editingItem?.completed == true) {
                     clearEditor()
                     editorMode = EditorMode.None
                 }
             }
             is DeleteConfirmation.Checklist -> {
+                val deletedImageFileNames = checklistState.lists
+                    .firstOrNull { it.id == confirmation.id }
+                    ?.items
+                    ?.mapNotNull { it.imageFileName }
+                    .orEmpty()
                 val updatedState = deleteTodoChecklist(checklistState, confirmation.id)
                 if (updatedState != null) {
                     updateChecklistState(updatedState)
+                    deletedImageFileNames.forEach(imageStore::deleteImage)
+                    imagePreviewTodoId = null
                     requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
                     keepDisplayOrderDuringSortDelay = false
                     displayOrderIds = emptyList()
@@ -721,9 +798,18 @@ private fun PixelDoneApp() {
             sortDelayTick += 1
         },
         onEditTodo = ::startEditing,
-        onDeleteTodo = { id ->
-            todos.firstOrNull { it.id == id }?.let { item ->
-                deleteConfirmation = DeleteConfirmation.SingleTodo(item.id, item.title)
+        onOpenTodoImage = { item ->
+            if (item.imageFileName == null) {
+                openTodoImagePicker(item.id)
+            } else {
+                imagePreviewTodoId = item.id
+            }
+        },
+        onDeleteEditingTodo = {
+            editingTaskId?.let { id ->
+                todos.firstOrNull { it.id == id }?.let { item ->
+                    deleteConfirmation = DeleteConfirmation.SingleTodo(item.id, item.title)
+                }
             }
         },
         onDeleteCompleted = {
@@ -750,6 +836,13 @@ private fun PixelDoneApp() {
             openUpdateUrl(info)
         },
         onDismiss = ::closeUpdatePrompt,
+    )
+    TodoImagePreviewDialog(
+        item = imagePreviewItem,
+        imageStore = imageStore,
+        onChange = { item -> openTodoImagePicker(item.id) },
+        onRemove = { item -> removeTodoImage(item.id) },
+        onDismiss = { imagePreviewTodoId = null },
     )
 }
 
@@ -796,7 +889,8 @@ private fun PixelDoneScreen(
     onDeadlineCountdownChange: (Boolean) -> Unit,
     onToggleTodo: (String) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
-    onDeleteTodo: (String) -> Unit,
+    onOpenTodoImage: (TodoItem) -> Unit,
+    onDeleteEditingTodo: () -> Unit,
     onDeleteCompleted: () -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
@@ -841,7 +935,8 @@ private fun PixelDoneScreen(
                 completedCount = completedCount,
                 onToggleTodo = onToggleTodo,
                 onEditTodo = onEditTodo,
-                onDeleteTodo = onDeleteTodo,
+                onOpenTodoImage = onOpenTodoImage,
+                onDeleteEditingTodo = onDeleteEditingTodo,
                 onDeleteCompleted = onDeleteCompleted,
                 displayOrderIds = displayOrderIds,
                 keepDisplayOrder = keepDisplayOrder,
@@ -1017,7 +1112,8 @@ private fun TaskWorkspacePanel(
     completedCount: Int,
     onToggleTodo: (String) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
-    onDeleteTodo: (String) -> Unit,
+    onOpenTodoImage: (TodoItem) -> Unit,
+    onDeleteEditingTodo: () -> Unit,
     onDeleteCompleted: () -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
@@ -1063,7 +1159,7 @@ private fun TaskWorkspacePanel(
             completedCount = completedCount,
             onToggleTodo = onToggleTodo,
             onEditTodo = onEditTodo,
-            onDeleteTodo = onDeleteTodo,
+            onOpenTodoImage = onOpenTodoImage,
             onDeleteCompleted = onDeleteCompleted,
             displayOrderIds = displayOrderIds,
             keepDisplayOrder = keepDisplayOrder,
@@ -1088,6 +1184,7 @@ private fun TaskWorkspacePanel(
                 onSubmitTodo = onSubmitTodo,
                 onCancelEdit = onCancelEdit,
                 onCloseNewTask = onCancelEdit,
+                onDeleteTodo = onDeleteEditingTodo,
                 compactForKeyboard = compactForKeyboard,
             )
         } else if (checklistEditorVisible) {
@@ -1121,6 +1218,7 @@ private fun TaskEditorPanel(
     onSubmitTodo: () -> Boolean,
     onCancelEdit: () -> Unit,
     onCloseNewTask: () -> Unit,
+    onDeleteTodo: () -> Unit,
     compactForKeyboard: Boolean,
 ) {
     val focusManager = LocalFocusManager.current
@@ -1266,6 +1364,24 @@ private fun TaskEditorPanel(
                         primary = false,
                     )
                 }
+            }
+            if (isEditing) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "DELETE",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = PixelError,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                PixelButton(
+                    text = "DELETE TASK",
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onDeleteTodo()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    destructive = true,
+                )
             }
         }
     }
@@ -1419,7 +1535,7 @@ private fun TodoListPanel(
     completedCount: Int,
     onToggleTodo: (String) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
-    onDeleteTodo: (String) -> Unit,
+    onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteCompleted: () -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
@@ -1528,7 +1644,7 @@ private fun TodoListPanel(
                             item = item,
                             onToggleTodo = onToggleTodo,
                             onEditTodo = onEditTodo,
-                            onDeleteTodo = onDeleteTodo,
+                            onOpenTodoImage = onOpenTodoImage,
                             nowMillis = nowMillis,
                             showDeadlineCountdown = showDeadlineCountdown,
                         )
@@ -1567,7 +1683,7 @@ private fun TodoRow(
     item: TodoItem,
     onToggleTodo: (String) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
-    onDeleteTodo: (String) -> Unit,
+    onOpenTodoImage: (TodoItem) -> Unit,
     nowMillis: Long,
     showDeadlineCountdown: Boolean,
 ) {
@@ -1635,7 +1751,10 @@ private fun TodoRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        PixelItemDeleteButton(onClick = { onDeleteTodo(item.id) })
+        PixelItemImageButton(
+            hasImage = item.imageFileName != null,
+            onClick = { onOpenTodoImage(item) },
+        )
     }
 }
 
@@ -1869,6 +1988,95 @@ private fun UpdateConfirmationDialog(
 }
 
 @Composable
+private fun TodoImagePreviewDialog(
+    item: TodoItem?,
+    imageStore: TodoImageStore,
+    onChange: (TodoItem) -> Unit,
+    onRemove: (TodoItem) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (item == null) return
+
+    val imageFile = remember(item.imageFileName) {
+        imageStore.imageFile(item.imageFileName)
+    }
+    val imageBitmap = remember(imageFile?.absolutePath, imageFile?.lastModified()) {
+        imageFile
+            ?.takeIf { it.isFile }
+            ?.let { file -> BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Task image",
+                style = MaterialTheme.typography.titleMedium,
+                color = ClaudeSlateDark,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ClaudeSlateLight,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 180.dp, max = 320.dp)
+                        .border(1.dp, ClaudeGray300, RectangleShape)
+                        .background(ClaudeIvory),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (imageBitmap == null) {
+                        Text(
+                            text = "Image unavailable.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = ClaudeSlateLight,
+                        )
+                    } else {
+                        Image(
+                            bitmap = imageBitmap,
+                            contentDescription = "Task image preview",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PixelButton(
+                    text = "CHANGE",
+                    onClick = { onChange(item) },
+                    primary = true,
+                )
+                PixelButton(
+                    text = "REMOVE",
+                    onClick = { onRemove(item) },
+                    destructive = true,
+                )
+            }
+        },
+        dismissButton = {
+            PixelButton(
+                text = "CLOSE",
+                onClick = onDismiss,
+                primary = false,
+            )
+        },
+        shape = RectangleShape,
+        containerColor = ClaudeGray100,
+        tonalElevation = 0.dp,
+    )
+}
+
+@Composable
 private fun DeleteConfirmationDialog(
     confirmation: DeleteConfirmation?,
     onConfirm: () -> Unit,
@@ -1988,6 +2196,31 @@ private fun PixelItemDeleteButton(
 }
 
 @Composable
+private fun PixelItemImageButton(
+    hasImage: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val borderColor = if (hasImage) ClaudeClayInteractive else ClaudeGray300
+    val backgroundColor = if (hasImage) ClaudeOat else ClaudeIvoryMedium
+    val iconColor = if (hasImage) ClaudeClayInteractive else ClaudeSlateLight
+
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .border(1.dp, borderColor, RectangleShape)
+            .background(backgroundColor)
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription = if (hasImage) "VIEW TASK IMAGE" else "ADD TASK IMAGE"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        PixelImageIcon(color = iconColor)
+    }
+}
+
+@Composable
 private fun PixelSettingsIcon(color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier.size(18.dp)) {
         val strokeWidth = 1.8.dp.toPx()
@@ -2014,6 +2247,42 @@ private fun PixelSettingsIcon(color: Color, modifier: Modifier = Modifier) {
             topLeft = Offset(10.dp.toPx(), 11.dp.toPx()),
             size = Size(3.dp.toPx(), 4.dp.toPx()),
             style = Stroke(width = strokeWidth),
+        )
+    }
+}
+
+@Composable
+private fun PixelImageIcon(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(18.dp)) {
+        val strokeWidth = 1.7.dp.toPx()
+        drawRect(
+            color = color,
+            topLeft = Offset(3.dp.toPx(), 4.dp.toPx()),
+            size = Size(12.dp.toPx(), 10.dp.toPx()),
+            style = Stroke(width = strokeWidth),
+        )
+        drawCircle(
+            color = color,
+            radius = 1.4.dp.toPx(),
+            center = Offset(11.5.dp.toPx(), 7.dp.toPx()),
+        )
+        drawLine(
+            color = color,
+            start = Offset(4.5.dp.toPx(), 13.dp.toPx()),
+            end = Offset(8.dp.toPx(), 9.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(8.dp.toPx(), 9.dp.toPx()),
+            end = Offset(10.dp.toPx(), 11.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(10.dp.toPx(), 11.dp.toPx()),
+            end = Offset(13.8.dp.toPx(), 7.5.dp.toPx()),
+            strokeWidth = strokeWidth,
         )
     }
 }
@@ -2455,7 +2724,8 @@ private fun PhonePreview() {
             onDeadlineCountdownChange = {},
             onToggleTodo = {},
             onEditTodo = {},
-            onDeleteTodo = {},
+            onOpenTodoImage = {},
+            onDeleteEditingTodo = {},
             onDeleteCompleted = {},
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
@@ -2513,7 +2783,8 @@ private fun TabletPreview() {
             onDeadlineCountdownChange = {},
             onToggleTodo = {},
             onEditTodo = {},
-            onDeleteTodo = {},
+            onOpenTodoImage = {},
+            onDeleteEditingTodo = {},
             onDeleteCompleted = {},
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
@@ -2528,7 +2799,15 @@ private fun previewTodos(): List<TodoItem> {
     val now = defaultDueAtMillis()
     return listOf(
         TodoItem("1", "Send the build to the test phone", TodoPriority.HIGH, now, false, 1L),
-        TodoItem("2", "Plan tomorrow's tiny wins", TodoPriority.MEDIUM, now + 3_600_000L, false, 2L),
+        TodoItem(
+            "2",
+            "Plan tomorrow's tiny wins",
+            TodoPriority.MEDIUM,
+            now + 3_600_000L,
+            false,
+            2L,
+            imageFileName = "preview.img",
+        ),
         TodoItem("3", "Archive finished notes", TodoPriority.LOW, now - 3_600_000L, true, 3L),
     )
 }

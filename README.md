@@ -11,6 +11,9 @@ Developer identity: CODEX & XUE.
 - Expand the top bar to switch checklists and edit checklist names.
 - Long-press the `+` control to create a new checklist while short press still creates a task.
 - Tap a todo row to edit it in the bottom editor.
+- Attach one local image to each todo with the row image button.
+- Preview, replace, or remove a todo image without requesting broad photo-library permission.
+- Delete an edited todo from the task editor, matching the checklist editor delete flow.
 - Sort by priority or time.
 - Switch the todo subtitle row into a DDL countdown view showing days, hours, and minutes until each deadline.
 - Adjust priority with a compact slider: Low, Mid, High, and XHigh.
@@ -53,7 +56,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.2.0-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.3.0-debug.apk
 ```
 
 ## Install
@@ -61,7 +64,7 @@ app/build/outputs/apk/debug/PixelDone-2.2.0-debug.apk
 Install the local debug build with:
 
 ```powershell
-adb install -r -d app/build/outputs/apk/debug/PixelDone-2.2.0-debug.apk
+adb install -r -d app/build/outputs/apk/debug/PixelDone-2.3.0-debug.apk
 ```
 
 The debug package name is:
@@ -72,4 +75,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.2.0 local debug validation.
+2.3.0 local debug validation.
