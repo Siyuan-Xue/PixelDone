@@ -1413,6 +1413,18 @@ private fun TaskEditorPanel(
                 label = { it.uiLabel() },
                 onSelected = onReminderRepeatChange,
             )
+            if (isEditing) {
+                Spacer(modifier = Modifier.height(12.dp))
+                PixelButton(
+                    text = "DELETE TASK",
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onDeleteTodo()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    destructive = true,
+                )
+            }
             Spacer(modifier = Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PixelButton(
@@ -1439,24 +1451,6 @@ private fun TaskEditorPanel(
                         primary = false,
                     )
                 }
-            }
-            if (isEditing) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "DELETE",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = PixelError,
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                PixelButton(
-                    text = "DELETE TASK",
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onDeleteTodo()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    destructive = true,
-                )
             }
         }
     }
