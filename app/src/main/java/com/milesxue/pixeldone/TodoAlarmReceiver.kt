@@ -89,16 +89,21 @@ class TodoAlarmReceiver : BroadcastReceiver() {
         todoId: String,
         triggerAtMillis: Long,
     ) {
-        val item = allTodos(TodoPreferences.create(context).loadTodoState())
-            .firstOrNull { it.id == todoId }
+        val storage = TodoPreferences.create(context)
+        val nowMillis = maxOf(System.currentTimeMillis(), triggerAtMillis)
+        val updatedState = advanceRepeatingTodoAfterReminder(
+            state = storage.loadTodoState(),
+            todoId = todoId,
+            nowMillis = nowMillis,
+        ) ?: return
+        storage.saveTodoState(updatedState)
 
-        if (item != null && !item.completed && item.reminderRepeat != ReminderRepeat.NONE) {
-            TodoAlarmScheduler.schedule(
-                context = context,
-                item = item,
-                nowMillis = maxOf(System.currentTimeMillis(), triggerAtMillis),
-            )
-        }
+        val updatedItem = allTodos(updatedState).firstOrNull { it.id == todoId } ?: return
+        TodoAlarmScheduler.schedule(
+            context = context,
+            item = updatedItem,
+            nowMillis = nowMillis,
+        )
     }
 
     companion object {

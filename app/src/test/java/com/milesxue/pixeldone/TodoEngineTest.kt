@@ -253,6 +253,111 @@ class TodoEngineTest {
     }
 
     @Test
+    fun advanceRepeatingTodoAfterReminderMovesDailyAndWeeklyDueTimesForward() {
+        val daily = item(
+            id = "daily",
+            priority = TodoPriority.MEDIUM,
+            due = 1_000L,
+            repeat = ReminderRepeat.DAILY,
+        )
+        val weekly = item(
+            id = "weekly",
+            priority = TodoPriority.HIGH,
+            due = 2_000L,
+            repeat = ReminderRepeat.WEEKLY,
+        )
+
+        val advancedDaily = advanceRepeatingTodoAfterReminder(
+            item = daily,
+            nowMillis = 1_000L,
+        )
+        val advancedWeekly = advanceRepeatingTodoAfterReminder(
+            item = weekly,
+            nowMillis = 2_000L + DailyReminderIntervalMillis,
+        )
+
+        assertEquals(1_000L + DailyReminderIntervalMillis, advancedDaily?.dueAtMillis)
+        assertEquals(2_000L + WeeklyReminderIntervalMillis, advancedWeekly?.dueAtMillis)
+        assertEquals(daily.copy(dueAtMillis = 1_000L + DailyReminderIntervalMillis), advancedDaily)
+        assertEquals(weekly.copy(dueAtMillis = 2_000L + WeeklyReminderIntervalMillis), advancedWeekly)
+    }
+
+    @Test
+    fun advanceRepeatingTodoAfterReminderSkipsNonRepeatingCompletedAndFutureItems() {
+        assertNull(
+            advanceRepeatingTodoAfterReminder(
+                item("one-shot", TodoPriority.MEDIUM, due = 1_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertNull(
+            advanceRepeatingTodoAfterReminder(
+                item(
+                    id = "completed",
+                    priority = TodoPriority.MEDIUM,
+                    due = 1_000L,
+                    completed = true,
+                    repeat = ReminderRepeat.DAILY,
+                ),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertNull(
+            advanceRepeatingTodoAfterReminder(
+                item(
+                    id = "future",
+                    priority = TodoPriority.MEDIUM,
+                    due = 2_000L,
+                    repeat = ReminderRepeat.DAILY,
+                ),
+                nowMillis = 1_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun advanceRepeatingTodoAfterReminderUpdatesNestedChecklistState() {
+        val mainTodo = item("main", TodoPriority.MEDIUM, due = 1_000L)
+        val repeatingTodo = item(
+            id = "repeat",
+            priority = TodoPriority.HIGH,
+            due = 2_000L,
+            repeat = ReminderRepeat.DAILY,
+        )
+        val state = TodoChecklistState(
+            lists = listOf(
+                TodoChecklist(
+                    id = DefaultChecklistId,
+                    name = DefaultChecklistName,
+                    items = listOf(mainTodo),
+                    createdAtMillis = 1L,
+                ),
+                TodoChecklist(
+                    id = "work",
+                    name = "Work",
+                    items = listOf(repeatingTodo),
+                    createdAtMillis = 2L,
+                ),
+            ),
+            selectedListId = "work",
+        )
+
+        val updatedState = advanceRepeatingTodoAfterReminder(
+            state = state,
+            todoId = "repeat",
+            nowMillis = 2_000L,
+        )
+
+        assertEquals("work", updatedState?.selectedListId)
+        assertEquals(listOf(mainTodo), updatedState?.lists?.first { it.id == DefaultChecklistId }?.items)
+        assertEquals(
+            repeatingTodo.copy(dueAtMillis = 2_000L + DailyReminderIntervalMillis),
+            updatedState?.lists?.first { it.id == "work" }?.items?.single(),
+        )
+        assertNull(advanceRepeatingTodoAfterReminder(state, "missing", nowMillis = 2_000L))
+    }
+
+    @Test
     fun jsonCodecRoundTripsTodosWithEscapedText() {
         val items = listOf(
             item(

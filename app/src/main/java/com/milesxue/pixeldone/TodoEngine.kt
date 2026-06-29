@@ -321,6 +321,47 @@ fun nextReminderAtMillis(
     }
 }
 
+fun advanceRepeatingTodoAfterReminder(
+    item: TodoItem,
+    nowMillis: Long,
+): TodoItem? {
+    if (item.completed || item.reminderRepeat == ReminderRepeat.NONE) return null
+
+    val nextDueAtMillis = nextReminderAtMillis(
+        dueAtMillis = item.dueAtMillis,
+        reminderRepeat = item.reminderRepeat,
+        nowMillis = nowMillis,
+    ) ?: return null
+
+    return if (nextDueAtMillis > item.dueAtMillis) {
+        item.copy(dueAtMillis = nextDueAtMillis)
+    } else {
+        null
+    }
+}
+
+fun advanceRepeatingTodoAfterReminder(
+    state: TodoChecklistState,
+    todoId: String,
+    nowMillis: Long,
+): TodoChecklistState? {
+    var changed = false
+    val updatedLists = state.lists.map { checklist ->
+        val updatedItems = checklist.items.map { item ->
+            if (item.id == todoId) {
+                advanceRepeatingTodoAfterReminder(item, nowMillis)?.also {
+                    changed = true
+                } ?: item
+            } else {
+                item
+            }
+        }
+        if (updatedItems == checklist.items) checklist else checklist.copy(items = updatedItems)
+    }
+
+    return if (changed) state.copy(lists = updatedLists) else null
+}
+
 private fun nextRepeatingReminderAtMillis(
     dueAtMillis: Long,
     intervalMillis: Long,

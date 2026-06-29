@@ -27,6 +27,18 @@ class TodoPreferences(private val sharedPreferences: SharedPreferences) {
             .apply()
     }
 
+    fun observeTodoState(onChange: () -> Unit): () -> Unit {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_CHECKLIST_STATE) {
+                onChange()
+            }
+        }
+        sharedPreferences.registerOnSharedPreferenceChangeListener(listener)
+        return {
+            sharedPreferences.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
     fun loadTodos(): List<TodoItem> {
         val json = sharedPreferences.getString(KEY_TODOS, "[]") ?: "[]"
         return TodoJsonCodec.decode(json)

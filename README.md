@@ -15,12 +15,13 @@ Developer identity: CODEX & XUE.
 - Adjust priority with a compact slider: Low, Mid, High, and XHigh.
 - Priority sorting uses XHigh, High, Mid, Low, then due time.
 - Show priority with approved Google status colors: Low green, Mid blue, High yellow, and XHigh red.
-- Keep the priority slider's right-side state dots aligned with the current priority color.
+- Highlight overdue todo row date/time in the same red used by delete icons.
 - Tap a row checkbox to mark a todo done or active again.
 - Hide completed todos.
 - Delete all completed todos from the top list controls.
 - Schedule a local alarm notification for each active future todo.
 - Set reminder repeat per todo: none, daily, or weekly.
+- Advance daily and weekly repeating todos to the next reminder time after a notification fires.
 - Use restrained haptic feedback for core task and list-state actions.
 - Check GitHub Releases automatically on app start and show a quiet update dot when a release is available.
 - Prompt for an optional update when a newer formal release is detected at app start.
@@ -51,7 +52,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.1.2-release.apk
+app/build/outputs/apk/release/PixelDone-2.1.3-release.apk
 ```
 
 ## Install
@@ -59,7 +60,7 @@ app/build/outputs/apk/release/PixelDone-2.1.2-release.apk
 Install the signed release build with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.1.2-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.1.3-release.apk
 ```
 
 The formal package name is:
@@ -70,4 +71,4 @@ com.milesxue.pixeldone
 
 ## Status
 
-2.1.2 private signed release.
+2.1.3 private signed release.

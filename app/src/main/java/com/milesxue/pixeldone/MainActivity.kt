@@ -60,6 +60,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -84,6 +85,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -91,6 +94,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -261,6 +265,13 @@ private fun PixelDoneApp() {
     val taskEditorVisible = editorMode is EditorMode.NewTask || editorMode is EditorMode.EditTask
     val checklistEditorVisible =
         editorMode is EditorMode.NewChecklist || editorMode is EditorMode.EditChecklist
+
+    DisposableEffect(storage) {
+        val unregister = storage.observeTodoState {
+            checklistState = storage.loadTodoState()
+        }
+        onDispose(unregister)
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -796,14 +807,8 @@ private fun PixelDoneScreen(
             .imePadding()
             .padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 0.dp),
     ) {
-        val isTablet = maxWidth >= 720.dp
         val density = LocalDensity.current
         val imeVisible = WindowInsets.ime.getBottom(density) > 0
-        val editorMaxHeight = when {
-            isTablet -> 420.dp
-            maxHeight < 620.dp -> 260.dp
-            else -> 340.dp
-        }
 
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -857,7 +862,6 @@ private fun PixelDoneScreen(
                 canDeleteChecklist = canDeleteChecklist,
                 onSubmitChecklist = onSubmitChecklist,
                 onDeleteChecklist = onDeleteChecklist,
-                editorMaxHeight = editorMaxHeight,
                 compactForKeyboard = imeVisible,
                 modifier = Modifier.weight(1f),
             )
@@ -933,6 +937,16 @@ private fun Header(
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "LONG PRESS \"+\" TO CREATE LIST",
+                style = MaterialTheme.typography.labelSmall,
+                color = ClaudeSlateLight,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
@@ -1022,7 +1036,6 @@ private fun TaskWorkspacePanel(
     canDeleteChecklist: Boolean,
     onSubmitChecklist: () -> Boolean,
     onDeleteChecklist: () -> Unit,
-    editorMaxHeight: Dp,
     compactForKeyboard: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -1064,7 +1077,6 @@ private fun TaskWorkspacePanel(
                 onSubmitTodo = onSubmitTodo,
                 onCancelEdit = onCancelEdit,
                 onCloseNewTask = onCancelEdit,
-                editorMaxHeight = editorMaxHeight,
                 compactForKeyboard = compactForKeyboard,
             )
         } else if (checklistEditorVisible) {
@@ -1077,7 +1089,6 @@ private fun TaskWorkspacePanel(
                 onSubmitChecklist = onSubmitChecklist,
                 onCancelEdit = onCancelEdit,
                 onDeleteChecklist = onDeleteChecklist,
-                editorMaxHeight = editorMaxHeight,
                 compactForKeyboard = compactForKeyboard,
             )
         }
@@ -1099,13 +1110,11 @@ private fun TaskEditorPanel(
     onSubmitTodo: () -> Boolean,
     onCancelEdit: () -> Unit,
     onCloseNewTask: () -> Unit,
-    editorMaxHeight: Dp,
     compactForKeyboard: Boolean,
 ) {
     val focusManager = LocalFocusManager.current
     val hapticFeedback = LocalHapticFeedback.current
     val titleFocusRequester = remember { FocusRequester() }
-    val scrollState = rememberScrollState()
 
     LaunchedEffect(isEditing) {
         if (!isEditing) {
@@ -1141,19 +1150,8 @@ private fun TaskEditorPanel(
 
         Spacer(modifier = Modifier.height(8.dp))
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = if (compactForKeyboard) 76.dp else editorMaxHeight)
-                .then(if (compactForKeyboard) Modifier else Modifier.verticalScroll(scrollState)),
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            if (!compactForKeyboard) {
-                Text(
-                    text = "DETAILS",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = ClaudeSlateLight,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
             OutlinedTextField(
                 value = titleInput,
                 onValueChange = onTitleInputChange,
@@ -1272,13 +1270,11 @@ private fun ChecklistEditorPanel(
     onSubmitChecklist: () -> Boolean,
     onCancelEdit: () -> Unit,
     onDeleteChecklist: () -> Unit,
-    editorMaxHeight: Dp,
     compactForKeyboard: Boolean,
 ) {
     val focusManager = LocalFocusManager.current
     val hapticFeedback = LocalHapticFeedback.current
     val nameFocusRequester = remember { FocusRequester() }
-    val scrollState = rememberScrollState()
 
     LaunchedEffect(isEditing) {
         nameFocusRequester.requestFocus()
@@ -1306,19 +1302,8 @@ private fun ChecklistEditorPanel(
 
         Spacer(modifier = Modifier.height(8.dp))
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = if (compactForKeyboard) 96.dp else editorMaxHeight)
-                .then(if (compactForKeyboard) Modifier else Modifier.verticalScroll(scrollState)),
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            if (!compactForKeyboard) {
-                Text(
-                    text = "DETAILS",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = ClaudeSlateLight,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
             OutlinedTextField(
                 value = nameInput,
                 onValueChange = onNameInputChange,
@@ -1509,7 +1494,7 @@ private fun TodoListPanel(
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
-                val alarmNowMillis = System.currentTimeMillis()
+                val nowMillis = System.currentTimeMillis()
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,
@@ -1522,7 +1507,7 @@ private fun TodoListPanel(
                             onToggleTodo = onToggleTodo,
                             onEditTodo = onEditTodo,
                             onDeleteTodo = onDeleteTodo,
-                            nowMillis = alarmNowMillis,
+                            nowMillis = nowMillis,
                         )
                     }
                 }
@@ -1564,11 +1549,8 @@ private fun TodoRow(
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val itemBackground = if (item.completed) ClaudeCactus.copy(alpha = 0.35f) else ClaudeIvory
-    val alarmText = if (shouldScheduleTodoAlarm(item, nowMillis)) {
-        "  ALARM"
-    } else {
-        ""
-    }
+    val dueDateTime = item.dueAtMillis.formatDateTime()
+    val dueDateTimeColor = if (item.dueAtMillis.isExpired(nowMillis)) PixelError else ClaudeSlateLight
     val repeatText = if (item.reminderRepeat != ReminderRepeat.NONE) {
         "  ${item.reminderRepeat.uiLabel()}"
     } else {
@@ -1616,7 +1598,14 @@ private fun TodoRow(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "${item.priority.uiLabel()}  ${item.dueAtMillis.formatDateTime()}$repeatText$alarmText",
+                text = buildAnnotatedString {
+                    append(item.priority.uiLabel())
+                    append("  ")
+                    withStyle(SpanStyle(color = dueDateTimeColor)) {
+                        append(dueDateTime)
+                    }
+                    append(repeatText)
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = ClaudeSlateLight,
                 maxLines = 1,
@@ -2343,6 +2332,10 @@ private fun Long.formatTime(): String {
 
 private fun Long.formatDateTime(): String {
     return toLocalDateTime().format(DateTimeUiFormatter)
+}
+
+private fun Long.isExpired(nowMillis: Long): Boolean {
+    return this > 0L && this < nowMillis
 }
 
 @Preview(showBackground = true, widthDp = 390, heightDp = 844)
