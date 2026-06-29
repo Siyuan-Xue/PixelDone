@@ -56,7 +56,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.3.0-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.3.2-debug.apk
 ```
 
 ## Install
@@ -64,7 +64,7 @@ app/build/outputs/apk/debug/PixelDone-2.3.0-debug.apk
 Install the local debug build with:
 
 ```powershell
-adb install -r -d app/build/outputs/apk/debug/PixelDone-2.3.0-debug.apk
+adb install -r -d app/build/outputs/apk/debug/PixelDone-2.3.2-debug.apk
 ```
 
 The debug package name is:
@@ -75,4 +75,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.3.0 local debug validation.
+2.3.2 local debug validation.

@@ -24,6 +24,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
@@ -73,6 +75,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -81,9 +84,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -131,6 +136,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -2005,6 +2011,34 @@ private fun TodoImagePreviewDialog(
             ?.takeIf { it.isFile }
             ?.let { file -> BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }
     }
+    var previewScale by remember(item.id, item.imageFileName) { mutableStateOf(1f) }
+    var previewOffset by remember(item.id, item.imageFileName) { mutableStateOf(Offset.Zero) }
+    var previewViewportSize by remember(item.id, item.imageFileName) { mutableStateOf(Size.Zero) }
+    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextScale = (previewScale * zoomChange).coerceIn(1f, 6f)
+        previewScale = nextScale
+        previewOffset = imageBitmap?.let { bitmap ->
+            clampPreviewOffset(
+                offset = previewOffset + panChange,
+                scale = nextScale,
+                imageWidth = bitmap.width,
+                imageHeight = bitmap.height,
+                viewportSize = previewViewportSize,
+            )
+        } ?: Offset.Zero
+    }
+
+    LaunchedEffect(item.id, item.imageFileName, imageBitmap, previewScale, previewViewportSize) {
+        previewOffset = imageBitmap?.let { bitmap ->
+            clampPreviewOffset(
+                offset = previewOffset,
+                scale = previewScale,
+                imageWidth = bitmap.width,
+                imageHeight = bitmap.height,
+                viewportSize = previewViewportSize,
+            )
+        } ?: Offset.Zero
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2029,7 +2063,14 @@ private fun TodoImagePreviewDialog(
                         .fillMaxWidth()
                         .heightIn(min = 180.dp, max = 320.dp)
                         .border(1.dp, ClaudeGray300, RectangleShape)
-                        .background(ClaudeIvory),
+                        .background(ClaudeIvory)
+                        .clipToBounds()
+                        .onSizeChanged { size ->
+                            previewViewportSize = Size(
+                                width = size.width.toFloat(),
+                                height = size.height.toFloat(),
+                            )
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (imageBitmap == null) {
@@ -2042,7 +2083,15 @@ private fun TodoImagePreviewDialog(
                         Image(
                             bitmap = imageBitmap,
                             contentDescription = "Task image preview",
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    scaleX = previewScale
+                                    scaleY = previewScale
+                                    translationX = previewOffset.x
+                                    translationY = previewOffset.y
+                                }
+                                .transformable(transformableState),
                             contentScale = ContentScale.Fit,
                         )
                     }
@@ -2073,6 +2122,43 @@ private fun TodoImagePreviewDialog(
         shape = RectangleShape,
         containerColor = ClaudeGray100,
         tonalElevation = 0.dp,
+    )
+}
+
+private fun clampPreviewOffset(
+    offset: Offset,
+    scale: Float,
+    imageWidth: Int,
+    imageHeight: Int,
+    viewportSize: Size,
+): Offset {
+    if (viewportSize.width <= 0f || viewportSize.height <= 0f) return Offset.Zero
+    val fittedImageSize = fittedPreviewImageSize(
+        imageWidth = imageWidth,
+        imageHeight = imageHeight,
+        viewportSize = viewportSize,
+    )
+    val maxX = max(0f, ((fittedImageSize.width * scale) - viewportSize.width) / 2f)
+    val maxY = max(0f, ((fittedImageSize.height * scale) - viewportSize.height) / 2f)
+    return Offset(
+        x = offset.x.coerceIn(-maxX, maxX),
+        y = offset.y.coerceIn(-maxY, maxY),
+    )
+}
+
+private fun fittedPreviewImageSize(
+    imageWidth: Int,
+    imageHeight: Int,
+    viewportSize: Size,
+): Size {
+    if (imageWidth <= 0 || imageHeight <= 0) return Size.Zero
+    val fitScale = minOf(
+        viewportSize.width / imageWidth.toFloat(),
+        viewportSize.height / imageHeight.toFloat(),
+    )
+    return Size(
+        width = imageWidth * fitScale,
+        height = imageHeight * fitScale,
     )
 }
 
