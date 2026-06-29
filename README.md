@@ -53,6 +53,7 @@ From the project root:
 ```powershell
 .\gradlew.bat testDebugUnitTest
 .\gradlew.bat assembleDebug
+.\gradlew.bat assembleRelease
 ```
 
 Release signing is configured through the local, untracked `signing/release-signing.properties` file for formal releases.
@@ -63,20 +64,26 @@ The current local debug APK is copied to:
 app/build/outputs/apk/debug/PixelDone-2.4.3-debug.apk
 ```
 
-## Install
-
-Install the local debug build with:
-
-```powershell
-adb install -r -d app/build/outputs/apk/debug/PixelDone-2.4.3-debug.apk
-```
-
-The debug package name is:
+The current signed release APK is copied to:
 
 ```text
-com.milesxue.pixeldone.debug
+app/build/outputs/apk/release/PixelDone-2.4.3-release.apk
+```
+
+## Install
+
+Install the signed release build with:
+
+```powershell
+adb install -r app/build/outputs/apk/release/PixelDone-2.4.3-release.apk
+```
+
+The formal package name is:
+
+```text
+com.milesxue.pixeldone
 ```
 
 ## Status
 
-2.4.3 local debug validation.
+2.4.3 private signed release.

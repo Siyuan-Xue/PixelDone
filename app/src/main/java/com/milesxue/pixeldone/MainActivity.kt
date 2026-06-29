@@ -22,8 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
@@ -87,6 +86,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -151,6 +151,8 @@ private val PixelReadFrameInset = 8.dp
 private val PixelDoneFooterHeight = 24.dp
 private const val InitialUpdateCheckDelayMillis = 600L
 private const val UpdateStatusVisibleMillis = 3_000L
+private const val MinPreviewScale = 1f
+private const val MaxPreviewScale = 6f
 
 private enum class UpdateUiStatus {
     Idle,
@@ -2149,19 +2151,24 @@ private fun TodoImagePreviewDialog(
     var previewScale by remember(item.id, item.imageFileName) { mutableStateOf(1f) }
     var previewOffset by remember(item.id, item.imageFileName) { mutableStateOf(Offset.Zero) }
     var previewViewportSize by remember(item.id, item.imageFileName) { mutableStateOf(Size.Zero) }
-    val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-        val nextScale = (previewScale * zoomChange).coerceIn(1f, 6f)
-        previewScale = nextScale
-        previewOffset = imageBitmap?.let { bitmap ->
-            clampPreviewOffset(
-                offset = previewOffset + panChange,
-                scale = nextScale,
-                imageWidth = bitmap.width,
-                imageHeight = bitmap.height,
-                viewportSize = previewViewportSize,
-            )
-        } ?: Offset.Zero
-    }
+    val previewGestureModifier = imageBitmap?.let { bitmap ->
+        Modifier.pointerInput(item.id, item.imageFileName, bitmap, previewViewportSize) {
+            detectTransformGestures(panZoomLock = true) { centroid, panChange, zoomChange, _ ->
+                val transform = calculatePreviewTransform(
+                    currentScale = previewScale,
+                    currentOffset = previewOffset,
+                    zoomChange = zoomChange,
+                    panChange = panChange,
+                    centroid = centroid,
+                    viewportSize = previewViewportSize,
+                    imageWidth = bitmap.width,
+                    imageHeight = bitmap.height,
+                )
+                previewScale = transform.scale
+                previewOffset = transform.offset
+            }
+        }
+    } ?: Modifier
 
     LaunchedEffect(item.id, item.imageFileName, imageBitmap, previewScale, previewViewportSize) {
         previewOffset = imageBitmap?.let { bitmap ->
@@ -2205,7 +2212,8 @@ private fun TodoImagePreviewDialog(
                                 width = size.width.toFloat(),
                                 height = size.height.toFloat(),
                             )
-                        },
+                        }
+                        .then(previewGestureModifier),
                     contentAlignment = Alignment.Center,
                 ) {
                     when (val state = imageLoadState) {
@@ -2234,8 +2242,7 @@ private fun TodoImagePreviewDialog(
                                         scaleY = previewScale
                                         translationX = previewOffset.x
                                         translationY = previewOffset.y
-                                    }
-                                    .transformable(transformableState),
+                                    },
                                 contentScale = ContentScale.Fit,
                             )
                         }
@@ -2267,6 +2274,46 @@ private fun TodoImagePreviewDialog(
         shape = RectangleShape,
         containerColor = ClaudeGray100,
         tonalElevation = 0.dp,
+    )
+}
+
+internal data class PreviewTransform(
+    val scale: Float,
+    val offset: Offset,
+)
+
+internal fun calculatePreviewTransform(
+    currentScale: Float,
+    currentOffset: Offset,
+    zoomChange: Float,
+    panChange: Offset,
+    centroid: Offset,
+    viewportSize: Size,
+    imageWidth: Int,
+    imageHeight: Int,
+): PreviewTransform {
+    val safeCurrentScale = currentScale.coerceIn(MinPreviewScale, MaxPreviewScale)
+    val safeZoomChange = if (zoomChange.isFinite() && zoomChange > 0f) zoomChange else 1f
+    val nextScale = (safeCurrentScale * safeZoomChange).coerceIn(MinPreviewScale, MaxPreviewScale)
+    val scaleChange = nextScale / safeCurrentScale
+    val viewportCenter = Offset(
+        x = viewportSize.width / 2f,
+        y = viewportSize.height / 2f,
+    )
+    val centroidFromCenter = centroid - viewportCenter
+    val nextOffset = (currentOffset * scaleChange) +
+        (centroidFromCenter * (1f - scaleChange)) +
+        panChange
+
+    return PreviewTransform(
+        scale = nextScale,
+        offset = clampPreviewOffset(
+            offset = nextOffset,
+            scale = nextScale,
+            imageWidth = imageWidth,
+            imageHeight = imageHeight,
+            viewportSize = viewportSize,
+        ),
     )
 }
 
