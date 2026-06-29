@@ -3,7 +3,6 @@ package com.milesxue.pixeldone
 import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -148,7 +147,6 @@ private val PixelReadTopBarContentHeight = 36.dp
 private val PixelReadFrameInset = 8.dp
 private val PixelDoneFooterHeight = 24.dp
 private const val InitialUpdateCheckDelayMillis = 600L
-private const val StartupUpdateRetryDelayMillis = 2_000L
 private const val UpdateStatusVisibleMillis = 3_000L
 
 private enum class UpdateUiStatus {
@@ -157,21 +155,14 @@ private enum class UpdateUiStatus {
     Latest,
     Available,
     Offline,
+    Downloading,
 }
 
 private data class AppUpdateUiState(
     val status: UpdateUiStatus = UpdateUiStatus.Idle,
     val info: AppUpdateInfo? = null,
+    val message: String? = null,
 ) {
-    val label: String?
-        get() = when (status) {
-            UpdateUiStatus.Idle -> null
-            UpdateUiStatus.Checking -> "CHECK"
-            UpdateUiStatus.Latest -> "LATEST"
-            UpdateUiStatus.Available -> "GET"
-            UpdateUiStatus.Offline -> "OFFLINE"
-        }
-
     val contentDescription: String
         get() = when (status) {
             UpdateUiStatus.Idle -> "CHECK UPDATE"
@@ -179,7 +170,14 @@ private data class AppUpdateUiState(
             UpdateUiStatus.Latest -> "LATEST VERSION"
             UpdateUiStatus.Available -> "GET UPDATE"
             UpdateUiStatus.Offline -> "UPDATE CHECK UNAVAILABLE"
+            UpdateUiStatus.Downloading -> "DOWNLOADING UPDATE"
         }
+
+    val shouldAutoRestore: Boolean
+        get() = status == UpdateUiStatus.Latest ||
+            status == UpdateUiStatus.Available ||
+            status == UpdateUiStatus.Offline ||
+            status == UpdateUiStatus.Downloading
 }
 
 private sealed interface DeleteConfirmation {
@@ -240,6 +238,7 @@ private fun PixelDoneApp() {
     val updateScope = rememberCoroutineScope()
     val storage = remember { TodoPreferences.create(context) }
     val imageStore = remember { TodoImageStore(context) }
+    val updateDownloader = remember { AppUpdateDownloader(context) }
     var checklistState by remember { mutableStateOf(storage.loadTodoState()) }
     var titleInput by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TodoPriority.MEDIUM) }
@@ -259,9 +258,8 @@ private fun PixelDoneApp() {
     var imagePreviewTodoId by remember { mutableStateOf<String?>(null) }
     var pendingImageTodoId by remember { mutableStateOf<String?>(null) }
     var updateUiState by remember { mutableStateOf(AppUpdateUiState()) }
-    var updatePromptInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
-    var neverShowUpdateDialog by remember { mutableStateOf(storage.loadNeverShowUpdateDialog()) }
-    var updatePromptDismissedThisSession by remember { mutableStateOf(false) }
+    var handledUpdateVersion by remember { mutableStateOf(storage.loadHandledUpdateVersion()) }
+    var updateCheckInFlight by remember { mutableStateOf(false) }
     var scrollRequestSequence by remember { mutableStateOf(0) }
     var todoListScrollRequest by remember {
         mutableStateOf(
@@ -317,18 +315,10 @@ private fun PixelDoneApp() {
         }
     }
 
-    LaunchedEffect(updateUiState.status, updateUiState.info?.version) {
-        when (updateUiState.status) {
-            UpdateUiStatus.Latest,
-            UpdateUiStatus.Offline,
-            -> {
-                delay(UpdateStatusVisibleMillis)
-                updateUiState = AppUpdateUiState()
-            }
-            UpdateUiStatus.Idle,
-            UpdateUiStatus.Checking,
-            UpdateUiStatus.Available,
-            -> Unit
+    LaunchedEffect(updateUiState.status, updateUiState.info?.version, updateUiState.message) {
+        if (updateUiState.shouldAutoRestore) {
+            delay(UpdateStatusVisibleMillis)
+            updateUiState = AppUpdateUiState()
         }
     }
 
@@ -675,25 +665,46 @@ private fun PixelDoneApp() {
         }
     }
 
-    fun openUpdateUrl(info: AppUpdateInfo) {
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse(info.actionUrl)),
-        )
+    fun versionLabel(version: String): String = "v$version"
+
+    fun latestUpdateMessage(): String =
+        "latest: ${versionLabel(BuildConfig.VERSION_NAME)}"
+
+    fun availableUpdateMessage(info: AppUpdateInfo): String =
+        "get: ${versionLabel(BuildConfig.VERSION_NAME)} -> ${versionLabel(info.version)}"
+
+    fun markUpdateHandled(version: String) {
+        handledUpdateVersion = version
+        storage.saveHandledUpdateVersion(version)
     }
 
-    fun showUpdatePromptIfAllowed(info: AppUpdateInfo) {
-        if (!neverShowUpdateDialog && !updatePromptDismissedThisSession) {
-            updatePromptInfo = info
+    fun startUpdateDownload(info: AppUpdateInfo) {
+        when (val result = updateDownloader.enqueueOrReuse(info, storage.loadPendingUpdateDownload())) {
+            is AppUpdateDownloadResult.Started -> {
+                storage.savePendingUpdateDownload(result.download)
+                markUpdateHandled(info.version)
+                updateUiState = AppUpdateUiState(
+                    status = UpdateUiStatus.Downloading,
+                    info = info,
+                    message = "download: ${versionLabel(info.version)}",
+                )
+            }
+            is AppUpdateDownloadResult.Reused -> {
+                storage.savePendingUpdateDownload(result.download)
+                markUpdateHandled(info.version)
+                updateUiState = AppUpdateUiState(
+                    status = UpdateUiStatus.Downloading,
+                    info = info,
+                    message = "download: ${versionLabel(info.version)}",
+                )
+            }
+            AppUpdateDownloadResult.Failed -> {
+                updateUiState = AppUpdateUiState(
+                    status = UpdateUiStatus.Offline,
+                    message = "update failed",
+                )
+            }
         }
-    }
-
-    fun closeUpdatePrompt(neverShow: Boolean) {
-        if (neverShow) {
-            neverShowUpdateDialog = true
-            storage.saveNeverShowUpdateDialog(true)
-        }
-        updatePromptDismissedThisSession = true
-        updatePromptInfo = null
     }
 
     fun applyUpdateCheckResult(
@@ -702,22 +713,29 @@ private fun PixelDoneApp() {
     ) {
         when (result) {
             is AppUpdateCheckResult.Available -> {
+                if (!showCurrentOrOfflineStatus && result.info.version == handledUpdateVersion) {
+                    return
+                }
                 updateUiState = AppUpdateUiState(
                     status = UpdateUiStatus.Available,
                     info = result.info,
+                    message = availableUpdateMessage(result.info),
                 )
-                showUpdatePromptIfAllowed(result.info)
             }
             AppUpdateCheckResult.Current -> {
-                updatePromptInfo = null
                 if (showCurrentOrOfflineStatus) {
-                    updateUiState = AppUpdateUiState(status = UpdateUiStatus.Latest)
+                    updateUiState = AppUpdateUiState(
+                        status = UpdateUiStatus.Latest,
+                        message = latestUpdateMessage(),
+                    )
                 }
             }
             AppUpdateCheckResult.Unavailable -> {
-                updatePromptInfo = null
                 if (showCurrentOrOfflineStatus) {
-                    updateUiState = AppUpdateUiState(status = UpdateUiStatus.Offline)
+                    updateUiState = AppUpdateUiState(
+                        status = UpdateUiStatus.Offline,
+                        message = "update failed",
+                    )
                 }
             }
         }
@@ -725,35 +743,40 @@ private fun PixelDoneApp() {
 
     LaunchedEffect(Unit) {
         delay(InitialUpdateCheckDelayMillis)
-        val firstResult = checkPixelDoneUpdate(BuildConfig.VERSION_NAME)
-        if (firstResult == AppUpdateCheckResult.Unavailable) {
-            delay(StartupUpdateRetryDelayMillis)
+        if (updateCheckInFlight) return@LaunchedEffect
+        updateCheckInFlight = true
+        try {
             applyUpdateCheckResult(
                 result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME),
                 showCurrentOrOfflineStatus = false,
             )
-        } else {
-            applyUpdateCheckResult(
-                result = firstResult,
-                showCurrentOrOfflineStatus = false,
-            )
+        } finally {
+            updateCheckInFlight = false
         }
     }
 
     fun handleUpdateClick() {
         val availableInfo = updateUiState.info
         if (updateUiState.status == UpdateUiStatus.Available && availableInfo != null) {
-            openUpdateUrl(availableInfo)
+            startUpdateDownload(availableInfo)
             return
         }
-        if (updateUiState.status == UpdateUiStatus.Checking) return
+        if (updateCheckInFlight) return
 
-        updateUiState = AppUpdateUiState(status = UpdateUiStatus.Checking)
+        updateCheckInFlight = true
+        updateUiState = AppUpdateUiState(
+            status = UpdateUiStatus.Checking,
+            message = "checking...",
+        )
         updateScope.launch {
-            applyUpdateCheckResult(
-                result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME),
-                showCurrentOrOfflineStatus = true,
-            )
+            try {
+                applyUpdateCheckResult(
+                    result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME),
+                    showCurrentOrOfflineStatus = true,
+                )
+            } finally {
+                updateCheckInFlight = false
+            }
         }
     }
 
@@ -876,14 +899,6 @@ private fun PixelDoneApp() {
         confirmation = deleteConfirmation,
         onConfirm = ::confirmDelete,
         onDismiss = { deleteConfirmation = null },
-    )
-    UpdateConfirmationDialog(
-        info = updatePromptInfo,
-        onUpdate = { info, neverShow ->
-            closeUpdatePrompt(neverShow)
-            openUpdateUrl(info)
-        },
-        onDismiss = ::closeUpdatePrompt,
     )
     TodoImagePreviewDialog(
         item = imagePreviewItem,
@@ -1547,6 +1562,19 @@ private fun ChecklistEditorPanel(
                 return@Column
             }
             Spacer(modifier = Modifier.height(12.dp))
+            if (isEditing) {
+                PixelButton(
+                    text = if (canDeleteChecklist) "DELETE LIST" else "KEEP ONE LIST",
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onDeleteChecklist()
+                    },
+                    enabled = canDeleteChecklist,
+                    modifier = Modifier.fillMaxWidth(),
+                    destructive = true,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PixelButton(
                     text = "SAVE",
@@ -1569,25 +1597,6 @@ private fun ChecklistEditorPanel(
                     },
                     modifier = Modifier.weight(1f),
                     primary = false,
-                )
-            }
-            if (isEditing) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "DELETE",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = PixelError,
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                PixelButton(
-                    text = if (canDeleteChecklist) "DELETE LIST" else "KEEP ONE LIST",
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onDeleteChecklist()
-                    },
-                    enabled = canDeleteChecklist,
-                    modifier = Modifier.fillMaxWidth(),
-                    destructive = true,
                 )
             }
         }
@@ -1942,6 +1951,41 @@ private fun Footer(
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
 ) {
+    val message = updateUiState.message
+    if (message != null) {
+        val messageColor = when (updateUiState.status) {
+            UpdateUiStatus.Offline -> PixelError
+            UpdateUiStatus.Available,
+            UpdateUiStatus.Downloading,
+            -> ClaudeClay
+            else -> ClaudeSlateDark
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(PixelDoneFooterHeight)
+                .clickable(
+                    enabled = updateUiState.status == UpdateUiStatus.Available,
+                    onClick = onUpdateClick,
+                )
+                .semantics { contentDescription = updateUiState.contentDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = message,
+                color = messageColor,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+        }
+        return
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1999,7 +2043,7 @@ private fun UpdateMark(
 
     Row(
         modifier = modifier.height(PixelDoneFooterHeight),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -2027,18 +2071,6 @@ private fun UpdateMark(
                     drawCircle(color = activeColor, radius = size.minDimension / 2f)
                 }
             }
-        }
-        state.label?.let { label ->
-            Text(
-                text = label,
-                color = displayColor,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 8.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
@@ -2076,76 +2108,6 @@ private fun UpdateGlyph(
             strokeWidth = strokeWidth,
         )
     }
-}
-
-@Composable
-private fun UpdateConfirmationDialog(
-    info: AppUpdateInfo?,
-    onUpdate: (AppUpdateInfo, Boolean) -> Unit,
-    onDismiss: (Boolean) -> Unit,
-) {
-    if (info == null) return
-
-    var dontShowAgain by remember(info.version) { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = { onDismiss(dontShowAgain) },
-        title = {
-            Text(
-                text = "Update available",
-                style = MaterialTheme.typography.titleMedium,
-                color = ClaudeSlateDark,
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "PixelDone ${info.version} is available.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = ClaudeSlateLight,
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { dontShowAgain = !dontShowAgain },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Checkbox(
-                        checked = dontShowAgain,
-                        onCheckedChange = { dontShowAgain = it },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = ClaudeClay,
-                            uncheckedColor = ClaudeGray600,
-                            checkmarkColor = ClaudeIvory,
-                        ),
-                    )
-                    Text(
-                        text = "Don't show again",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = ClaudeSlateDark,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            PixelButton(
-                text = "UPDATE",
-                onClick = { onUpdate(info, dontShowAgain) },
-                primary = true,
-            )
-        },
-        dismissButton = {
-            PixelButton(
-                text = "NOT NOW",
-                onClick = { onDismiss(dontShowAgain) },
-                primary = false,
-            )
-        },
-        shape = RectangleShape,
-        containerColor = ClaudeGray100,
-        tonalElevation = 0.dp,
-    )
 }
 
 @Composable

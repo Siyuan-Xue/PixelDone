@@ -66,21 +66,61 @@ class AppUpdateCheckerTest {
     }
 
     @Test
-    fun appUpdateInfo_actionUrlPrefersApkAndFallsBackToReleasePage() {
-        val withApk = AppUpdateInfo(
+    fun releaseToUpdateCheckResult_requiresExactLatestReleaseApk() {
+        val release = GitHubRelease(
+            tagName = "v1.3.1",
+            htmlUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.1",
+            assets = listOf(
+                ReleaseAsset("PixelDone-1.3.1-debug.apk", "https://example.test/debug.apk"),
+            ),
+        )
+
+        assertEquals(
+            AppUpdateCheckResult.Unavailable,
+            releaseToUpdateCheckResult(
+                release = release,
+                projectName = "PixelDone",
+                currentVersion = "1.0.0",
+            ),
+        )
+    }
+
+    @Test
+    fun releaseToUpdateCheckResult_returnsAvailableWithExactLatestReleaseApk() {
+        val release = GitHubRelease(
+            tagName = "v1.3.1",
+            htmlUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.1",
+            assets = listOf(
+                ReleaseAsset(
+                    "PixelDone-1.3.1-release.apk",
+                    "https://example.test/release.apk",
+                ),
+            ),
+        )
+
+        val result = releaseToUpdateCheckResult(
+            release = release,
+            projectName = "PixelDone",
+            currentVersion = "1.0.0",
+        )
+
+        assertTrue(result is AppUpdateCheckResult.Available)
+        val available = result as AppUpdateCheckResult.Available
+        assertEquals("1.3.1", available.info.version)
+        assertEquals("https://example.test/release.apk", available.info.apkDownloadUrl)
+    }
+
+    @Test
+    fun appUpdateInfo_keepsExactReleaseApkDownloadUrl() {
+        val info = AppUpdateInfo(
             version = "1.3.1",
             releasePageUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.1",
             apkDownloadUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/download/v1.3.1/PixelDone-1.3.1-release.apk",
         )
-        val withoutApk = withApk.copy(apkDownloadUrl = null)
 
         assertEquals(
             "https://github.com/Siyuan-Xue/PixelDone/releases/download/v1.3.1/PixelDone-1.3.1-release.apk",
-            withApk.actionUrl,
-        )
-        assertEquals(
-            "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v1.3.1",
-            withoutApk.actionUrl,
+            info.apkDownloadUrl,
         )
     }
 

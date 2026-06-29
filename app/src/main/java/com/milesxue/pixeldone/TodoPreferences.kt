@@ -59,11 +59,38 @@ class TodoPreferences(private val sharedPreferences: SharedPreferences) {
             .apply()
     }
 
+    fun loadHandledUpdateVersion(): String? =
+        sharedPreferences.getString(KEY_HANDLED_UPDATE_VERSION, null)
+
+    fun saveHandledUpdateVersion(version: String) {
+        sharedPreferences.edit()
+            .putString(KEY_HANDLED_UPDATE_VERSION, version)
+            .apply()
+    }
+
+    internal fun loadPendingUpdateDownload(): PendingUpdateDownload? {
+        val version = sharedPreferences.getString(KEY_PENDING_UPDATE_DOWNLOAD_VERSION, null)
+            ?: return null
+        val downloadId = sharedPreferences.getLong(KEY_PENDING_UPDATE_DOWNLOAD_ID, -1L)
+        if (downloadId < 0L) return null
+        return PendingUpdateDownload(version = version, downloadId = downloadId)
+    }
+
+    internal fun savePendingUpdateDownload(download: PendingUpdateDownload) {
+        sharedPreferences.edit()
+            .putString(KEY_PENDING_UPDATE_DOWNLOAD_VERSION, download.version)
+            .putLong(KEY_PENDING_UPDATE_DOWNLOAD_ID, download.downloadId)
+            .apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "pixel_done_todos"
         private const val KEY_TODOS = "todos"
         private const val KEY_CHECKLIST_STATE = "checklist_state"
         private const val KEY_NEVER_SHOW_UPDATE_DIALOG = "never_show_update_dialog"
+        private const val KEY_HANDLED_UPDATE_VERSION = "handled_update_version"
+        private const val KEY_PENDING_UPDATE_DOWNLOAD_VERSION = "pending_update_download_version"
+        private const val KEY_PENDING_UPDATE_DOWNLOAD_ID = "pending_update_download_id"
 
         fun create(context: Context): TodoPreferences {
             val prefs = context.applicationContext.getSharedPreferences(

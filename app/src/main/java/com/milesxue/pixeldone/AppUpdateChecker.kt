@@ -23,11 +23,8 @@ internal data class GitHubRelease(
 internal data class AppUpdateInfo(
     val version: String,
     val releasePageUrl: String,
-    val apkDownloadUrl: String?,
-) {
-    val actionUrl: String
-        get() = apkDownloadUrl ?: releasePageUrl
-}
+    val apkDownloadUrl: String,
+)
 
 internal sealed interface AppUpdateCheckResult {
     data class Available(val info: AppUpdateInfo) : AppUpdateCheckResult
@@ -48,6 +45,18 @@ internal suspend fun checkAppUpdate(
     currentVersion: String,
 ): AppUpdateCheckResult {
     val release = fetchLatestRelease(apiUrl) ?: return AppUpdateCheckResult.Unavailable
+    return releaseToUpdateCheckResult(
+        release = release,
+        projectName = projectName,
+        currentVersion = currentVersion,
+    )
+}
+
+internal fun releaseToUpdateCheckResult(
+    release: GitHubRelease,
+    projectName: String,
+    currentVersion: String,
+): AppUpdateCheckResult {
     val latestVersion = normalizedSemanticVersion(release.tagName)
         ?: return AppUpdateCheckResult.Unavailable
 
@@ -55,15 +64,17 @@ internal suspend fun checkAppUpdate(
         return AppUpdateCheckResult.Current
     }
 
+    val apkDownloadUrl = findReleaseApkUrl(
+        release = release,
+        projectName = projectName,
+        version = latestVersion,
+    ) ?: return AppUpdateCheckResult.Unavailable
+
     return AppUpdateCheckResult.Available(
         AppUpdateInfo(
             version = latestVersion,
             releasePageUrl = release.htmlUrl,
-            apkDownloadUrl = findReleaseApkUrl(
-                release = release,
-                projectName = projectName,
-                version = latestVersion,
-            ),
+            apkDownloadUrl = apkDownloadUrl,
         ),
     )
 }

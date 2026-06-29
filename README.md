@@ -30,9 +30,9 @@ Developer identity: CODEX & XUE.
 - Set reminder repeat per todo: none, daily, or weekly.
 - Advance daily and weekly repeating todos to the next reminder time after a notification fires.
 - Use restrained haptic feedback for core task and list-state actions.
-- Check GitHub Releases automatically on app start and show a quiet update dot when a release is available.
-- Prompt for an optional update when a newer formal release is detected at app start.
-- Let users permanently hide automatic update dialogs while keeping the update-dot signal.
+- Check GitHub Releases automatically on app start and show a quiet footer update state when a release is available.
+- Download only the exact latest formal release APK through Android DownloadManager.
+- Avoid repeating the same in-app update download for an already handled release version.
 - Persist checklists and todos locally on the device with SharedPreferences JSON.
 - Keep dark system bar icons explicit against the light PixelDone surface.
 
@@ -59,7 +59,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.4.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.4.3-debug.apk
 ```
 
 ## Install
@@ -67,7 +67,7 @@ app/build/outputs/apk/debug/PixelDone-2.4.2-debug.apk
 Install the local debug build with:
 
 ```powershell
-adb install -r -d app/build/outputs/apk/debug/PixelDone-2.4.2-debug.apk
+adb install -r -d app/build/outputs/apk/debug/PixelDone-2.4.3-debug.apk
 ```
 
 The debug package name is:
@@ -78,4 +78,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.4.2 local debug validation.
+2.4.3 local debug validation.
