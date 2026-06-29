@@ -14,6 +14,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -65,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -144,6 +147,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal const val CompletionSortDelayMillis = 2_000L
+private const val TodoHighlightFadeMillis = 180
 
 private const val DeveloperCredit = "CODEX & XUE"
 private val PixelReadTopBarContentHeight = 36.dp
@@ -200,14 +204,28 @@ private sealed interface TodoImagePreviewLoadState {
 
 private sealed interface TodoListScrollIntent {
     data object KeepPosition : TodoListScrollIntent
+    data object PreserveViewport : TodoListScrollIntent
     data object ScrollToTop : TodoListScrollIntent
-    data class RevealTodo(val id: String) : TodoListScrollIntent
+    data class RevealTodos(val ids: Set<String>) : TodoListScrollIntent
 }
 
 private data class TodoListScrollRequest(
     val sequence: Int,
     val intent: TodoListScrollIntent,
 )
+
+private data class TodoListHighlightRequest(
+    val sequence: Int,
+    val ids: Set<String>,
+)
+
+internal data class PendingTodoToggleFeedback(
+    val completedIds: Set<String> = emptySet(),
+    val undoneIds: Set<String> = emptySet(),
+) {
+    val highlightIds: Set<String>
+        get() = undoneIds
+}
 
 private sealed interface EditorMode {
     data object None : EditorMode
@@ -265,6 +283,7 @@ private fun PixelDoneApp() {
     var displayOrderIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var keepDisplayOrderDuringSortDelay by remember { mutableStateOf(false) }
     var sortDelayTick by remember { mutableStateOf(0) }
+    var pendingTodoToggleFeedback by remember { mutableStateOf(PendingTodoToggleFeedback()) }
     var deleteConfirmation by remember { mutableStateOf<DeleteConfirmation?>(null) }
     var imagePreviewTodoId by remember { mutableStateOf<String?>(null) }
     var pendingImageTodoId by remember { mutableStateOf<String?>(null) }
@@ -272,11 +291,20 @@ private fun PixelDoneApp() {
     var handledUpdateVersion by remember { mutableStateOf(storage.loadHandledUpdateVersion()) }
     var updateCheckInFlight by remember { mutableStateOf(false) }
     var scrollRequestSequence by remember { mutableStateOf(0) }
+    var highlightRequestSequence by remember { mutableStateOf(0) }
     var todoListScrollRequest by remember {
         mutableStateOf(
             TodoListScrollRequest(
                 sequence = 0,
                 intent = TodoListScrollIntent.KeepPosition,
+            ),
+        )
+    }
+    var todoListHighlightRequest by remember {
+        mutableStateOf(
+            TodoListHighlightRequest(
+                sequence = 0,
+                ids = emptySet(),
             ),
         )
     }
@@ -322,7 +350,30 @@ private fun PixelDoneApp() {
     LaunchedEffect(sortDelayTick) {
         if (sortDelayTick > 0) {
             delay(CompletionSortDelayMillis)
+            val feedback = pendingTodoToggleFeedback
             keepDisplayOrderDuringSortDelay = false
+            pendingTodoToggleFeedback = PendingTodoToggleFeedback()
+            if (feedback.undoneIds.isNotEmpty()) {
+                scrollRequestSequence += 1
+                todoListScrollRequest = TodoListScrollRequest(
+                    sequence = scrollRequestSequence,
+                    intent = TodoListScrollIntent.RevealTodos(feedback.undoneIds),
+                )
+            } else if (feedback.completedIds.isNotEmpty()) {
+                scrollRequestSequence += 1
+                todoListScrollRequest = TodoListScrollRequest(
+                    sequence = scrollRequestSequence,
+                    intent = TodoListScrollIntent.PreserveViewport,
+                )
+            }
+            val highlightIds = feedback.highlightIds
+            if (highlightIds.isNotEmpty()) {
+                highlightRequestSequence += 1
+                todoListHighlightRequest = TodoListHighlightRequest(
+                    sequence = highlightRequestSequence,
+                    ids = highlightIds,
+                )
+            }
         }
     }
 
@@ -359,6 +410,21 @@ private fun PixelDoneApp() {
         )
     }
 
+    fun requestTodoListHighlight(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        highlightRequestSequence += 1
+        todoListHighlightRequest = TodoListHighlightRequest(
+            sequence = highlightRequestSequence,
+            ids = ids,
+        )
+    }
+
+    fun revealAndHighlightTodos(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        requestTodoListScroll(TodoListScrollIntent.RevealTodos(ids))
+        requestTodoListHighlight(ids)
+    }
+
     fun hasNotificationPermission(): Boolean {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
@@ -376,27 +442,39 @@ private fun PixelDoneApp() {
         }
     }
 
-    fun setTodoImageFileName(todoId: String, imageFileName: String?): TodoItem? {
+    fun setTodoImageFileName(
+        todoId: String,
+        imageFileName: String?,
+        revealAfterUpdate: Boolean = false,
+    ): TodoItem? {
         val updatedTodos = updateTodoImageFileName(
             items = todos,
             id = todoId,
             imageFileName = imageFileName,
         ) ?: return null
         updateSelectedTodos(updatedTodos)
-        requestTodoListScroll(TodoListScrollIntent.KeepPosition)
+        if (revealAfterUpdate) {
+            revealAndHighlightTodos(setOf(todoId))
+        } else {
+            requestTodoListScroll(TodoListScrollIntent.KeepPosition)
+        }
         return updatedTodos.firstOrNull { it.id == todoId }
     }
 
     fun attachPickedImage(todoId: String, uri: Uri) {
         val previousImageFileName = todos.firstOrNull { it.id == todoId }?.imageFileName
         val newImageFileName = imageStore.copyImage(uri) ?: return
-        val updatedItem = setTodoImageFileName(todoId, newImageFileName)
+        val updatedItem = setTodoImageFileName(
+            todoId = todoId,
+            imageFileName = newImageFileName,
+            revealAfterUpdate = true,
+        )
         if (updatedItem == null) {
             imageStore.deleteImage(newImageFileName)
             return
         }
         imageStore.deleteImage(previousImageFileName)
-        imagePreviewTodoId = updatedItem.id
+        imagePreviewTodoId = null
     }
 
     fun removeTodoImage(todoId: String) {
@@ -519,7 +597,7 @@ private fun PixelDoneApp() {
 
         val updatedState = updateSelectedTodos(updatedTodos) ?: return false
         affectedTodoId?.let { id ->
-            requestTodoListScroll(TodoListScrollIntent.RevealTodo(id))
+            revealAndHighlightTodos(setOf(id))
         }
         requestNotificationPermissionIfNeeded(normalTodos(updatedState))
         clearEditor()
@@ -579,6 +657,7 @@ private fun PixelDoneApp() {
         updateChecklistState(updatedState)
         requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
         keepDisplayOrderDuringSortDelay = false
+        pendingTodoToggleFeedback = PendingTodoToggleFeedback()
         displayOrderIds = emptyList()
         clearEditor()
         editorMode = EditorMode.None
@@ -596,6 +675,7 @@ private fun PixelDoneApp() {
         clearEditor()
         editorMode = EditorMode.None
         keepDisplayOrderDuringSortDelay = false
+        pendingTodoToggleFeedback = PendingTodoToggleFeedback()
         displayOrderIds = emptyList()
         requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
         headerExpanded = false
@@ -646,6 +726,7 @@ private fun PixelDoneApp() {
                     imagePreviewTodoId = null
                     requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
                     keepDisplayOrderDuringSortDelay = false
+                    pendingTodoToggleFeedback = PendingTodoToggleFeedback()
                     displayOrderIds = emptyList()
                     if (editingChecklistId == confirmation.id) {
                         clearEditor()
@@ -847,24 +928,29 @@ private fun PixelDoneApp() {
         onSortModeChange = {
             requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
             keepDisplayOrderDuringSortDelay = false
+            pendingTodoToggleFeedback = PendingTodoToggleFeedback()
             sortMode = it
         },
         hideCompleted = hideCompleted,
         onHideCompletedChange = {
             requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
             keepDisplayOrderDuringSortDelay = false
+            pendingTodoToggleFeedback = PendingTodoToggleFeedback()
             hideCompleted = it
         },
         showDeadlineCountdown = showDeadlineCountdown,
         onDeadlineCountdownChange = { showDeadlineCountdown = it },
-        onToggleTodo = { id ->
-            requestTodoListScroll(TodoListScrollIntent.KeepPosition)
+        onToggleTodo = { id, checked ->
             displayOrderIds = if (keepDisplayOrderDuringSortDelay && displayOrderIds.isNotEmpty()) {
                 displayOrderIds
             } else {
                 sortedVisibleIds
             }
             updateSelectedTodos(toggleTodoCompletion(todos, id))
+            pendingTodoToggleFeedback = pendingTodoToggleFeedback.recordTodoToggle(
+                id = id,
+                checked = checked,
+            )
             keepDisplayOrderDuringSortDelay = true
             sortDelayTick += 1
         },
@@ -903,6 +989,7 @@ private fun PixelDoneApp() {
         displayOrderIds = displayOrderIds,
         keepDisplayOrder = keepDisplayOrderDuringSortDelay,
         todoListScrollRequest = todoListScrollRequest,
+        todoListHighlightRequest = todoListHighlightRequest,
         updateUiState = updateUiState,
         onUpdateClick = ::handleUpdateClick,
     )
@@ -962,7 +1049,7 @@ private fun PixelDoneScreen(
     onHideCompletedChange: (Boolean) -> Unit,
     showDeadlineCountdown: Boolean,
     onDeadlineCountdownChange: (Boolean) -> Unit,
-    onToggleTodo: (String) -> Unit,
+    onToggleTodo: (String, Boolean) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
     onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteEditingTodo: () -> Unit,
@@ -972,6 +1059,7 @@ private fun PixelDoneScreen(
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
+    todoListHighlightRequest: TodoListHighlightRequest,
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
 ) {
@@ -1022,6 +1110,7 @@ private fun PixelDoneScreen(
                 displayOrderIds = displayOrderIds,
                 keepDisplayOrder = keepDisplayOrder,
                 todoListScrollRequest = todoListScrollRequest,
+                todoListHighlightRequest = todoListHighlightRequest,
                 taskEditorVisible = taskEditorVisible,
                 isEditingTask = isEditingTask,
                 onOpenTaskEditor = onOpenTaskEditor,
@@ -1206,7 +1295,7 @@ private fun TaskWorkspacePanel(
     showDeadlineCountdown: Boolean,
     onDeadlineCountdownChange: (Boolean) -> Unit,
     completedCount: Int,
-    onToggleTodo: (String) -> Unit,
+    onToggleTodo: (String, Boolean) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
     onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteEditingTodo: () -> Unit,
@@ -1216,6 +1305,7 @@ private fun TaskWorkspacePanel(
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
+    todoListHighlightRequest: TodoListHighlightRequest,
     taskEditorVisible: Boolean,
     isEditingTask: Boolean,
     onOpenTaskEditor: () -> Unit,
@@ -1265,6 +1355,7 @@ private fun TaskWorkspacePanel(
             displayOrderIds = displayOrderIds,
             keepDisplayOrder = keepDisplayOrder,
             todoListScrollRequest = todoListScrollRequest,
+            todoListHighlightRequest = todoListHighlightRequest,
             showNewTaskButton = !isTrashSelected && !taskEditorVisible && !checklistEditorVisible,
             onOpenTaskEditor = onOpenTaskEditor,
             onOpenChecklistEditor = onOpenChecklistEditor,
@@ -1625,7 +1716,7 @@ private fun TodoListPanel(
     showDeadlineCountdown: Boolean,
     onDeadlineCountdownChange: (Boolean) -> Unit,
     completedCount: Int,
-    onToggleTodo: (String) -> Unit,
+    onToggleTodo: (String, Boolean) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
     onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteCompleted: () -> Unit,
@@ -1634,6 +1725,7 @@ private fun TodoListPanel(
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
+    todoListHighlightRequest: TodoListHighlightRequest,
     showNewTaskButton: Boolean,
     onOpenTaskEditor: () -> Unit,
     onOpenChecklistEditor: () -> Unit,
@@ -1656,19 +1748,52 @@ private fun TodoListPanel(
     val visibleItemIds = visibleItems.map { it.id }
     val listState = rememberLazyListState()
     val hapticFeedback = LocalHapticFeedback.current
+    var activeHighlightedTodoIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var handledPreserveViewportSequence by remember { mutableStateOf(0) }
+    val shouldPreserveViewport =
+        todoListScrollRequest.intent is TodoListScrollIntent.PreserveViewport &&
+            todoListScrollRequest.sequence != handledPreserveViewportSequence &&
+            visibleItems.isNotEmpty()
 
-    LaunchedEffect(todoListScrollRequest.sequence, visibleItemIds, keepDisplayOrder) {
+    LaunchedEffect(todoListHighlightRequest.sequence) {
+        activeHighlightedTodoIds = if (todoListHighlightRequest.sequence > 0) {
+            todoListHighlightRequest.ids
+        } else {
+            emptySet()
+        }
+        if (activeHighlightedTodoIds.isNotEmpty()) {
+            delay(CompletionSortDelayMillis)
+            activeHighlightedTodoIds = emptySet()
+        }
+    }
+
+    SideEffect {
+        if (shouldPreserveViewport) {
+            listState.requestScrollToItem(
+                index = listState.firstVisibleItemIndex.coerceIn(0, visibleItems.lastIndex),
+                scrollOffset = listState.firstVisibleItemScrollOffset,
+            )
+            handledPreserveViewportSequence = todoListScrollRequest.sequence
+        }
+    }
+
+    LaunchedEffect(todoListScrollRequest.sequence) {
         when (val intent = todoListScrollRequest.intent) {
             TodoListScrollIntent.KeepPosition -> Unit
+            TodoListScrollIntent.PreserveViewport -> Unit
             TodoListScrollIntent.ScrollToTop -> {
                 if (visibleItems.isNotEmpty()) {
                     listState.scrollToItem(0)
                 }
             }
-            is TodoListScrollIntent.RevealTodo -> {
-                val itemIndex = visibleItemIds.indexOf(intent.id)
-                if (itemIndex >= 0) {
-                    listState.scrollToItem(itemIndex)
+            is TodoListScrollIntent.RevealTodos -> {
+                firstRevealTargetIndex(
+                    visibleItemIds = visibleItemIds,
+                    targetIds = intent.ids,
+                )?.let { itemIndex ->
+                    if (itemIndex >= 0) {
+                        listState.scrollToItem(itemIndex)
+                    }
                 }
             }
         }
@@ -1766,6 +1891,7 @@ private fun TodoListPanel(
                                 onOpenTodoImage = onOpenTodoImage,
                                 nowMillis = nowMillis,
                                 showDeadlineCountdown = showDeadlineCountdown,
+                                highlighted = item.id in activeHighlightedTodoIds,
                             )
                         }
                     }
@@ -1798,17 +1924,51 @@ private fun orderedTodosForDisplay(
     return orderedItems + appendedItems
 }
 
+internal fun firstRevealTargetIndex(
+    visibleItemIds: List<String>,
+    targetIds: Set<String>,
+): Int? {
+    if (targetIds.isEmpty()) return null
+    val targetSet = targetIds.toSet()
+    return visibleItemIds.indexOfFirst { it in targetSet }
+        .takeIf { it >= 0 }
+}
+
+internal fun PendingTodoToggleFeedback.recordTodoToggle(
+    id: String,
+    checked: Boolean,
+): PendingTodoToggleFeedback {
+    return if (checked) {
+        copy(
+            completedIds = completedIds + id,
+            undoneIds = undoneIds - id,
+        )
+    } else {
+        copy(
+            completedIds = completedIds - id,
+            undoneIds = undoneIds + id,
+        )
+    }
+}
+
 @Composable
 private fun TodoRow(
     item: TodoItem,
-    onToggleTodo: (String) -> Unit,
+    onToggleTodo: (String, Boolean) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
     onOpenTodoImage: (TodoItem) -> Unit,
     nowMillis: Long,
     showDeadlineCountdown: Boolean,
+    highlighted: Boolean,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val itemBackground = if (item.completed) ClaudeCactus.copy(alpha = 0.35f) else ClaudeIvory
+    val borderColor by animateColorAsState(
+        targetValue = if (highlighted) ClaudeClayInteractive else ClaudeGray300,
+        animationSpec = tween(durationMillis = TodoHighlightFadeMillis),
+        label = "todoRowHighlightBorder",
+    )
+    val borderWidth = if (highlighted) 2.dp else 1.dp
     val dueDateTime = item.dueAtMillis.formatDateTime()
     val dueDateTimeColor = if (item.dueAtMillis.isExpired(nowMillis)) PixelError else ClaudeSlateLight
     val repeatText = if (item.reminderRepeat != ReminderRepeat.NONE) {
@@ -1820,7 +1980,7 @@ private fun TodoRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, ClaudeGray300, RectangleShape)
+            .border(borderWidth, borderColor, RectangleShape)
             .background(itemBackground)
             .clickable { onEditTodo(item) }
             .padding(8.dp),
@@ -1839,7 +1999,7 @@ private fun TodoRow(
                 if (checked) {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                 }
-                onToggleTodo(item.id)
+                onToggleTodo(item.id, checked)
             },
             colors = CheckboxDefaults.colors(
                 checkedColor = ClaudeMineral,
@@ -2263,13 +2423,6 @@ private fun TodoImagePreviewDialog(
                     destructive = true,
                 )
             }
-        },
-        dismissButton = {
-            PixelButton(
-                text = "CLOSE",
-                onClick = onDismiss,
-                primary = false,
-            )
         },
         shape = RectangleShape,
         containerColor = ClaudeGray100,
@@ -3053,7 +3206,7 @@ private fun PhonePreview() {
             onHideCompletedChange = {},
             showDeadlineCountdown = false,
             onDeadlineCountdownChange = {},
-            onToggleTodo = {},
+            onToggleTodo = { _, _ -> },
             onEditTodo = {},
             onOpenTodoImage = {},
             onDeleteEditingTodo = {},
@@ -3063,6 +3216,7 @@ private fun PhonePreview() {
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),
+            todoListHighlightRequest = previewHighlightRequest(),
             updateUiState = AppUpdateUiState(),
             onUpdateClick = {},
         )
@@ -3115,7 +3269,7 @@ private fun TabletPreview() {
             onHideCompletedChange = {},
             showDeadlineCountdown = true,
             onDeadlineCountdownChange = {},
-            onToggleTodo = {},
+            onToggleTodo = { _, _ -> },
             onEditTodo = {},
             onOpenTodoImage = {},
             onDeleteEditingTodo = {},
@@ -3125,6 +3279,7 @@ private fun TabletPreview() {
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),
+            todoListHighlightRequest = previewHighlightRequest(),
             updateUiState = AppUpdateUiState(status = UpdateUiStatus.Available),
             onUpdateClick = {},
         )
@@ -3176,5 +3331,12 @@ private fun previewScrollRequest(): TodoListScrollRequest {
     return TodoListScrollRequest(
         sequence = 0,
         intent = TodoListScrollIntent.KeepPosition,
+    )
+}
+
+private fun previewHighlightRequest(): TodoListHighlightRequest {
+    return TodoListHighlightRequest(
+        sequence = 0,
+        ids = emptySet(),
     )
 }

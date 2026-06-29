@@ -840,6 +840,64 @@ class TodoEngineTest {
         assertEquals(2_000L, CompletionSortDelayMillis)
     }
 
+    @Test
+    fun firstRevealTargetIndexChoosesHighestVisibleTarget() {
+        val visibleIds = listOf("one", "two", "three", "four")
+
+        assertEquals(1, firstRevealTargetIndex(visibleIds, setOf("four", "two")))
+    }
+
+    @Test
+    fun firstRevealTargetIndexReturnsNullWhenTargetsAreMissing() {
+        val visibleIds = listOf("one", "two", "three")
+
+        assertNull(firstRevealTargetIndex(visibleIds, setOf("missing", "other")))
+        assertNull(firstRevealTargetIndex(visibleIds, emptySet()))
+    }
+
+    @Test
+    fun todoToggleFeedbackRecordsCompletedTodosWithoutHighlight() {
+        val feedback = PendingTodoToggleFeedback()
+            .recordTodoToggle(id = "done", checked = true)
+
+        assertEquals(setOf("done"), feedback.completedIds)
+        assertEquals(emptySet<String>(), feedback.undoneIds)
+        assertEquals(emptySet<String>(), feedback.highlightIds)
+    }
+
+    @Test
+    fun todoToggleFeedbackRecordsUndoneTodosOnly() {
+        val feedback = PendingTodoToggleFeedback()
+            .recordTodoToggle(id = "undone", checked = false)
+
+        assertEquals(emptySet<String>(), feedback.completedIds)
+        assertEquals(setOf("undone"), feedback.undoneIds)
+        assertEquals(setOf("undone"), feedback.highlightIds)
+    }
+
+    @Test
+    fun todoToggleFeedbackHighlightsUndoneTodosOnly() {
+        val feedback = PendingTodoToggleFeedback()
+            .recordTodoToggle(id = "done", checked = true)
+            .recordTodoToggle(id = "undone", checked = false)
+
+        assertEquals(setOf("done"), feedback.completedIds)
+        assertEquals(setOf("undone"), feedback.undoneIds)
+        assertEquals(setOf("undone"), feedback.highlightIds)
+    }
+
+    @Test
+    fun todoToggleFeedbackUsesLatestStateForRepeatedTodo() {
+        val feedback = PendingTodoToggleFeedback()
+            .recordTodoToggle(id = "task", checked = true)
+            .recordTodoToggle(id = "task", checked = false)
+            .recordTodoToggle(id = "task", checked = true)
+
+        assertEquals(setOf("task"), feedback.completedIds)
+        assertEquals(emptySet<String>(), feedback.undoneIds)
+        assertEquals(emptySet<String>(), feedback.highlightIds)
+    }
+
     private fun item(
         id: String,
         priority: TodoPriority,

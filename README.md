@@ -23,6 +23,8 @@ Developer identity: CODEX & XUE.
 - Show priority with approved Google status colors: Low green, Mid blue, High yellow, and XHigh red.
 - Highlight overdue todo row date/time in the same red used by delete icons.
 - Tap a row checkbox to mark a todo done or active again.
+- Keep completed-task sorting delayed for quick consecutive checks without jumping the list.
+- Reveal and briefly border-highlight newly added, edited, reactivated, or image-updated todos.
 - Hide completed todos.
 - Move deleted tasks, completed-task batches, and deleted-list tasks into `TRASH`.
 - Restore tasks from `TRASH` without changing their completed state, recreating the original list if needed.
@@ -61,13 +63,13 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.4.3-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.4.4-debug.apk
 ```
 
 The current signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.4.3-release.apk
+app/build/outputs/apk/release/PixelDone-2.4.4-release.apk
 ```
 
 ## Install
@@ -75,7 +77,7 @@ app/build/outputs/apk/release/PixelDone-2.4.3-release.apk
 Install the signed release build with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.4.3-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.4.4-release.apk
 ```
 
 The formal package name is:
@@ -86,4 +88,4 @@ com.milesxue.pixeldone
 
 ## Status
 
-2.4.3 private signed release.
+2.4.4 private signed release.
