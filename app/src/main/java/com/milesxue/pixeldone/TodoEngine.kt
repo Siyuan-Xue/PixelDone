@@ -9,6 +9,9 @@ data class TodoItem(
     val createdAtMillis: Long,
     val reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
     val imageFileName: String? = null,
+    val trashedFromChecklistId: String? = null,
+    val trashedFromChecklistName: String? = null,
+    val trashedAtMillis: Long? = null,
 )
 
 data class TodoChecklist(
@@ -46,6 +49,8 @@ internal const val WeeklyReminderIntervalMillis = 7L * DailyReminderIntervalMill
 
 const val DefaultChecklistId = "main"
 const val DefaultChecklistName = "MAIN"
+const val TrashChecklistId = "trash"
+const val TrashChecklistName = "TRASH"
 
 fun createInitialChecklistState(
     items: List<TodoItem>,
@@ -59,17 +64,49 @@ fun createInitialChecklistState(
                 items = items,
                 createdAtMillis = createdAtMillis,
             ),
+            TodoChecklist(
+                id = TrashChecklistId,
+                name = TrashChecklistName,
+                items = emptyList(),
+                createdAtMillis = createdAtMillis,
+            ),
         ),
         selectedListId = DefaultChecklistId,
     )
 }
 
 fun selectedChecklistOf(state: TodoChecklistState): TodoChecklist {
-    return state.lists.firstOrNull { it.id == state.selectedListId } ?: state.lists.first()
+    return state.lists.firstOrNull { it.id == state.selectedListId }
+        ?: state.lists.firstOrNull { !isTrashChecklist(it) }
+        ?: state.lists.first()
 }
 
 fun allTodos(state: TodoChecklistState): List<TodoItem> {
     return state.lists.flatMap { it.items }
+}
+
+fun normalTodos(state: TodoChecklistState): List<TodoItem> {
+    return state.lists.filterNot(::isTrashChecklist).flatMap { it.items }
+}
+
+fun trashTodos(state: TodoChecklistState): List<TodoItem> {
+    return state.lists.firstOrNull(::isTrashChecklist)?.items.orEmpty()
+}
+
+fun normalChecklistCount(state: TodoChecklistState): Int {
+    return state.lists.count { !isTrashChecklist(it) }
+}
+
+fun isTrashChecklist(checklist: TodoChecklist): Boolean {
+    return checklist.id == TrashChecklistId
+}
+
+fun isTrashChecklistId(id: String): Boolean {
+    return id == TrashChecklistId
+}
+
+fun isTrashedTodo(item: TodoItem): Boolean {
+    return item.trashedAtMillis != null || item.trashedFromChecklistId != null
 }
 
 fun activeTodoCount(checklist: TodoChecklist): Int {
@@ -87,6 +124,7 @@ fun isChecklistNameAvailable(
 ): Boolean {
     val name = nameInput.trim()
     if (name.isEmpty()) return false
+    if (name.equals(TrashChecklistName, ignoreCase = true)) return false
 
     return state.lists.none { checklist ->
         checklist.id != editingId && checklist.name.equals(name, ignoreCase = true)
@@ -99,6 +137,8 @@ fun createTodoChecklist(
     nameInput: String,
     createdAtMillis: Long,
 ): TodoChecklistState? {
+    if (isTrashChecklistId(id)) return null
+
     val name = nameInput.trim()
     if (!isChecklistNameAvailable(state, name)) return null
 
@@ -109,7 +149,9 @@ fun createTodoChecklist(
         createdAtMillis = createdAtMillis,
     )
     return state.copy(
-        lists = state.lists + checklist,
+        lists = state.lists.filterNot(::isTrashChecklist) +
+            checklist +
+            state.lists.filter(::isTrashChecklist),
         selectedListId = checklist.id,
     )
 }
@@ -119,6 +161,8 @@ fun renameTodoChecklist(
     id: String,
     nameInput: String,
 ): TodoChecklistState? {
+    if (isTrashChecklistId(id)) return null
+
     val name = nameInput.trim()
     if (!isChecklistNameAvailable(state, name, editingId = id)) return null
 
@@ -140,20 +184,160 @@ fun selectTodoChecklist(state: TodoChecklistState, id: String): TodoChecklistSta
     return state.copy(selectedListId = id)
 }
 
-fun deleteTodoChecklist(state: TodoChecklistState, id: String): TodoChecklistState? {
-    if (state.lists.size <= 1) return null
+fun deleteTodoChecklist(
+    state: TodoChecklistState,
+    id: String,
+    trashedAtMillis: Long,
+): TodoChecklistState? {
+    if (isTrashChecklistId(id)) return null
+    if (normalChecklistCount(state) <= 1) return null
 
-    val updatedLists = state.lists.filterNot { it.id == id }
-    if (updatedLists.size == state.lists.size) return null
+    val checklistToDelete = state.lists.firstOrNull { it.id == id } ?: return null
+    val trash = state.lists.firstOrNull(::isTrashChecklist) ?: return null
+    val movedItems = checklistToDelete.items.map { item ->
+        item.toTrashItem(
+            sourceChecklist = checklistToDelete,
+            trashedAtMillis = trashedAtMillis,
+        )
+    }
+    val updatedLists = state.lists
+        .filterNot { it.id == id }
+        .map { checklist ->
+            if (isTrashChecklist(checklist)) {
+                trash.copy(items = trash.items + movedItems)
+            } else {
+                checklist
+            }
+        }
 
     val selectedListId = if (state.selectedListId == id) {
-        updatedLists.first().id
+        updatedLists.first { !isTrashChecklist(it) }.id
     } else {
         state.selectedListId
     }
     return state.copy(
         lists = updatedLists,
         selectedListId = selectedListId,
+    )
+}
+
+fun moveTodoItemToTrash(
+    state: TodoChecklistState,
+    checklistId: String,
+    todoId: String,
+    trashedAtMillis: Long,
+): TodoChecklistState? {
+    if (isTrashChecklistId(checklistId)) return null
+    val sourceChecklist = state.lists.firstOrNull { it.id == checklistId } ?: return null
+    val itemToMove = sourceChecklist.items.firstOrNull { it.id == todoId } ?: return null
+
+    return moveTodosToTrash(
+        state = state,
+        sourceChecklist = sourceChecklist,
+        todoIds = setOf(itemToMove.id),
+        trashedAtMillis = trashedAtMillis,
+    )
+}
+
+fun moveCompletedTodosToTrash(
+    state: TodoChecklistState,
+    checklistId: String,
+    trashedAtMillis: Long,
+): TodoChecklistState? {
+    if (isTrashChecklistId(checklistId)) return null
+    val sourceChecklist = state.lists.firstOrNull { it.id == checklistId } ?: return null
+    val completedIds = sourceChecklist.items
+        .filter { it.completed }
+        .mapTo(mutableSetOf()) { it.id }
+    if (completedIds.isEmpty()) return null
+
+    return moveTodosToTrash(
+        state = state,
+        sourceChecklist = sourceChecklist,
+        todoIds = completedIds,
+        trashedAtMillis = trashedAtMillis,
+    )
+}
+
+fun restoreTodoFromTrash(
+    state: TodoChecklistState,
+    todoId: String,
+    restoredAtMillis: Long,
+): TodoChecklistState? {
+    val trash = state.lists.firstOrNull(::isTrashChecklist) ?: return null
+    val trashedItem = trash.items.firstOrNull { it.id == todoId } ?: return null
+    val originalChecklistId = trashedItem.trashedFromChecklistId
+        ?.takeIf { it.isNotBlank() && !isTrashChecklistId(it) }
+    val originalChecklist = originalChecklistId?.let { id ->
+        state.lists.firstOrNull { it.id == id && !isTrashChecklist(it) }
+    }
+    val fallbackChecklist = state.lists.firstOrNull { !isTrashChecklist(it) }
+    val targetChecklistId = originalChecklist?.id
+        ?: originalChecklistId
+        ?: fallbackChecklist?.id
+        ?: DefaultChecklistId
+
+    val listsWithTarget = when {
+        originalChecklist != null -> state.lists
+        originalChecklistId != null -> {
+            val restoredChecklist = TodoChecklist(
+                id = originalChecklistId,
+                name = restoredChecklistName(trashedItem),
+                items = emptyList(),
+                createdAtMillis = restoredAtMillis,
+            )
+            state.lists.filterNot(::isTrashChecklist) + restoredChecklist + trash
+        }
+        fallbackChecklist != null -> state.lists
+        else -> {
+            val fallbackMain = TodoChecklist(
+                id = DefaultChecklistId,
+                name = DefaultChecklistName,
+                items = emptyList(),
+                createdAtMillis = restoredAtMillis,
+            )
+            state.lists.filterNot(::isTrashChecklist) + fallbackMain + trash
+        }
+    }
+
+    val selectedListId = if (state.lists.any { it.id == state.selectedListId }) {
+        state.selectedListId
+    } else {
+        targetChecklistId
+    }
+
+    val restoredItem = trashedItem.copy(
+        trashedFromChecklistId = null,
+        trashedFromChecklistName = null,
+        trashedAtMillis = null,
+    )
+    val updatedLists = listsWithTarget.map { checklist ->
+        when {
+            isTrashChecklist(checklist) -> {
+                checklist.copy(items = checklist.items.filterNot { it.id == todoId })
+            }
+            checklist.id == targetChecklistId -> {
+                checklist.copy(items = checklist.items + restoredItem)
+            }
+            else -> checklist
+        }
+    }
+
+    return state.copy(
+        lists = updatedLists,
+        selectedListId = selectedListId,
+    )
+}
+
+fun deleteAllTrashTodos(state: TodoChecklistState): TodoChecklistState {
+    return state.copy(
+        lists = state.lists.map { checklist ->
+            if (isTrashChecklist(checklist)) {
+                checklist.copy(items = emptyList())
+            } else {
+                checklist
+            }
+        },
     )
 }
 
@@ -179,24 +363,64 @@ fun normalizeChecklistState(
     state: TodoChecklistState,
     fallbackCreatedAtMillis: Long,
 ): TodoChecklistState {
-    val validLists = state.lists
-        .mapNotNull { checklist ->
-            val name = checklist.name.trim()
-            if (checklist.id.isBlank() || name.isEmpty()) {
-                null
-            } else {
-                checklist.copy(name = name)
-            }
+    val trashItems = mutableListOf<TodoItem>()
+    var trashCreatedAtMillis: Long? = null
+    val validNormalLists = state.lists.mapNotNull { checklist ->
+        val name = checklist.name.trim()
+        if (checklist.id.isBlank() || name.isEmpty()) {
+            return@mapNotNull null
         }
 
-    if (validLists.isEmpty()) {
-        return createInitialChecklistState(emptyList(), fallbackCreatedAtMillis)
+        if (isTrashChecklist(checklist)) {
+            trashCreatedAtMillis = trashCreatedAtMillis ?: checklist.createdAtMillis
+            trashItems += checklist.items.map { item ->
+                if (isTrashedTodo(item)) {
+                    item
+                } else {
+                    item.copy(
+                        trashedFromChecklistId = DefaultChecklistId,
+                        trashedFromChecklistName = DefaultChecklistName,
+                        trashedAtMillis = fallbackCreatedAtMillis,
+                    )
+                }
+            }
+            return@mapNotNull null
+        }
+
+        val normalName = if (name.equals(TrashChecklistName, ignoreCase = true)) {
+            "$TrashChecklistName LIST"
+        } else {
+            name
+        }
+        val normalItems = checklist.items.filterNot(::isTrashedTodo)
+        trashItems += checklist.items.filter(::isTrashedTodo)
+        checklist.copy(
+            name = normalName,
+            items = normalItems,
+        )
     }
+    val normalLists = validNormalLists.ifEmpty {
+        listOf(
+            TodoChecklist(
+                id = DefaultChecklistId,
+                name = DefaultChecklistName,
+                items = emptyList(),
+                createdAtMillis = fallbackCreatedAtMillis,
+            ),
+        )
+    }
+    val trashChecklist = TodoChecklist(
+        id = TrashChecklistId,
+        name = TrashChecklistName,
+        items = trashItems,
+        createdAtMillis = trashCreatedAtMillis ?: fallbackCreatedAtMillis,
+    )
+    val validLists = normalLists + trashChecklist
 
     val selectedId = if (validLists.any { it.id == state.selectedListId }) {
         state.selectedListId
     } else {
-        validLists.first().id
+        normalLists.first().id
     }
     return state.copy(
         lists = validLists,
@@ -307,10 +531,12 @@ fun deleteCompletedTodos(items: List<TodoItem>): List<TodoItem> {
 }
 
 fun shouldScheduleTodoAlarm(item: TodoItem, nowMillis: Long): Boolean {
+    if (isTrashedTodo(item)) return false
     return nextReminderAtMillis(item, nowMillis) != null
 }
 
 fun nextReminderAtMillis(item: TodoItem, nowMillis: Long): Long? {
+    if (isTrashedTodo(item)) return null
     if (item.completed) return null
     return nextReminderAtMillis(
         dueAtMillis = item.dueAtMillis,
@@ -345,6 +571,7 @@ fun advanceRepeatingTodoAfterReminder(
     item: TodoItem,
     nowMillis: Long,
 ): TodoItem? {
+    if (isTrashedTodo(item)) return null
     if (item.completed || item.reminderRepeat == ReminderRepeat.NONE) return null
 
     val nextDueAtMillis = nextReminderAtMillis(
@@ -367,6 +594,7 @@ fun advanceRepeatingTodoAfterReminder(
 ): TodoChecklistState? {
     var changed = false
     val updatedLists = state.lists.map { checklist ->
+        if (isTrashChecklist(checklist)) return@map checklist
         val updatedItems = checklist.items.map { item ->
             if (item.id == todoId) {
                 advanceRepeatingTodoAfterReminder(item, nowMillis)?.also {
@@ -393,6 +621,62 @@ private fun nextRepeatingReminderAtMillis(
     val elapsedIntervals = elapsedMillis / intervalMillis
     val nextAtMillis = dueAtMillis + ((elapsedIntervals + 1L) * intervalMillis)
     return nextAtMillis.takeIf { it > nowMillis }
+}
+
+private fun moveTodosToTrash(
+    state: TodoChecklistState,
+    sourceChecklist: TodoChecklist,
+    todoIds: Set<String>,
+    trashedAtMillis: Long,
+): TodoChecklistState? {
+    val trash = state.lists.firstOrNull(::isTrashChecklist) ?: return null
+    val movedItems = sourceChecklist.items
+        .filter { it.id in todoIds }
+        .map { item ->
+            item.toTrashItem(
+                sourceChecklist = sourceChecklist,
+                trashedAtMillis = trashedAtMillis,
+            )
+        }
+    if (movedItems.isEmpty()) return null
+
+    val updatedLists = state.lists.map { checklist ->
+        when {
+            checklist.id == sourceChecklist.id -> {
+                checklist.copy(items = checklist.items.filterNot { it.id in todoIds })
+            }
+            isTrashChecklist(checklist) -> {
+                trash.copy(items = trash.items + movedItems)
+            }
+            else -> checklist
+        }
+    }
+
+    return state.copy(lists = updatedLists)
+}
+
+private fun TodoItem.toTrashItem(
+    sourceChecklist: TodoChecklist,
+    trashedAtMillis: Long,
+): TodoItem {
+    return copy(
+        trashedFromChecklistId = sourceChecklist.id,
+        trashedFromChecklistName = sourceChecklist.name,
+        trashedAtMillis = trashedAtMillis,
+    )
+}
+
+private fun restoredChecklistName(item: TodoItem): String {
+    val sourceName = item.trashedFromChecklistName
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: return DefaultChecklistName
+
+    return if (sourceName.equals(TrashChecklistName, ignoreCase = true)) {
+        DefaultChecklistName
+    } else {
+        sourceName
+    }
 }
 
 private fun todoComparator(sortMode: SortMode): Comparator<TodoItem> {

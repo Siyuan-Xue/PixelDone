@@ -79,6 +79,15 @@ object TodoJsonCodec {
             item.imageFileName?.let { fileName ->
                 append("\"imageFileName\":\"").append(escape(fileName)).append("\",")
             }
+            item.trashedFromChecklistId?.let { checklistId ->
+                append("\"trashedFromChecklistId\":\"").append(escape(checklistId)).append("\",")
+            }
+            item.trashedFromChecklistName?.let { checklistName ->
+                append("\"trashedFromChecklistName\":\"").append(escape(checklistName)).append("\",")
+            }
+            item.trashedAtMillis?.let { trashedAtMillis ->
+                append("\"trashedAtMillis\":").append(trashedAtMillis).append(",")
+            }
             append("\"completed\":").append(item.completed).append(",")
             append("\"createdAtMillis\":").append(item.createdAtMillis)
             append("}")
@@ -98,6 +107,11 @@ object TodoJsonCodec {
         val completed = values["completed"] as? Boolean ?: return null
         val createdAtMillis = values["createdAtMillis"] as? Long ?: return null
         val imageFileName = (values["imageFileName"] as? String)?.takeIf { it.isNotBlank() }
+        val trashedFromChecklistId =
+            (values["trashedFromChecklistId"] as? String)?.takeIf { it.isNotBlank() }
+        val trashedFromChecklistName =
+            (values["trashedFromChecklistName"] as? String)?.takeIf { it.isNotBlank() }
+        val trashedAtMillis = values["trashedAtMillis"] as? Long
 
         return TodoItem(
             id = id,
@@ -108,6 +122,9 @@ object TodoJsonCodec {
             createdAtMillis = createdAtMillis,
             reminderRepeat = reminderRepeat,
             imageFileName = imageFileName,
+            trashedFromChecklistId = trashedFromChecklistId,
+            trashedFromChecklistName = trashedFromChecklistName,
+            trashedAtMillis = trashedAtMillis,
         )
     }
 

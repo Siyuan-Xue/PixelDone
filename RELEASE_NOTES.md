@@ -1,13 +1,15 @@
-PixelDone v2.1.3 refines task/list editing and repeat reminder behavior, and ships as a signed private release.
+PixelDone v2.4.2 adds the TRASH recovery workflow and ships as a signed private release.
 
 Highlights:
-- Removes the old `DETAILS` heading from task and list editors.
-- Keeps editor control areas sized to their content, without internal vertical scrolling.
-- Removes visible `ALARM` wording from todo row subtitles while keeping reminder scheduling unchanged.
-- Highlights overdue row date/time text with the same red used by delete icons.
-- Adds the centered checklist hint `LONG PRESS "+" TO CREATE LIST`.
-- Advances daily and weekly repeating todos to their next due time after the notification fires, so subtitles stay current.
+- Adds a fixed `TRASH` checklist for soft-deleted tasks.
+- Moves deleted tasks, completed-task batches, and tasks from deleted lists into `TRASH`.
+- Restores tasks from `TRASH` while preserving completed state.
+- Recreates the original checklist during restore when that checklist was deleted.
+- Keeps `TRASH` read-only, with restore actions per task and a permanent `DELETE ALL` action.
+- Excludes `TRASH` tasks from alarm scheduling.
+- Adds DDL countdown subtitles, single-image task attachments, and zoomable image preview from the 2.2 and 2.3 debug validation line.
+- Keeps task/list edit fields focused only for new-item creation, not normal editing.
 
-Install note: attach `PixelDone-2.1.3-release.apk` from this GitHub Release and install it as the signed formal PixelDone app.
+Install note: attach `PixelDone-2.4.2-release.apk` from this GitHub Release and install it as the signed formal PixelDone app.
 
 CODEX & XUE

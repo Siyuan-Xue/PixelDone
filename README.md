@@ -8,6 +8,7 @@ Developer identity: CODEX & XUE.
 
 - Add todos with a name, four-step priority, and date/time.
 - Keep multiple local checklists, starting from a default `MAIN` list.
+- Keep a fixed `TRASH` list for soft-deleted tasks.
 - Expand the top bar to switch checklists and edit checklist names.
 - Long-press the `+` control to create a new checklist while short press still creates a task.
 - Tap a todo row to edit it in the bottom editor.
@@ -22,7 +23,9 @@ Developer identity: CODEX & XUE.
 - Highlight overdue todo row date/time in the same red used by delete icons.
 - Tap a row checkbox to mark a todo done or active again.
 - Hide completed todos.
-- Delete all completed todos from the top list controls.
+- Move deleted tasks, completed-task batches, and deleted-list tasks into `TRASH`.
+- Restore tasks from `TRASH` without changing their completed state, recreating the original list if needed.
+- Permanently delete all tasks from `TRASH` and clean their image files.
 - Schedule a local alarm notification for each active future todo.
 - Set reminder repeat per todo: none, daily, or weekly.
 - Advance daily and weekly repeating todos to the next reminder time after a notification fires.
@@ -56,7 +59,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.3.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.4.2-debug.apk
 ```
 
 ## Install
@@ -64,7 +67,7 @@ app/build/outputs/apk/debug/PixelDone-2.3.2-debug.apk
 Install the local debug build with:
 
 ```powershell
-adb install -r -d app/build/outputs/apk/debug/PixelDone-2.3.2-debug.apk
+adb install -r -d app/build/outputs/apk/debug/PixelDone-2.4.2-debug.apk
 ```
 
 The debug package name is:
@@ -75,4 +78,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.3.2 local debug validation.
+2.4.2 local debug validation.

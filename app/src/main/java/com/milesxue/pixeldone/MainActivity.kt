@@ -186,6 +186,7 @@ private sealed interface DeleteConfirmation {
     data class SingleTodo(val id: String, val title: String) : DeleteConfirmation
     data class CompletedTodos(val count: Int) : DeleteConfirmation
     data class Checklist(val id: String, val name: String, val todoCount: Int) : DeleteConfirmation
+    data class TrashTodos(val count: Int) : DeleteConfirmation
 }
 
 private sealed interface TodoListScrollIntent {
@@ -271,8 +272,8 @@ private fun PixelDoneApp() {
         )
     }
     val selectedChecklist = selectedChecklistOf(checklistState)
+    val isTrashSelected = isTrashChecklist(selectedChecklist)
     val todos = selectedChecklist.items
-    val allCurrentTodos = allTodos(checklistState)
     val activeCount = activeTodoCount(selectedChecklist)
     val completedCount = completedTodoCount(selectedChecklist)
     val editingTaskId = (editorMode as? EditorMode.EditTask)?.id
@@ -293,12 +294,12 @@ private fun PixelDoneApp() {
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            TodoAlarmScheduler.sync(context, emptyList(), allTodos(checklistState))
+            TodoAlarmScheduler.sync(context, emptyList(), normalTodos(checklistState))
         }
     }
 
     LaunchedEffect(Unit) {
-        TodoAlarmScheduler.sync(context, emptyList(), allCurrentTodos)
+        TodoAlarmScheduler.sync(context, emptyList(), normalTodos(checklistState))
     }
 
     val sortedVisibleIds = visibleTodos(todos, sortMode, hideCompleted).map { it.id }
@@ -332,8 +333,8 @@ private fun PixelDoneApp() {
     }
 
     fun updateChecklistState(updatedState: TodoChecklistState) {
-        val previousTodos = allTodos(checklistState)
-        val updatedTodos = allTodos(updatedState)
+        val previousTodos = normalTodos(checklistState)
+        val updatedTodos = normalTodos(updatedState)
         checklistState = updatedState
         storage.saveTodoState(updatedState)
         TodoAlarmScheduler.sync(context, previousTodos, updatedTodos)
@@ -432,6 +433,7 @@ private fun PixelDoneApp() {
     }
 
     fun openNewTaskEditor() {
+        if (isTrashSelected) return
         clearEditor()
         dueAtMillis = defaultDueAtMillis()
         editorMode = EditorMode.NewTask
@@ -479,6 +481,7 @@ private fun PixelDoneApp() {
     }
 
     fun submitTodo(): Boolean {
+        if (isTrashSelected) return false
         val editingId = editingTaskId
         var affectedTodoId = editingId
         val updatedTodos = if (editingId == null) {
@@ -517,13 +520,14 @@ private fun PixelDoneApp() {
         affectedTodoId?.let { id ->
             requestTodoListScroll(TodoListScrollIntent.RevealTodo(id))
         }
-        requestNotificationPermissionIfNeeded(allTodos(updatedState))
+        requestNotificationPermissionIfNeeded(normalTodos(updatedState))
         clearEditor()
         editorMode = EditorMode.None
         return true
     }
 
     fun startEditing(item: TodoItem) {
+        if (isTrashSelected) return
         editorMode = EditorMode.EditTask(item.id)
         titleInput = item.title
         selectedPriority = item.priority
@@ -532,6 +536,7 @@ private fun PixelDoneApp() {
     }
 
     fun startEditingChecklist(checklist: TodoChecklist) {
+        if (isTrashChecklist(checklist)) return
         headerExpanded = true
         editorMode = EditorMode.EditChecklist(checklist.id)
         checklistNameInput = checklist.name
@@ -540,6 +545,10 @@ private fun PixelDoneApp() {
 
     fun submitChecklist(): Boolean {
         val editingId = editingChecklistId
+        if (editingId == TrashChecklistId) {
+            checklistEditorError = "TRASH is locked."
+            return false
+        }
         val trimmedName = checklistNameInput.trim()
         checklistEditorError = when {
             trimmedName.isEmpty() -> "Name is required."
@@ -595,9 +604,12 @@ private fun PixelDoneApp() {
         when (val confirmation = deleteConfirmation) {
             is DeleteConfirmation.SingleTodo -> {
                 requestTodoListScroll(TodoListScrollIntent.KeepPosition)
-                val deletedImageFileName = todos.firstOrNull { it.id == confirmation.id }?.imageFileName
-                updateSelectedTodos(deleteTodoItem(todos, confirmation.id))
-                imageStore.deleteImage(deletedImageFileName)
+                moveTodoItemToTrash(
+                    state = checklistState,
+                    checklistId = selectedChecklist.id,
+                    todoId = confirmation.id,
+                    trashedAtMillis = System.currentTimeMillis(),
+                )?.let(::updateChecklistState)
                 if (imagePreviewTodoId == confirmation.id) {
                     imagePreviewTodoId = null
                 }
@@ -609,11 +621,11 @@ private fun PixelDoneApp() {
             is DeleteConfirmation.CompletedTodos -> {
                 requestTodoListScroll(TodoListScrollIntent.KeepPosition)
                 val editingItem = todos.firstOrNull { it.id == editingTaskId }
-                val deletedImageFileNames = todos
-                    .filter { it.completed }
-                    .mapNotNull { it.imageFileName }
-                updateSelectedTodos(deleteCompletedTodos(todos))
-                deletedImageFileNames.forEach(imageStore::deleteImage)
+                moveCompletedTodosToTrash(
+                    state = checklistState,
+                    checklistId = selectedChecklist.id,
+                    trashedAtMillis = System.currentTimeMillis(),
+                )?.let(::updateChecklistState)
                 if (imagePreviewTodoId != null && todos.any { it.id == imagePreviewTodoId && it.completed }) {
                     imagePreviewTodoId = null
                 }
@@ -623,15 +635,13 @@ private fun PixelDoneApp() {
                 }
             }
             is DeleteConfirmation.Checklist -> {
-                val deletedImageFileNames = checklistState.lists
-                    .firstOrNull { it.id == confirmation.id }
-                    ?.items
-                    ?.mapNotNull { it.imageFileName }
-                    .orEmpty()
-                val updatedState = deleteTodoChecklist(checklistState, confirmation.id)
+                val updatedState = deleteTodoChecklist(
+                    state = checklistState,
+                    id = confirmation.id,
+                    trashedAtMillis = System.currentTimeMillis(),
+                )
                 if (updatedState != null) {
                     updateChecklistState(updatedState)
-                    deletedImageFileNames.forEach(imageStore::deleteImage)
                     imagePreviewTodoId = null
                     requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
                     keepDisplayOrderDuringSortDelay = false
@@ -642,9 +652,27 @@ private fun PixelDoneApp() {
                     }
                 }
             }
+            is DeleteConfirmation.TrashTodos -> {
+                val deletedImageFileNames = trashTodos(checklistState).mapNotNull { it.imageFileName }
+                updateChecklistState(deleteAllTrashTodos(checklistState))
+                deletedImageFileNames.forEach(imageStore::deleteImage)
+                imagePreviewTodoId = null
+                requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
+            }
             null -> Unit
         }
         deleteConfirmation = null
+    }
+
+    fun restoreTrashTodo(todoId: String) {
+        restoreTodoFromTrash(
+            state = checklistState,
+            todoId = todoId,
+            restoredAtMillis = System.currentTimeMillis(),
+        )?.let { updatedState ->
+            updateChecklistState(updatedState)
+            requestTodoListScroll(TodoListScrollIntent.KeepPosition)
+        }
     }
 
     fun openUpdateUrl(info: AppUpdateInfo) {
@@ -733,6 +761,7 @@ private fun PixelDoneApp() {
         checklists = checklistState.lists,
         selectedChecklistId = selectedChecklist.id,
         selectedChecklistName = selectedChecklist.name,
+        isTrashSelected = isTrashSelected,
         headerExpanded = headerExpanded,
         onHeaderExpandedChange = { headerExpanded = it },
         onSelectChecklist = ::selectChecklist,
@@ -765,11 +794,13 @@ private fun PixelDoneApp() {
         checklistEditorVisible = checklistEditorVisible,
         isEditingChecklist = editingChecklistId != null,
         checklistEditorError = checklistEditorError,
-        canDeleteChecklist = checklistState.lists.size > 1,
+        canDeleteChecklist = !isTrashSelected && normalChecklistCount(checklistState) > 1,
         onSubmitChecklist = ::submitChecklist,
         onDeleteChecklist = {
             editingChecklistId?.let { id ->
-                checklistState.lists.firstOrNull { it.id == id }?.let { checklist ->
+                checklistState.lists
+                    .firstOrNull { it.id == id && !isTrashChecklist(it) }
+                    ?.let { checklist ->
                     deleteConfirmation = DeleteConfirmation.Checklist(
                         id = checklist.id,
                         name = checklist.name,
@@ -805,10 +836,12 @@ private fun PixelDoneApp() {
         },
         onEditTodo = ::startEditing,
         onOpenTodoImage = { item ->
-            if (item.imageFileName == null) {
-                openTodoImagePicker(item.id)
-            } else {
-                imagePreviewTodoId = item.id
+            if (!isTrashSelected) {
+                if (item.imageFileName == null) {
+                    openTodoImagePicker(item.id)
+                } else {
+                    imagePreviewTodoId = item.id
+                }
             }
         },
         onDeleteEditingTodo = {
@@ -819,9 +852,18 @@ private fun PixelDoneApp() {
             }
         },
         onDeleteCompleted = {
-            val completedCount = todos.count { it.completed }
-            if (completedCount > 0) {
-                deleteConfirmation = DeleteConfirmation.CompletedTodos(completedCount)
+            if (!isTrashSelected) {
+                val completedCount = todos.count { it.completed }
+                if (completedCount > 0) {
+                    deleteConfirmation = DeleteConfirmation.CompletedTodos(completedCount)
+                }
+            }
+        },
+        onRestoreTodo = ::restoreTrashTodo,
+        onDeleteAllTrash = {
+            val trashCount = trashTodos(checklistState).size
+            if (trashCount > 0) {
+                deleteConfirmation = DeleteConfirmation.TrashTodos(trashCount)
             }
         },
         displayOrderIds = displayOrderIds,
@@ -857,6 +899,7 @@ private fun PixelDoneScreen(
     checklists: List<TodoChecklist>,
     selectedChecklistId: String,
     selectedChecklistName: String,
+    isTrashSelected: Boolean,
     headerExpanded: Boolean,
     onHeaderExpandedChange: (Boolean) -> Unit,
     onSelectChecklist: (String) -> Unit,
@@ -898,6 +941,8 @@ private fun PixelDoneScreen(
     onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteEditingTodo: () -> Unit,
     onDeleteCompleted: () -> Unit,
+    onRestoreTodo: (String) -> Unit,
+    onDeleteAllTrash: () -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
@@ -923,6 +968,7 @@ private fun PixelDoneScreen(
                 checklists = checklists,
                 selectedChecklistId = selectedChecklistId,
                 selectedChecklistName = selectedChecklistName,
+                isTrashSelected = isTrashSelected,
                 activeCount = activeCount,
                 completedCount = completedCount,
                 expanded = headerExpanded,
@@ -932,6 +978,7 @@ private fun PixelDoneScreen(
             )
             TaskWorkspacePanel(
                 todos = todos,
+                isTrashSelected = isTrashSelected,
                 sortMode = sortMode,
                 onSortModeChange = onSortModeChange,
                 hideCompleted = hideCompleted,
@@ -944,6 +991,8 @@ private fun PixelDoneScreen(
                 onOpenTodoImage = onOpenTodoImage,
                 onDeleteEditingTodo = onDeleteEditingTodo,
                 onDeleteCompleted = onDeleteCompleted,
+                onRestoreTodo = onRestoreTodo,
+                onDeleteAllTrash = onDeleteAllTrash,
                 displayOrderIds = displayOrderIds,
                 keepDisplayOrder = keepDisplayOrder,
                 todoListScrollRequest = todoListScrollRequest,
@@ -986,6 +1035,7 @@ private fun Header(
     checklists: List<TodoChecklist>,
     selectedChecklistId: String,
     selectedChecklistName: String,
+    isTrashSelected: Boolean,
     activeCount: Int,
     completedCount: Int,
     expanded: Boolean,
@@ -994,6 +1044,11 @@ private fun Header(
     onEditChecklist: (String) -> Unit,
 ) {
     val scrollState = rememberScrollState()
+    val statusText = if (isTrashSelected) {
+        "ITEMS ${activeCount + completedCount}"
+    } else {
+        "ACTIVE $activeCount  DONE $completedCount"
+    }
 
     PixelPanel(
         color = ClaudeGray100,
@@ -1020,7 +1075,7 @@ private fun Header(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = "ACTIVE $activeCount  DONE $completedCount",
+                text = statusText,
                 style = MaterialTheme.typography.labelSmall,
                 color = ClaudeSlateLight,
                 maxLines = 1,
@@ -1040,6 +1095,7 @@ private fun Header(
                     ChecklistPickerRow(
                         checklist = checklist,
                         selected = checklist.id == selectedChecklistId,
+                        canEdit = !isTrashChecklist(checklist),
                         onSelect = { onSelectChecklist(checklist.id) },
                         onEdit = { onEditChecklist(checklist.id) },
                     )
@@ -1063,6 +1119,7 @@ private fun Header(
 private fun ChecklistPickerRow(
     checklist: TodoChecklist,
     selected: Boolean,
+    canEdit: Boolean,
     onSelect: () -> Unit,
     onEdit: () -> Unit,
 ) {
@@ -1095,20 +1152,27 @@ private fun ChecklistPickerRow(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "ACTIVE ${activeTodoCount(checklist)}  DONE ${completedTodoCount(checklist)}",
+                text = if (isTrashChecklist(checklist)) {
+                    "ITEMS ${checklist.items.size}"
+                } else {
+                    "ACTIVE ${activeTodoCount(checklist)}  DONE ${completedTodoCount(checklist)}"
+                },
                 style = MaterialTheme.typography.labelSmall,
                 color = ClaudeSlateLight,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        PixelSettingsButton(onClick = onEdit)
+        if (canEdit) {
+            PixelSettingsButton(onClick = onEdit)
+        }
     }
 }
 
 @Composable
 private fun TaskWorkspacePanel(
     todos: List<TodoItem>,
+    isTrashSelected: Boolean,
     sortMode: SortMode,
     onSortModeChange: (SortMode) -> Unit,
     hideCompleted: Boolean,
@@ -1121,6 +1185,8 @@ private fun TaskWorkspacePanel(
     onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteEditingTodo: () -> Unit,
     onDeleteCompleted: () -> Unit,
+    onRestoreTodo: (String) -> Unit,
+    onDeleteAllTrash: () -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
@@ -1156,6 +1222,7 @@ private fun TaskWorkspacePanel(
     ) {
         TodoListPanel(
             todos = todos,
+            isTrashSelected = isTrashSelected,
             sortMode = sortMode,
             onSortModeChange = onSortModeChange,
             hideCompleted = hideCompleted,
@@ -1167,15 +1234,17 @@ private fun TaskWorkspacePanel(
             onEditTodo = onEditTodo,
             onOpenTodoImage = onOpenTodoImage,
             onDeleteCompleted = onDeleteCompleted,
+            onRestoreTodo = onRestoreTodo,
+            onDeleteAllTrash = onDeleteAllTrash,
             displayOrderIds = displayOrderIds,
             keepDisplayOrder = keepDisplayOrder,
             todoListScrollRequest = todoListScrollRequest,
-            showNewTaskButton = !taskEditorVisible && !checklistEditorVisible,
+            showNewTaskButton = !isTrashSelected && !taskEditorVisible && !checklistEditorVisible,
             onOpenTaskEditor = onOpenTaskEditor,
             onOpenChecklistEditor = onOpenChecklistEditor,
             modifier = Modifier.weight(1f),
         )
-        if (taskEditorVisible) {
+        if (!isTrashSelected && taskEditorVisible) {
             TaskEditorPanel(
                 titleInput = titleInput,
                 onTitleInputChange = onTitleInputChange,
@@ -1193,7 +1262,7 @@ private fun TaskWorkspacePanel(
                 onDeleteTodo = onDeleteEditingTodo,
                 compactForKeyboard = compactForKeyboard,
             )
-        } else if (checklistEditorVisible) {
+        } else if (!isTrashSelected && checklistEditorVisible) {
             ChecklistEditorPanel(
                 nameInput = checklistNameInput,
                 onNameInputChange = onChecklistNameInputChange,
@@ -1410,7 +1479,9 @@ private fun ChecklistEditorPanel(
     val nameFocusRequester = remember { FocusRequester() }
 
     LaunchedEffect(isEditing) {
-        nameFocusRequester.requestFocus()
+        if (!isEditing) {
+            nameFocusRequester.requestFocus()
+        }
     }
 
     PixelPanel {
@@ -1532,6 +1603,7 @@ private fun ChecklistEditorPanel(
 @Composable
 private fun TodoListPanel(
     todos: List<TodoItem>,
+    isTrashSelected: Boolean,
     sortMode: SortMode,
     onSortModeChange: (SortMode) -> Unit,
     hideCompleted: Boolean,
@@ -1543,6 +1615,8 @@ private fun TodoListPanel(
     onEditTodo: (TodoItem) -> Unit,
     onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteCompleted: () -> Unit,
+    onRestoreTodo: (String) -> Unit,
+    onDeleteAllTrash: () -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
@@ -1551,7 +1625,11 @@ private fun TodoListPanel(
     onOpenChecklistEditor: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val sortedVisibleItems = visibleTodos(todos, sortMode, hideCompleted)
+    val sortedVisibleItems = if (isTrashSelected) {
+        todos
+    } else {
+        visibleTodos(todos, sortMode, hideCompleted)
+    }
     val visibleItems = if (keepDisplayOrder) {
         orderedTodosForDisplay(
             todos = todos,
@@ -1583,44 +1661,57 @@ private fun TodoListPanel(
     }
 
     PixelPanel(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        if (isTrashSelected) {
             PixelButton(
-                text = if (sortMode == SortMode.PRIORITY) "PRI" else "TIME",
+                text = "DELETE ALL",
                 onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    onSortModeChange(
-                        if (sortMode == SortMode.PRIORITY) SortMode.TIME else SortMode.PRIORITY,
-                    )
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onDeleteAllTrash()
                 },
-                modifier = Modifier.weight(1f),
-                selected = sortMode == SortMode.TIME,
+                enabled = todos.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+                destructive = true,
             )
-            PixelButton(
-                text = if (hideCompleted) "UNHIDE" else "HIDE",
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    onHideCompletedChange(!hideCompleted)
-                },
-                modifier = Modifier.weight(1f),
-                selected = hideCompleted,
-            )
-            PixelButton(
-                text = "DDL",
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    onDeadlineCountdownChange(!showDeadlineCountdown)
-                },
-                modifier = Modifier.weight(1f),
-                selected = showDeadlineCountdown,
-            )
-            PixelBatchDeleteDoneButton(
-                onClick = onDeleteCompleted,
-                enabled = completedCount > 0,
-            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PixelButton(
+                    text = if (sortMode == SortMode.PRIORITY) "PRI" else "TIME",
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onSortModeChange(
+                            if (sortMode == SortMode.PRIORITY) SortMode.TIME else SortMode.PRIORITY,
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    selected = sortMode == SortMode.TIME,
+                )
+                PixelButton(
+                    text = if (hideCompleted) "UNHIDE" else "HIDE",
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onHideCompletedChange(!hideCompleted)
+                    },
+                    modifier = Modifier.weight(1f),
+                    selected = hideCompleted,
+                )
+                PixelButton(
+                    text = "DDL",
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        onDeadlineCountdownChange(!showDeadlineCountdown)
+                    },
+                    modifier = Modifier.weight(1f),
+                    selected = showDeadlineCountdown,
+                )
+                PixelBatchDeleteDoneButton(
+                    onClick = onDeleteCompleted,
+                    enabled = completedCount > 0,
+                )
+            }
         }
         Spacer(modifier = Modifier.height(12.dp))
         Box(
@@ -1630,7 +1721,9 @@ private fun TodoListPanel(
         ) {
             if (visibleItems.isEmpty()) {
                 EmptyState(
-                    text = if (todos.isEmpty()) {
+                    text = if (isTrashSelected) {
+                        "Trash is empty."
+                    } else if (todos.isEmpty()) {
                         "Add a task to begin."
                     } else {
                         "Done tasks are hidden."
@@ -1646,18 +1739,25 @@ private fun TodoListPanel(
                     contentPadding = PaddingValues(bottom = 4.dp),
                 ) {
                     items(visibleItems, key = { it.id }) { item ->
-                        TodoRow(
-                            item = item,
-                            onToggleTodo = onToggleTodo,
-                            onEditTodo = onEditTodo,
-                            onOpenTodoImage = onOpenTodoImage,
-                            nowMillis = nowMillis,
-                            showDeadlineCountdown = showDeadlineCountdown,
-                        )
+                        if (isTrashSelected) {
+                            TrashTodoRow(
+                                item = item,
+                                onRestoreTodo = onRestoreTodo,
+                            )
+                        } else {
+                            TodoRow(
+                                item = item,
+                                onToggleTodo = onToggleTodo,
+                                onEditTodo = onEditTodo,
+                                onOpenTodoImage = onOpenTodoImage,
+                                nowMillis = nowMillis,
+                                showDeadlineCountdown = showDeadlineCountdown,
+                            )
+                        }
                     }
                 }
             }
-            if (showNewTaskButton) {
+            if (!isTrashSelected && showNewTaskButton) {
                 FloatingNewTaskButton(
                     onClick = onOpenTaskEditor,
                     onLongClick = onOpenChecklistEditor,
@@ -1760,6 +1860,67 @@ private fun TodoRow(
         PixelItemImageButton(
             hasImage = item.imageFileName != null,
             onClick = { onOpenTodoImage(item) },
+        )
+    }
+}
+
+@Composable
+private fun TrashTodoRow(
+    item: TodoItem,
+    onRestoreTodo: (String) -> Unit,
+) {
+    val itemBackground = if (item.completed) ClaudeCactus.copy(alpha = 0.35f) else ClaudeIvory
+    val sourceName = item.trashedFromChecklistName?.takeIf { it.isNotBlank() }
+        ?: DefaultChecklistName
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, ClaudeGray300, RectangleShape)
+            .background(itemBackground)
+            .padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(5.dp)
+                .height(48.dp)
+                .background(item.priority.priorityColor()),
+        )
+        Checkbox(
+            checked = item.completed,
+            onCheckedChange = null,
+            enabled = false,
+            colors = CheckboxDefaults.colors(
+                checkedColor = ClaudeMineral,
+                uncheckedColor = ClaudeGray600,
+                disabledCheckedColor = ClaudeMineral.copy(alpha = 0.45f),
+                disabledUncheckedColor = ClaudeGray300,
+                disabledIndeterminateColor = ClaudeGray300,
+                checkmarkColor = ClaudeIvory,
+            ),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (item.completed) ClaudeGray600 else ClaudeSlateDark,
+                textDecoration = if (item.completed) TextDecoration.LineThrough else null,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "FROM $sourceName",
+                style = MaterialTheme.typography.labelSmall,
+                color = ClaudeSlateLight,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        PixelRestoreButton(
+            onClick = { onRestoreTodo(item.id) },
         )
     }
 }
@@ -2175,12 +2336,15 @@ private fun DeleteConfirmationDialog(
         is DeleteConfirmation.SingleTodo -> "Delete task?"
         is DeleteConfirmation.CompletedTodos -> "Delete done tasks?"
         is DeleteConfirmation.Checklist -> "Delete list?"
+        is DeleteConfirmation.TrashTodos -> "Delete trash?"
     }
     val bodyText = when (confirmation) {
-        is DeleteConfirmation.SingleTodo -> "This will remove \"${confirmation.title}\"."
-        is DeleteConfirmation.CompletedTodos -> "This will remove ${confirmation.count} completed task(s)."
+        is DeleteConfirmation.SingleTodo -> "This will move \"${confirmation.title}\" to TRASH."
+        is DeleteConfirmation.CompletedTodos -> "This will move ${confirmation.count} completed task(s) to TRASH."
         is DeleteConfirmation.Checklist ->
-            "This will remove \"${confirmation.name}\" and ${confirmation.todoCount} task(s)."
+            "This will move \"${confirmation.name}\" and ${confirmation.todoCount} task(s) to TRASH."
+        is DeleteConfirmation.TrashTodos ->
+            "This will permanently delete ${confirmation.count} task(s)."
     }
 
     AlertDialog(
@@ -2307,6 +2471,24 @@ private fun PixelItemImageButton(
 }
 
 @Composable
+private fun PixelRestoreButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .border(1.dp, ClaudeClayInteractive, RectangleShape)
+            .background(ClaudeOat)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "RESTORE TASK" },
+        contentAlignment = Alignment.Center,
+    ) {
+        PixelRestoreIcon(color = ClaudeClayInteractive)
+    }
+}
+
+@Composable
 private fun PixelSettingsIcon(color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier.size(18.dp)) {
         val strokeWidth = 1.8.dp.toPx()
@@ -2368,6 +2550,37 @@ private fun PixelImageIcon(color: Color, modifier: Modifier = Modifier) {
             color = color,
             start = Offset(10.dp.toPx(), 11.dp.toPx()),
             end = Offset(13.8.dp.toPx(), 7.5.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+    }
+}
+
+@Composable
+private fun PixelRestoreIcon(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(18.dp)) {
+        val strokeWidth = 1.8.dp.toPx()
+        drawLine(
+            color = color,
+            start = Offset(4.dp.toPx(), 9.dp.toPx()),
+            end = Offset(14.dp.toPx(), 9.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(4.dp.toPx(), 9.dp.toPx()),
+            end = Offset(8.dp.toPx(), 5.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(4.dp.toPx(), 9.dp.toPx()),
+            end = Offset(8.dp.toPx(), 13.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(14.dp.toPx(), 6.dp.toPx()),
+            end = Offset(14.dp.toPx(), 12.dp.toPx()),
             strokeWidth = strokeWidth,
         )
     }
@@ -2772,6 +2985,7 @@ private fun PhonePreview() {
             checklists = checklists,
             selectedChecklistId = checklists.first().id,
             selectedChecklistName = checklists.first().name,
+            isTrashSelected = false,
             headerExpanded = false,
             onHeaderExpandedChange = {},
             onSelectChecklist = {},
@@ -2813,6 +3027,8 @@ private fun PhonePreview() {
             onOpenTodoImage = {},
             onDeleteEditingTodo = {},
             onDeleteCompleted = {},
+            onRestoreTodo = {},
+            onDeleteAllTrash = {},
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),
@@ -2831,6 +3047,7 @@ private fun TabletPreview() {
             checklists = checklists,
             selectedChecklistId = checklists.first().id,
             selectedChecklistName = checklists.first().name,
+            isTrashSelected = false,
             headerExpanded = true,
             onHeaderExpandedChange = {},
             onSelectChecklist = {},
@@ -2872,6 +3089,8 @@ private fun TabletPreview() {
             onOpenTodoImage = {},
             onDeleteEditingTodo = {},
             onDeleteCompleted = {},
+            onRestoreTodo = {},
+            onDeleteAllTrash = {},
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),
@@ -2912,6 +3131,12 @@ private fun previewChecklists(): List<TodoChecklist> {
             name = "WORK",
             items = todos.take(1),
             createdAtMillis = 2L,
+        ),
+        TodoChecklist(
+            id = TrashChecklistId,
+            name = TrashChecklistName,
+            items = emptyList(),
+            createdAtMillis = 3L,
         ),
     )
 }

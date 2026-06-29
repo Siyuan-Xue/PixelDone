@@ -98,7 +98,7 @@ class TodoAlarmReceiver : BroadcastReceiver() {
         ) ?: return
         storage.saveTodoState(updatedState)
 
-        val updatedItem = allTodos(updatedState).firstOrNull { it.id == todoId } ?: return
+        val updatedItem = normalTodos(updatedState).firstOrNull { it.id == todoId } ?: return
         TodoAlarmScheduler.schedule(
             context = context,
             item = updatedItem,
