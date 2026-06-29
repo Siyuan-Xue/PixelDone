@@ -3,6 +3,7 @@ PixelDone v2.4.3 refines editor actions and fixes in-app update download handlin
 Highlights:
 - Keeps task and list editor save/cancel actions at the bottom of the editor.
 - Removes the extra delete-section label from task and list editing.
+- Safely decodes large todo image previews to avoid preview-window crashes on memory-sensitive devices.
 - Shows temporary footer update states for latest, available, downloading, and failed checks.
 - Downloads only the exact latest formal release APK through Android DownloadManager.
 - Records handled update versions and active download IDs to avoid duplicate in-app update downloads.

@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -69,6 +68,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -80,6 +80,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -137,8 +138,10 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal const val CompletionSortDelayMillis = 2_000L
 
@@ -185,6 +188,12 @@ private sealed interface DeleteConfirmation {
     data class CompletedTodos(val count: Int) : DeleteConfirmation
     data class Checklist(val id: String, val name: String, val todoCount: Int) : DeleteConfirmation
     data class TrashTodos(val count: Int) : DeleteConfirmation
+}
+
+private sealed interface TodoImagePreviewLoadState {
+    data object Loading : TodoImagePreviewLoadState
+    data class Ready(val bitmap: ImageBitmap) : TodoImagePreviewLoadState
+    data object Unavailable : TodoImagePreviewLoadState
 }
 
 private sealed interface TodoListScrollIntent {
@@ -2120,14 +2129,23 @@ private fun TodoImagePreviewDialog(
 ) {
     if (item == null) return
 
-    val imageFile = remember(item.imageFileName) {
-        imageStore.imageFile(item.imageFileName)
+    val imageFile = remember(item.imageFileName) { imageStore.imageFile(item.imageFileName) }
+    val imageLastModified = remember(imageFile?.absolutePath) { imageFile?.lastModified() ?: 0L }
+    val imageLoadState by produceState<TodoImagePreviewLoadState>(
+        initialValue = TodoImagePreviewLoadState.Loading,
+        item.id,
+        item.imageFileName,
+        imageLastModified,
+    ) {
+        value = TodoImagePreviewLoadState.Loading
+        val bitmap = withContext(Dispatchers.IO) {
+            imageStore.loadPreviewBitmap(item.imageFileName)
+        }
+        value = bitmap
+            ?.let { TodoImagePreviewLoadState.Ready(it.asImageBitmap()) }
+            ?: TodoImagePreviewLoadState.Unavailable
     }
-    val imageBitmap = remember(imageFile?.absolutePath, imageFile?.lastModified()) {
-        imageFile
-            ?.takeIf { it.isFile }
-            ?.let { file -> BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }
-    }
+    val imageBitmap = (imageLoadState as? TodoImagePreviewLoadState.Ready)?.bitmap
     var previewScale by remember(item.id, item.imageFileName) { mutableStateOf(1f) }
     var previewOffset by remember(item.id, item.imageFileName) { mutableStateOf(Offset.Zero) }
     var previewViewportSize by remember(item.id, item.imageFileName) { mutableStateOf(Size.Zero) }
@@ -2190,27 +2208,37 @@ private fun TodoImagePreviewDialog(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (imageBitmap == null) {
-                        Text(
-                            text = "Image unavailable.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = ClaudeSlateLight,
-                        )
-                    } else {
-                        Image(
-                            bitmap = imageBitmap,
-                            contentDescription = "Task image preview",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    scaleX = previewScale
-                                    scaleY = previewScale
-                                    translationX = previewOffset.x
-                                    translationY = previewOffset.y
-                                }
-                                .transformable(transformableState),
-                            contentScale = ContentScale.Fit,
-                        )
+                    when (val state = imageLoadState) {
+                        TodoImagePreviewLoadState.Loading -> {
+                            Text(
+                                text = "Loading image...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = ClaudeSlateLight,
+                            )
+                        }
+                        TodoImagePreviewLoadState.Unavailable -> {
+                            Text(
+                                text = "Image unavailable.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = ClaudeSlateLight,
+                            )
+                        }
+                        is TodoImagePreviewLoadState.Ready -> {
+                            Image(
+                                bitmap = state.bitmap,
+                                contentDescription = "Task image preview",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        scaleX = previewScale
+                                        scaleY = previewScale
+                                        translationX = previewOffset.x
+                                        translationY = previewOffset.y
+                                    }
+                                    .transformable(transformableState),
+                                contentScale = ContentScale.Fit,
+                            )
+                        }
                     }
                 }
             }

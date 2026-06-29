@@ -14,6 +14,7 @@ Developer identity: CODEX & XUE.
 - Tap a todo row to edit it in the bottom editor.
 - Attach one local image to each todo with the row image button.
 - Preview, replace, or remove a todo image without requesting broad photo-library permission.
+- Decode todo image previews safely for large camera images while preserving the original attachment file.
 - Delete an edited todo from the task editor, matching the checklist editor delete flow.
 - Sort by priority or time.
 - Switch the todo subtitle row into a DDL countdown view showing days, hours, and minutes until each deadline.
