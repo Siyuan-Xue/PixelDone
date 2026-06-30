@@ -13,8 +13,11 @@ internal class UpdateService(private val downloader: AppUpdateDownloader) {
     fun enqueue(info: AppUpdateInfo): AppUpdateDownloadResult =
         downloader.enqueue(info)
 
-    suspend fun awaitCompletion(download: AppUpdateDownload): AppUpdateDownloadCompletion =
-        downloader.awaitCompletion(download)
+    suspend fun awaitCompletion(
+        download: AppUpdateDownload,
+        onProgress: (AppUpdateDownloadProgress) -> Unit = {},
+    ): AppUpdateDownloadCompletion =
+        downloader.awaitCompletion(download, onProgress)
 
     fun openInstallPrompt(download: AppUpdateDownload): Boolean =
         downloader.openInstallPrompt(download)

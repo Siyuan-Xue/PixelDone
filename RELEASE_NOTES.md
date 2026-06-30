@@ -1,12 +1,12 @@
-PixelDone v2.5.4 is a local debug bugfix build for the exact-current todo deadline edge case.
+PixelDone v2.5.5 is a formal signed release for update-download feedback and image-preview UI polish.
 
 Highlights:
-- Treats a one-shot todo due at the exact current moment as already overdue.
-- Keeps exact-current one-shot todos unscheduled, so they do not request reminder permissions or fire a newly created reminder.
-- Refreshes the visible todo-list clock when list deadlines change, making newly added current or past deadlines show the overdue color immediately.
-- Aligns DDL countdown text with the overdue color rule by showing `DDL OVERDUE 0D 00H 00M` at the exact due moment.
-- Preserves the 2.5.3 architecture, reminder dispatch rules, storage format, image behavior, and in-app update behavior.
+- Shows `downloading` in the footer while the in-app updater silently downloads the latest release APK.
+- Updates footer download progress in real time, using percent when the APK size is known and downloaded MB when it is not.
+- Aligns the image preview close control with the task editor close/cancel interaction style.
+- Changes the image preview `CHANGE` action from a solid clay button to a softer clay-outline action, matching the restrained preview action set.
+- Preserves the 2.5.4 todo, reminder, storage, image, and update-install behavior.
 
-Install note: use `PixelDone-2.5.4-debug.apk` for local debug validation. This is not a formal signed release.
+Install note: use the attached signed release APK, `PixelDone-2.5.5-release.apk`, for direct installation or in-app update.
 
 CODEX & XUE

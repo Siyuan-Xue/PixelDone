@@ -136,6 +136,7 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
@@ -148,6 +149,7 @@ import com.milesxue.pixeldone.data.image.TodoImageStore
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
 import com.milesxue.pixeldone.data.update.AppUpdateDownload
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadCompletion
+import com.milesxue.pixeldone.data.update.AppUpdateDownloadProgress
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadResult
 import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
@@ -164,6 +166,7 @@ private const val InitialUpdateCheckDelayMillis = 600L
 private const val UpdateStatusVisibleMillis = 3_000L
 private const val MinPreviewScale = 1f
 private const val MaxPreviewScale = 6f
+private const val BytesPerMegabyte = 1024.0 * 1024.0
 
 private enum class UpdateUiStatus {
     Idle,
@@ -196,6 +199,29 @@ private data class AppUpdateUiState(
             status == UpdateUiStatus.Available ||
             status == UpdateUiStatus.Offline ||
             status == UpdateUiStatus.Installing
+}
+
+internal fun formatUpdateDownloadMessage(
+    version: String,
+    progress: AppUpdateDownloadProgress = AppUpdateDownloadProgress(),
+): String {
+    val base = "downloading: v$version"
+    progress.percent?.let { percent ->
+        return "$base $percent%"
+    }
+    return if (progress.bytesDownloaded > 0L) {
+        "$base ${formatDownloadedMegabytes(progress.bytesDownloaded)}"
+    } else {
+        base
+    }
+}
+
+internal fun formatDownloadedMegabytes(bytes: Long): String {
+    return String.format(
+        Locale.US,
+        "%.1fMB",
+        bytes.coerceAtLeast(0L) / BytesPerMegabyte,
+    )
 }
 
 private sealed interface DeleteConfirmation {
@@ -821,10 +847,18 @@ internal fun PixelDoneApp() {
                 updateUiState = AppUpdateUiState(
                     status = UpdateUiStatus.Downloading,
                     info = info,
-                    message = "download: ${versionLabel(info.version)}",
+                    message = formatUpdateDownloadMessage(info.version),
                 )
                 updateScope.launch {
-                    val completion = updateService.awaitCompletion(result.download)
+                    val completion = updateService.awaitCompletion(result.download) { progress ->
+                        if (activeUpdateDownload?.downloadId == result.download.downloadId) {
+                            updateUiState = AppUpdateUiState(
+                                status = UpdateUiStatus.Downloading,
+                                info = info,
+                                message = formatUpdateDownloadMessage(info.version, progress),
+                            )
+                        }
+                    }
                     if (activeUpdateDownload?.downloadId != result.download.downloadId) {
                         return@launch
                     }
@@ -2570,7 +2604,15 @@ private fun TodoImagePreviewDialog(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                PixelDialogCloseButton(onClick = onDismiss)
+                Text(
+                    text = "CLOSE",
+                    modifier = Modifier
+                        .clickable(onClick = onDismiss)
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = ClaudeClayInteractive,
+                    maxLines = 1,
+                )
             }
         },
         text = {
@@ -2637,7 +2679,7 @@ private fun TodoImagePreviewDialog(
                 PixelButton(
                     text = "CHANGE",
                     onClick = { onChange(item) },
-                    primary = true,
+                    clayOutline = true,
                 )
                 PixelButton(
                     text = "REMOVE",
@@ -2650,27 +2692,6 @@ private fun TodoImagePreviewDialog(
         containerColor = ClaudeGray100,
         tonalElevation = 0.dp,
     )
-}
-
-@Composable
-private fun PixelDialogCloseButton(
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .border(1.dp, ClaudeGray300, RectangleShape)
-            .background(ClaudeIvory)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "CLOSE",
-            style = MaterialTheme.typography.labelSmall,
-            color = ClaudeSlateDark,
-            maxLines = 1,
-        )
-    }
 }
 
 internal data class PreviewTransform(

@@ -560,15 +560,18 @@ internal fun PixelButton(
     primary: Boolean = false,
     destructive: Boolean = false,
     selected: Boolean = false,
+    clayOutline: Boolean = false,
 ) {
     val containerColor = when {
         destructive -> ClaudeCoral
+        clayOutline -> ClaudeClay.copy(alpha = 0.16f)
         primary -> ClaudeClay
         selected -> ClaudeOat
         else -> ClaudeIvoryMedium
     }
     val borderColor = when {
         destructive -> PixelError
+        clayOutline -> ClaudeClay
         primary -> ClaudeClayInteractive
         selected -> ClaudeClayInteractive
         else -> ClaudeGray300

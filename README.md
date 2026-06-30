@@ -36,6 +36,7 @@ Developer identity: CODEX & XUE.
 - Use restrained haptic feedback for core task and list-state actions.
 - Check GitHub Releases automatically on app start and show a quiet footer update state when a release is available.
 - Download only the exact latest formal release APK through Android DownloadManager.
+- Show `downloading` with live footer progress while an in-app update APK downloads silently.
 - Open the system install confirmation after an in-app update APK finishes downloading.
 - Check quietly for the latest release on every app start without suppressing an available update.
 - Persist checklists and todos locally on the device with SharedPreferences JSON.
@@ -78,20 +79,30 @@ From the project root:
 
 Release signing is configured through the local, untracked `signing/release-signing.properties` file for formal releases.
 
-The current local debug APK is copied to:
+The current signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.5.4-debug.apk
+app/build/outputs/apk/release/PixelDone-2.5.5-release.apk
 ```
 
-Formal signed release builds are outside this 2.5.4 debug iteration.
+The local debug APK is copied to:
+
+```text
+app/build/outputs/apk/debug/PixelDone-2.5.5-debug.apk
+```
 
 ## Install
 
-Install this debug iteration with:
+Install this formal release with:
 
 ```powershell
-adb install -r app/build/outputs/apk/debug/PixelDone-2.5.4-debug.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.5.5-release.apk
+```
+
+The formal package name is:
+
+```text
+com.milesxue.pixeldone
 ```
 
 The debug package name is:
@@ -100,12 +111,6 @@ The debug package name is:
 com.milesxue.pixeldone.debug
 ```
 
-The formal package name remains:
-
-```text
-com.milesxue.pixeldone
-```
-
 ## Status
 
-2.5.4 debug bugfix build for exact-current todo overdue handling.
+2.5.5 formal signed release for update-download feedback and image-preview UI polish.
