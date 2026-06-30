@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.reminder
 
 import android.app.PendingIntent
 import android.content.Context
@@ -37,6 +37,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.milesxue.pixeldone.domain.todo.TodoItem
+import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.ui.theme.ClaudeClayInteractive
 import com.milesxue.pixeldone.ui.theme.ClaudeCoral
 import com.milesxue.pixeldone.ui.theme.ClaudeGray300

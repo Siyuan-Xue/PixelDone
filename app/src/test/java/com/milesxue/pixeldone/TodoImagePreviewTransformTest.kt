@@ -2,6 +2,7 @@ package com.milesxue.pixeldone
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import com.milesxue.pixeldone.ui.todo.calculatePreviewTransform
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

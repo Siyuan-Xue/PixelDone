@@ -1,5 +1,18 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.data.todo
 
+import com.milesxue.pixeldone.domain.todo.TodoChecklist
+import com.milesxue.pixeldone.domain.todo.TodoChecklistState
+import com.milesxue.pixeldone.domain.todo.TodoItem
+import com.milesxue.pixeldone.domain.todo.TodoPriority
+import com.milesxue.pixeldone.domain.todo.ReminderRepeat
+import com.milesxue.pixeldone.domain.todo.normalizeChecklistState
+
+/**
+ * PixelDone 的本地 JSON 编解码器。
+ *
+ * 教学说明：这是数据层最需要谨慎修改的文件之一，因为它定义了已经安装用户的磁盘格式。
+ * 重构时可以移动代码、补测试、加边界，但不要随意改字段名或默认值，否则旧数据可能无法读取。
+ */
 object TodoJsonCodec {
     fun encode(items: List<TodoItem>): String {
         return items.joinToString(prefix = "[", postfix = "]", transform = ::encodeTodoItem)

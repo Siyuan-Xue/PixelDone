@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.data.update
 
 import android.app.DownloadManager
 import android.content.ClipData

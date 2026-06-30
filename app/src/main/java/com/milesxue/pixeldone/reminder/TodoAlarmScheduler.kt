@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.reminder
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -6,7 +6,28 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import com.milesxue.pixeldone.MainActivity
+import com.milesxue.pixeldone.domain.todo.ReminderAlertMode
+import com.milesxue.pixeldone.domain.todo.ReminderCapability
+import com.milesxue.pixeldone.domain.todo.ReminderRepeat
+import com.milesxue.pixeldone.domain.todo.ReminderScheduleMode
+import com.milesxue.pixeldone.domain.todo.TodoItem
+import com.milesxue.pixeldone.domain.todo.TodoPriority
+import com.milesxue.pixeldone.domain.todo.canScheduleExactAlarmForSdk
+import com.milesxue.pixeldone.domain.todo.effectiveReminderAlertMode
+import com.milesxue.pixeldone.domain.todo.effectiveReminderScheduleMode
+import com.milesxue.pixeldone.domain.todo.nextReminderAtMillis
+import com.milesxue.pixeldone.domain.todo.reminderScheduleMode
+import com.milesxue.pixeldone.domain.todo.shouldCancelUnschedulableTodoAlarm
+import com.milesxue.pixeldone.domain.todo.shouldScheduleTodoAlarm
 
+/**
+ * Android AlarmManager 适配器。
+ *
+ * 教学说明：领域层的 ReminderRules 只计算“下一次什么时候提醒、提醒模式是什么”。
+ * 这个对象才负责把结果翻译成 PendingIntent / AlarmClock / inexact alarm。
+ * 这样单元测试可以覆盖核心规则，而 Android 系统 API 被集中在一个边界里。
+ */
 object TodoAlarmScheduler {
     const val EXTRA_TODO_ID = "com.milesxue.pixeldone.extra.TODO_ID"
     const val EXTRA_TODO_TITLE = "com.milesxue.pixeldone.extra.TODO_TITLE"

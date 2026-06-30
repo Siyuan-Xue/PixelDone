@@ -1,12 +1,13 @@
-PixelDone v2.4.5 fixes in-app update download and install handling.
+PixelDone v2.5.3 refactors the app into a clearer teaching-oriented Android architecture without changing the user experience.
 
 Highlights:
-- Checks quietly for the latest GitHub Release on every app start without suppressing a previously handled version.
-- Starts a fresh in-app DownloadManager task each time the user taps GET for the latest release APK.
-- Opens the Android system install confirmation after the APK download completes.
-- Removes stale persisted update download reuse so old DownloadManager IDs cannot fake a new download state.
-- Keeps the footer update states restrained: get, download, install, latest, and update failed.
+- Moves todo business rules into a pure Kotlin domain package.
+- Adds a small manual dependency-injection container, repository boundary, and ViewModel teaching entry point.
+- Extracts reusable pixel-style Compose controls into a dedicated components package.
+- Keeps the existing SharedPreferences JSON format so existing local data remains compatible.
+- Preserves the 2.5.2 UI flow, reminder behavior, image preview behavior, and in-app update behavior.
+- Adds Chinese teaching comments around architecture boundaries and complex reminder rules.
 
-Install note: use `PixelDone-2.4.5-release.apk` for private signed release installation. The attached APK is a signed release build for direct installation.
+Install note: use `PixelDone-2.5.3-release.apk` for private signed release installation. The attached APK is a signed release build for direct installation.
 
 CODEX & XUE

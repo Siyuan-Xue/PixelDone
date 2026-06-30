@@ -1,5 +1,6 @@
 package com.milesxue.pixeldone
 
+import com.milesxue.pixeldone.data.image.calculatePreviewSampleSize
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

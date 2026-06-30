@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.data.image
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -9,6 +9,12 @@ import java.util.UUID
 
 internal const val PreviewMaxBitmapLongEdgePx = 2_048
 
+/**
+ * Todo 图片附件的数据层边界。
+ *
+ * 教学说明：UI 只知道“给某个任务附上一张图”，不应该关心文件名、安全路径或 bitmap 采样。
+ * 这里把外部 Uri 复制到 app 私有目录，并在读取预览时按长边采样，避免大图直接解码造成内存压力。
+ */
 class TodoImageStore(context: Context) {
     private val appContext = context.applicationContext
     private val imageDirectory = File(appContext.filesDir, ImageDirectoryName)

@@ -46,8 +46,24 @@ Developer identity: CODEX & XUE.
 - Jetpack Compose
 - Material 3
 - AndroidX
+- AndroidX Lifecycle ViewModel
 - SharedPreferences
 - AlarmManager notifications
+- Manual dependency injection
+
+## Architecture Map
+
+- `MainActivity.kt`: Android entry point, system bars, and top-level Compose host only.
+- `PixelDoneApplication.kt`: owns the app-level dependency container.
+- `di/`: manual dependency injection for repositories, image storage, update service, reminder scheduler, and clock.
+- `domain/todo/`: pure Kotlin todo, checklist, sorting, and reminder rules with no Android or Compose imports.
+- `data/todo/`: SharedPreferences JSON persistence behind a repository boundary.
+- `data/image/`: private image-copying, safe file-path handling, and preview bitmap sampling.
+- `data/update/`: GitHub release checks, DownloadManager integration, and install-intent preparation.
+- `reminder/`: AlarmManager, notification, boot, receiver, foreground service, and XHigh full-screen alarm integration.
+- `ui/todo/`: screen route, UI state holder, and ViewModel teaching entry point.
+- `ui/todo/components/`: reusable pixel-style Compose controls and icons.
+- `ui/theme/`: PixelDone Material theme and Claude/Anthropic-inspired color tokens.
 
 ## Build
 
@@ -64,13 +80,13 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.5.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.5.3-debug.apk
 ```
 
 The current signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.4.5-release.apk
+app/build/outputs/apk/release/PixelDone-2.5.3-release.apk
 ```
 
 ## Install
@@ -78,7 +94,7 @@ app/build/outputs/apk/release/PixelDone-2.4.5-release.apk
 Install the signed release build with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.4.5-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.5.3-release.apk
 ```
 
 The formal package name is:
@@ -89,4 +105,4 @@ com.milesxue.pixeldone
 
 ## Status
 
-2.4.5 private signed release candidate.
+2.5.3 architecture refactor debug build verified.

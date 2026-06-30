@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.reminder
 
 import android.app.PendingIntent
 import android.app.Service
@@ -11,6 +11,13 @@ import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import com.milesxue.pixeldone.di.pixelDoneAppContainer
+import com.milesxue.pixeldone.domain.todo.DefaultSnoozeIntervalMillis
+import com.milesxue.pixeldone.domain.todo.ReminderRepeat
+import com.milesxue.pixeldone.domain.todo.TodoItem
+import com.milesxue.pixeldone.domain.todo.TodoPriority
+import com.milesxue.pixeldone.domain.todo.normalTodos
+import com.milesxue.pixeldone.domain.todo.snoozeTodosAfterReminder
 
 class XHighAlarmService : Service() {
     private var mediaPlayer: MediaPlayer? = null
@@ -101,7 +108,8 @@ class XHighAlarmService : Service() {
     }
 
     private fun snoozeAlarms(todoIds: List<String>) {
-        val storage = TodoPreferences.create(this)
+        val appContainer = pixelDoneAppContainer()
+        val storage = appContainer.todoRepository
         val state = storage.loadTodoState()
         val updatedState = snoozeTodosAfterReminder(
             state = state,
@@ -109,7 +117,7 @@ class XHighAlarmService : Service() {
             nowMillis = System.currentTimeMillis(),
         ) ?: return
         storage.saveTodoState(updatedState)
-        TodoAlarmScheduler.sync(this, normalTodos(state), normalTodos(updatedState))
+        appContainer.reminderScheduler.sync(normalTodos(state), normalTodos(updatedState))
     }
 
     private fun startPlayback() {

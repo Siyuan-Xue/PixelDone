@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.reminder
 
 import android.Manifest
 import android.app.Notification
@@ -12,6 +12,12 @@ import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
+import com.milesxue.pixeldone.MainActivity
+import com.milesxue.pixeldone.R
+import com.milesxue.pixeldone.domain.todo.ReminderNotificationIds
+import com.milesxue.pixeldone.domain.todo.ReminderRepeat
+import com.milesxue.pixeldone.domain.todo.TodoItem
+import com.milesxue.pixeldone.domain.todo.TodoPriority
 
 object TodoReminderNotifier {
     const val SHORT_CHANNEL_ID = "todo_due_short_v1"

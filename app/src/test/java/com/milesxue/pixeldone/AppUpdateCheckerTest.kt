@@ -1,5 +1,14 @@
 package com.milesxue.pixeldone
 
+import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
+import com.milesxue.pixeldone.data.update.AppUpdateInfo
+import com.milesxue.pixeldone.data.update.GitHubRelease
+import com.milesxue.pixeldone.data.update.ReleaseAsset
+import com.milesxue.pixeldone.data.update.fetchLatestRelease
+import com.milesxue.pixeldone.data.update.findReleaseApkUrl
+import com.milesxue.pixeldone.data.update.isNewerSemanticVersion
+import com.milesxue.pixeldone.data.update.parseGitHubRelease
+import com.milesxue.pixeldone.data.update.releaseToUpdateCheckResult
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL

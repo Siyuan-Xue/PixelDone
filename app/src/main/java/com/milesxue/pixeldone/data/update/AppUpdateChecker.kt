@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.data.update
 
 import java.net.HttpURLConnection
 import java.net.URL

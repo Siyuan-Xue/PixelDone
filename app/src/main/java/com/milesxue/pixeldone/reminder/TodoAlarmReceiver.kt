@@ -1,9 +1,24 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.reminder
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.milesxue.pixeldone.data.todo.TodoRepository
+import com.milesxue.pixeldone.di.pixelDoneAppContainer
+import com.milesxue.pixeldone.domain.todo.ReminderAlertMode
+import com.milesxue.pixeldone.domain.todo.ReminderDispatchPlan
+import com.milesxue.pixeldone.domain.todo.TodoChecklistState
+import com.milesxue.pixeldone.domain.todo.TodoItem
+import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodosAfterReminder
+import com.milesxue.pixeldone.domain.todo.normalTodos
+import com.milesxue.pixeldone.domain.todo.reminderDispatchPlan
 
+/**
+ * 系统闹钟广播入口。
+ *
+ * 教学说明：Receiver 生命周期很短，只适合读取当前状态、计算本次派发计划、触发通知/服务。
+ * 重复提醒推进、同一时间批量提醒、去重窗口都保留在这里串起来，但具体规则仍放在 domain 层。
+ */
 class TodoAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val firedDueAtMillis = intent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, 0L)
@@ -13,14 +28,15 @@ class TodoAlarmReceiver : BroadcastReceiver() {
             ?: ReminderAlertMode.SHORT_NOTIFICATION
         val triggerTodoId = intent.getStringExtra(TodoAlarmScheduler.EXTRA_TODO_ID)
 
-        val storage = TodoPreferences.create(context)
+        val appContainer = context.pixelDoneAppContainer()
+        val storage = appContainer.todoRepository
         val state = storage.loadTodoState()
         val dispatchPlan = reminderDispatchPlan(
             items = normalTodos(state),
             firedDueAtMillis = firedDueAtMillis,
             triggerTodoId = triggerTodoId,
             triggerAlertMode = triggerAlertMode,
-            canScheduleExactAlarms = TodoAlarmScheduler.canScheduleExactAlarms(context),
+            canScheduleExactAlarms = appContainer.reminderScheduler.canScheduleExactAlarms(),
         )
         if (dispatchPlan.isEmpty) return
         if (wasRecentlyDispatched(context, dispatchSignature(firedDueAtMillis, triggerAlertMode, dispatchPlan))) {
@@ -42,12 +58,18 @@ class TodoAlarmReceiver : BroadcastReceiver() {
             )
         }
 
-        rescheduleDispatchedTodos(context, storage, state, dispatchPlan.rescheduleItems, firedDueAtMillis)
+        rescheduleDispatchedTodos(
+            scheduler = appContainer.reminderScheduler,
+            storage = storage,
+            state = state,
+            dueItems = dispatchPlan.rescheduleItems,
+            firedDueAtMillis = firedDueAtMillis,
+        )
     }
 
     private fun rescheduleDispatchedTodos(
-        context: Context,
-        storage: TodoPreferences,
+        scheduler: ReminderScheduler,
+        storage: TodoRepository,
         state: TodoChecklistState,
         dueItems: List<TodoItem>,
         firedDueAtMillis: Long,
@@ -61,8 +83,7 @@ class TodoAlarmReceiver : BroadcastReceiver() {
             storage.saveTodoState(updatedState)
         }
 
-        TodoAlarmScheduler.sync(
-            context = context,
+        scheduler.sync(
             previousItems = normalTodos(state),
             currentItems = normalTodos(updatedState),
         )

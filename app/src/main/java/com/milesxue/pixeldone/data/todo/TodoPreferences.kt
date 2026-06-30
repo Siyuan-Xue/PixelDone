@@ -1,10 +1,22 @@
-package com.milesxue.pixeldone
+package com.milesxue.pixeldone.data.todo
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.milesxue.pixeldone.domain.todo.TodoChecklistState
+import com.milesxue.pixeldone.domain.todo.TodoItem
+import com.milesxue.pixeldone.domain.todo.createInitialChecklistState
 
-class TodoPreferences(private val sharedPreferences: SharedPreferences) {
-    fun loadTodoState(nowMillis: Long = System.currentTimeMillis()): TodoChecklistState {
+/**
+ * SharedPreferences 版本的本地 Todo 存储。
+ *
+ * 教学说明：Repository 依赖的是 [TodoStateStore] 接口，真正的 Android 存储细节藏在这里。
+ * 本轮重构刻意不迁移 DataStore/Room，因为格式迁移会带来用户数据风险；先用边界隔离旧实现。
+ *
+ * 兼容规则：旧版本只保存 `todos` 数组，新版本保存 `checklist_state`。
+ * 如果用户从旧 APK 升级，会在第一次读取时把旧 todos 包装进默认 MAIN 清单并立即保存新状态。
+ */
+class TodoPreferences(private val sharedPreferences: SharedPreferences) : TodoStateStore {
+    override fun loadTodoState(nowMillis: Long): TodoChecklistState {
         val stateJson = sharedPreferences.getString(KEY_CHECKLIST_STATE, null)
         if (stateJson != null) {
             return TodoJsonCodec.decodeState(
@@ -21,13 +33,13 @@ class TodoPreferences(private val sharedPreferences: SharedPreferences) {
         return migratedState
     }
 
-    fun saveTodoState(state: TodoChecklistState) {
+    override fun saveTodoState(state: TodoChecklistState) {
         sharedPreferences.edit()
             .putString(KEY_CHECKLIST_STATE, TodoJsonCodec.encodeState(state))
             .apply()
     }
 
-    fun observeTodoState(onChange: () -> Unit): () -> Unit {
+    override fun observeTodoState(onChange: () -> Unit): () -> Unit {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == KEY_CHECKLIST_STATE) {
                 onChange()

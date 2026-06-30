@@ -14,6 +14,7 @@
 
     <application
         android:allowBackup="true"
+        android:name=".PixelDoneApplication"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -22,11 +23,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.PixelDone">
         <receiver
-            android:name=".TodoAlarmReceiver"
+            android:name=".reminder.TodoAlarmReceiver"
             android:exported="false" />
 
         <receiver
-            android:name=".TodoBootReceiver"
+            android:name=".reminder.TodoBootReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -34,7 +35,7 @@
         </receiver>
 
         <service
-            android:name=".XHighAlarmService"
+            android:name=".reminder.XHighAlarmService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
@@ -62,7 +63,7 @@
         </activity>
 
         <activity
-            android:name=".XHighAlarmActivity"
+            android:name=".reminder.XHighAlarmActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:showWhenLocked="true"
