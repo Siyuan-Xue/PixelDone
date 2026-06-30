@@ -35,8 +35,11 @@ Developer identity: CODEX & XUE.
 - Advance daily and weekly repeating todos to the next reminder time after a notification fires.
 - Use restrained haptic feedback for core task and list-state actions.
 - Check GitHub Releases automatically on app start and show a quiet footer update state when a release is available.
+- Show an update prompt dialog for users who have not disabled update prompts.
 - Download only the exact latest formal release APK through Android DownloadManager.
 - Show `downloading` with live footer progress while an in-app update APK downloads silently.
+- Show a dismissible update progress dialog when an update is started from a prompt or footer.
+- Keep update downloads running silently when the progress dialog is closed.
 - Reuse the active latest update download instead of queueing older release APKs.
 - Clean stale or already-installed update APK files from the app-private update directory.
 - Open the system install confirmation after an in-app update APK finishes downloading.
@@ -84,13 +87,13 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.5.6-release.apk
+app/build/outputs/apk/release/PixelDone-2.5.7-release.apk
 ```
 
 The local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.5.6-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.5.7-debug.apk
 ```
 
 ## Install
@@ -98,7 +101,7 @@ app/build/outputs/apk/debug/PixelDone-2.5.6-debug.apk
 Install this formal release with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.5.6-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.5.7-release.apk
 ```
 
 The formal package name is:
@@ -115,4 +118,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.5.6 formal signed bugfix release for latest-only update downloads and installed APK cleanup.
+2.5.7 formal signed patch release for in-app update prompt and download progress dialogs.

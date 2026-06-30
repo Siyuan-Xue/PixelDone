@@ -10,6 +10,7 @@ import com.milesxue.pixeldone.data.update.updateReleaseApkVersion
 import com.milesxue.pixeldone.data.update.updateReleaseApkFileName
 import com.milesxue.pixeldone.ui.todo.formatDownloadedMegabytes
 import com.milesxue.pixeldone.ui.todo.formatUpdateDownloadMessage
+import com.milesxue.pixeldone.ui.todo.shouldShowAvailableUpdateDialog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -114,6 +115,28 @@ class AppUpdateDownloaderTest {
             formatUpdateDownloadMessage(
                 version = "2.5.6",
                 progress = AppUpdateDownloadProgress(bytesDownloaded = 1_572_864L),
+            ),
+        )
+    }
+
+    @Test
+    fun shouldShowAvailableUpdateDialog_respectsPreferenceAndActiveDownload() {
+        assertTrue(
+            shouldShowAvailableUpdateDialog(
+                neverShowUpdateDialog = false,
+                hasActiveUpdateDownload = false,
+            ),
+        )
+        assertFalse(
+            shouldShowAvailableUpdateDialog(
+                neverShowUpdateDialog = true,
+                hasActiveUpdateDownload = false,
+            ),
+        )
+        assertFalse(
+            shouldShowAvailableUpdateDialog(
+                neverShowUpdateDialog = false,
+                hasActiveUpdateDownload = true,
             ),
         )
     }

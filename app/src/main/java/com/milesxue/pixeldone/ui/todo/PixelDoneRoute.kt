@@ -182,6 +182,7 @@ private data class AppUpdateUiState(
     val status: UpdateUiStatus = UpdateUiStatus.Idle,
     val info: AppUpdateInfo? = null,
     val message: String? = null,
+    val progress: AppUpdateDownloadProgress = AppUpdateDownloadProgress(),
 ) {
     val contentDescription: String
         get() = when (status) {
@@ -196,7 +197,6 @@ private data class AppUpdateUiState(
 
     val shouldAutoRestore: Boolean
         get() = status == UpdateUiStatus.Latest ||
-            status == UpdateUiStatus.Available ||
             status == UpdateUiStatus.Offline ||
             status == UpdateUiStatus.Installing
 }
@@ -223,6 +223,11 @@ internal fun formatDownloadedMegabytes(bytes: Long): String {
         bytes.coerceAtLeast(0L) / BytesPerMegabyte,
     )
 }
+
+internal fun shouldShowAvailableUpdateDialog(
+    neverShowUpdateDialog: Boolean,
+    hasActiveUpdateDownload: Boolean,
+): Boolean = !neverShowUpdateDialog && !hasActiveUpdateDownload
 
 private sealed interface DeleteConfirmation {
     data class SingleTodo(val id: String, val title: String) : DeleteConfirmation
@@ -291,6 +296,7 @@ internal fun PixelDoneApp() {
     val context = LocalContext.current
     val updateScope = rememberCoroutineScope()
     val appContainer = remember(context) { context.pixelDoneAppContainer() }
+    val todoPreferences = remember(appContainer) { appContainer.todoPreferences }
     val todoRepository = remember(appContainer) { appContainer.todoRepository }
     val imageStore = remember(appContainer) { appContainer.todoImageStore }
     val updateService = remember(appContainer) { appContainer.updateService }
@@ -327,6 +333,13 @@ internal fun PixelDoneApp() {
     var updateUiState by remember { mutableStateOf(AppUpdateUiState()) }
     var updateCheckInFlight by remember { mutableStateOf(false) }
     var activeUpdateDownload by remember { mutableStateOf<AppUpdateDownload?>(null) }
+    var neverShowUpdateDialog by remember {
+        mutableStateOf(todoPreferences.loadNeverShowUpdateDialog())
+    }
+    var showUpdatePromptDialog by remember { mutableStateOf(false) }
+    var updatePromptInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
+    var showUpdateProgressDialog by remember { mutableStateOf(false) }
+    var updateProgressDialogDismissed by remember { mutableStateOf(false) }
     var scrollRequestSequence by remember { mutableStateOf(0) }
     var highlightRequestSequence by remember { mutableStateOf(0) }
     var todoListScrollRequest by remember {
@@ -844,8 +857,32 @@ internal fun PixelDoneApp() {
     fun availableUpdateMessage(info: AppUpdateInfo): String =
         "get: ${versionLabel(BuildConfig.VERSION_NAME)} -> ${versionLabel(info.version)}"
 
-    fun startUpdateDownload(info: AppUpdateInfo) {
-        if (activeUpdateDownload?.version == info.version) return
+    fun setNeverShowUpdateDialog(neverShow: Boolean) {
+        neverShowUpdateDialog = neverShow
+        todoPreferences.saveNeverShowUpdateDialog(neverShow)
+    }
+
+    fun dismissUpdatePromptDialog() {
+        showUpdatePromptDialog = false
+        updatePromptInfo = null
+    }
+
+    fun revealUpdateProgressDialog() {
+        showUpdateProgressDialog = true
+        updateProgressDialogDismissed = false
+    }
+
+    fun dismissUpdateProgressDialog() {
+        showUpdateProgressDialog = false
+        updateProgressDialogDismissed = true
+    }
+
+    fun startUpdateDownload(info: AppUpdateInfo, revealProgressDialog: Boolean = false) {
+        if (activeUpdateDownload?.version == info.version) {
+            if (revealProgressDialog) revealUpdateProgressDialog()
+            return
+        }
+        if (revealProgressDialog) revealUpdateProgressDialog()
         when (val result = updateService.enqueue(info)) {
             is AppUpdateDownloadResult.Started -> {
                 activeUpdateDownload = result.download
@@ -861,6 +898,7 @@ internal fun PixelDoneApp() {
                                 status = UpdateUiStatus.Downloading,
                                 info = info,
                                 message = formatUpdateDownloadMessage(info.version, progress),
+                                progress = progress,
                             )
                         }
                     }
@@ -868,6 +906,8 @@ internal fun PixelDoneApp() {
                         return@launch
                     }
                     activeUpdateDownload = null
+                    showUpdateProgressDialog = false
+                    updateProgressDialogDismissed = false
                     if (
                         completion == AppUpdateDownloadCompletion.Success &&
                         updateService.openInstallPrompt(result.download)
@@ -885,6 +925,8 @@ internal fun PixelDoneApp() {
                 }
             }
             AppUpdateDownloadResult.Failed -> {
+                showUpdateProgressDialog = false
+                updateProgressDialogDismissed = false
                 updateUiState = AppUpdateUiState(
                     status = UpdateUiStatus.Offline,
                     message = "update failed",
@@ -904,8 +946,20 @@ internal fun PixelDoneApp() {
                     info = result.info,
                     message = availableUpdateMessage(result.info),
                 )
+                if (
+                    shouldShowAvailableUpdateDialog(
+                        neverShowUpdateDialog = neverShowUpdateDialog,
+                        hasActiveUpdateDownload = activeUpdateDownload != null,
+                    )
+                ) {
+                    updatePromptInfo = result.info
+                    showUpdatePromptDialog = true
+                } else {
+                    dismissUpdatePromptDialog()
+                }
             }
             AppUpdateCheckResult.Current -> {
+                dismissUpdatePromptDialog()
                 if (showCurrentOrOfflineStatus) {
                     updateUiState = AppUpdateUiState(
                         status = UpdateUiStatus.Latest,
@@ -914,6 +968,7 @@ internal fun PixelDoneApp() {
                 }
             }
             AppUpdateCheckResult.Unavailable -> {
+                dismissUpdatePromptDialog()
                 if (showCurrentOrOfflineStatus) {
                     updateUiState = AppUpdateUiState(
                         status = UpdateUiStatus.Offline,
@@ -973,7 +1028,8 @@ internal fun PixelDoneApp() {
     fun handleUpdateClick() {
         val availableInfo = updateUiState.info
         if (updateUiState.status == UpdateUiStatus.Available && availableInfo != null) {
-            startUpdateDownload(availableInfo)
+            dismissUpdatePromptDialog()
+            startUpdateDownload(availableInfo, revealProgressDialog = true)
             return
         }
         if (updateCheckInFlight || activeUpdateDownload != null) return
@@ -1120,6 +1176,26 @@ internal fun PixelDoneApp() {
         todoListHighlightRequest = todoListHighlightRequest,
         updateUiState = updateUiState,
         onUpdateClick = ::handleUpdateClick,
+    )
+    UpdateAvailableDialog(
+        info = if (showUpdatePromptDialog) updatePromptInfo else null,
+        currentVersion = BuildConfig.VERSION_NAME,
+        neverShowUpdateDialog = neverShowUpdateDialog,
+        onNeverShowUpdateDialogChange = ::setNeverShowUpdateDialog,
+        onUpdate = { info ->
+            dismissUpdatePromptDialog()
+            startUpdateDownload(info, revealProgressDialog = true)
+        },
+        onDismiss = ::dismissUpdatePromptDialog,
+    )
+    UpdateDownloadProgressDialog(
+        download = if (showUpdateProgressDialog && !updateProgressDialogDismissed) {
+            activeUpdateDownload
+        } else {
+            null
+        },
+        updateUiState = updateUiState,
+        onDismiss = ::dismissUpdateProgressDialog,
     )
     DeleteConfirmationDialog(
         confirmation = deleteConfirmation,
@@ -2531,6 +2607,156 @@ private fun UpdateGlyph(
             end = Offset(12.dp.toPx(), 12.dp.toPx()),
             strokeWidth = strokeWidth,
         )
+    }
+}
+
+@Composable
+private fun UpdateAvailableDialog(
+    info: AppUpdateInfo?,
+    currentVersion: String,
+    neverShowUpdateDialog: Boolean,
+    onNeverShowUpdateDialogChange: (Boolean) -> Unit,
+    onUpdate: (AppUpdateInfo) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (info == null) return
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Update available",
+                style = MaterialTheme.typography.titleMedium,
+                color = ClaudeSlateDark,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "PixelDone can update from v$currentVersion to v${info.version}.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ClaudeSlateLight,
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, ClaudeGray300, RectangleShape)
+                        .background(ClaudeIvory)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = neverShowUpdateDialog,
+                        onCheckedChange = onNeverShowUpdateDialogChange,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = ClaudeClay,
+                            uncheckedColor = ClaudeGray600,
+                            checkmarkColor = ClaudeIvory,
+                        ),
+                    )
+                    Text(
+                        modifier = Modifier.weight(1f),
+                        text = "DO NOT SHOW AGAIN",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = ClaudeSlateDark,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            PixelButton(
+                text = "UPDATE",
+                onClick = { onUpdate(info) },
+                primary = true,
+            )
+        },
+        dismissButton = {
+            PixelButton(
+                text = "LATER",
+                onClick = onDismiss,
+                primary = false,
+            )
+        },
+        shape = RectangleShape,
+        containerColor = ClaudeGray100,
+        tonalElevation = 0.dp,
+    )
+}
+
+@Composable
+private fun UpdateDownloadProgressDialog(
+    download: AppUpdateDownload?,
+    updateUiState: AppUpdateUiState,
+    onDismiss: () -> Unit,
+) {
+    if (download == null) return
+
+    val message = updateUiState.message ?: formatUpdateDownloadMessage(download.version)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Downloading update",
+                style = MaterialTheme.typography.titleMedium,
+                color = ClaudeSlateDark,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = ClaudeSlateDark,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                UpdateProgressBar(progress = updateUiState.progress)
+                Text(
+                    text = "You can close this dialog. The update will keep downloading silently.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ClaudeSlateLight,
+                )
+            }
+        },
+        confirmButton = {
+            PixelButton(
+                text = "CLOSE",
+                onClick = onDismiss,
+                primary = false,
+            )
+        },
+        shape = RectangleShape,
+        containerColor = ClaudeGray100,
+        tonalElevation = 0.dp,
+    )
+}
+
+@Composable
+private fun UpdateProgressBar(
+    progress: AppUpdateDownloadProgress,
+    modifier: Modifier = Modifier,
+) {
+    val percent = progress.percent
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(10.dp)
+            .border(1.dp, ClaudeClay, RectangleShape)
+            .background(ClaudeClay.copy(alpha = 0.14f)),
+    ) {
+        if (percent != null && percent > 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(percent.coerceIn(0, 100) / 100f)
+                    .height(8.dp)
+                    .background(ClaudeClay),
+            )
+        }
     }
 }
 
