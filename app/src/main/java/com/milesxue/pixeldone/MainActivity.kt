@@ -1,12 +1,16 @@
 package com.milesxue.pixeldone
 
 import android.Manifest
+import android.app.NotificationManager
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -72,6 +76,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -288,6 +293,8 @@ private fun PixelDoneApp() {
     var keepDisplayOrderDuringSortDelay by remember { mutableStateOf(false) }
     var sortDelayTick by remember { mutableStateOf(0) }
     var pendingTodoToggleFeedback by remember { mutableStateOf(PendingTodoToggleFeedback()) }
+    var pendingReminderPermissionTodoId by remember { mutableStateOf<String?>(null) }
+    var pendingFullScreenPermissionTodoId by remember { mutableStateOf<String?>(null) }
     var deleteConfirmation by remember { mutableStateOf<DeleteConfirmation?>(null) }
     var imagePreviewTodoId by remember { mutableStateOf<String?>(null) }
     var pendingImageTodoId by remember { mutableStateOf<String?>(null) }
@@ -313,6 +320,7 @@ private fun PixelDoneApp() {
         )
     }
     val selectedChecklist = selectedChecklistOf(checklistState)
+    val currentChecklistState by rememberUpdatedState(checklistState)
     val isTrashSelected = isTrashChecklist(selectedChecklist)
     val todos = selectedChecklist.items
     val activeCount = activeTodoCount(selectedChecklist)
@@ -331,16 +339,9 @@ private fun PixelDoneApp() {
         onDispose(unregister)
     }
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            TodoAlarmScheduler.sync(context, emptyList(), normalTodos(checklistState))
-        }
-    }
-
     LaunchedEffect(Unit) {
-        TodoAlarmScheduler.sync(context, emptyList(), normalTodos(checklistState))
+        val currentTodos = normalTodos(checklistState)
+        TodoAlarmScheduler.sync(context, currentTodos, currentTodos)
     }
 
     val sortedVisibleIds = visibleTodos(todos, sortMode, hideCompleted).map { it.id }
@@ -388,12 +389,12 @@ private fun PixelDoneApp() {
         }
     }
 
-    fun updateChecklistState(updatedState: TodoChecklistState) {
+    fun updateChecklistState(updatedState: TodoChecklistState): Set<ReminderCapability> {
         val previousTodos = normalTodos(checklistState)
         val updatedTodos = normalTodos(updatedState)
         checklistState = updatedState
         storage.saveTodoState(updatedState)
-        TodoAlarmScheduler.sync(context, previousTodos, updatedTodos)
+        return TodoAlarmScheduler.sync(context, previousTodos, updatedTodos)
     }
 
     fun updateSelectedTodos(updatedTodos: List<TodoItem>): TodoChecklistState? {
@@ -435,15 +436,67 @@ private fun PixelDoneApp() {
             PackageManager.PERMISSION_GRANTED
     }
 
-    fun requestNotificationPermissionIfNeeded(updatedTodos: List<TodoItem>) {
-        if (hasNotificationPermission()) return
+    fun hasFullScreenIntentAccess(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+            context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
+    }
+
+    fun missingReminderCapabilities(item: TodoItem): Set<ReminderCapability> {
         val nowMillis = System.currentTimeMillis()
-        val hasFutureAlarm = updatedTodos.any {
-            shouldScheduleTodoAlarm(it, nowMillis)
+        return requiredReminderCapabilities(item, nowMillis).filterTo(mutableSetOf()) { capability ->
+            when (capability) {
+                ReminderCapability.NOTIFICATION_PERMISSION -> !hasNotificationPermission()
+                ReminderCapability.EXACT_ALARM_ACCESS -> !TodoAlarmScheduler.canScheduleExactAlarms(context)
+                ReminderCapability.FULL_SCREEN_INTENT_ACCESS -> !hasFullScreenIntentAccess()
+            }
         }
-        if (hasFutureAlarm) {
+    }
+
+    fun requestSystemReminderPermissionIfNeeded(item: TodoItem) {
+        val missingCapabilities = missingReminderCapabilities(item)
+        val action = when {
+            ReminderCapability.EXACT_ALARM_ACCESS in missingCapabilities -> {
+                if (ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities) {
+                    pendingFullScreenPermissionTodoId = item.id
+                }
+                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+            }
+            ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities ->
+                Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT
+            else -> return
+        }
+        try {
+            context.startActivity(
+                Intent(action).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                },
+            )
+        } catch (_: ActivityNotFoundException) {
+            // Some Android builds omit these settings panels; leave the reminder degraded.
+        }
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            val currentTodos = normalTodos(currentChecklistState)
+            TodoAlarmScheduler.sync(context, currentTodos, currentTodos)
+            pendingReminderPermissionTodoId
+                ?.let { id -> normalTodos(currentChecklistState).firstOrNull { it.id == id } }
+                ?.let(::requestSystemReminderPermissionIfNeeded)
+        }
+        pendingReminderPermissionTodoId = null
+    }
+
+    fun requestReminderPermissionsIfNeeded(item: TodoItem) {
+        val missingCapabilities = missingReminderCapabilities(item)
+        if (ReminderCapability.NOTIFICATION_PERMISSION in missingCapabilities) {
+            pendingReminderPermissionTodoId = item.id
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
         }
+        requestSystemReminderPermissionIfNeeded(item)
     }
 
     fun setTodoImageFileName(
@@ -603,7 +656,9 @@ private fun PixelDoneApp() {
         affectedTodoId?.let { id ->
             revealAndHighlightTodos(setOf(id))
         }
-        requestNotificationPermissionIfNeeded(normalTodos(updatedState))
+        affectedTodoId
+            ?.let { id -> normalTodos(updatedState).firstOrNull { it.id == id } }
+            ?.let(::requestReminderPermissionsIfNeeded)
         clearEditor()
         editorMode = EditorMode.None
         return true
@@ -865,6 +920,17 @@ private fun PixelDoneApp() {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_START) {
                     checkForUpdateSilently()
+                }
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    val currentTodos = normalTodos(currentChecklistState)
+                    TodoAlarmScheduler.sync(context, currentTodos, currentTodos)
+                    pendingFullScreenPermissionTodoId?.let { id ->
+                        val item = normalTodos(currentChecklistState).firstOrNull { it.id == id }
+                        pendingFullScreenPermissionTodoId = null
+                        if (item != null && TodoAlarmScheduler.canScheduleExactAlarms(context)) {
+                            requestSystemReminderPermissionIfNeeded(item)
+                        }
+                    }
                 }
             }
             activity.lifecycle.addObserver(observer)
@@ -2003,6 +2069,7 @@ private fun TodoRow(
     } else {
         ""
     }
+    val showXHighAlarmIcon = item.priority == TodoPriority.XHIGH && !item.completed
 
     Row(
         modifier = Modifier
@@ -2044,19 +2111,32 @@ private fun TodoRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = item.subtitleText(
-                    nowMillis = nowMillis,
-                    dueDateTime = dueDateTime,
-                    dueDateTimeColor = dueDateTimeColor,
-                    repeatText = repeatText,
-                    showDeadlineCountdown = showDeadlineCountdown,
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = ClaudeSlateLight,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                modifier = Modifier.heightIn(min = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    modifier = if (showXHighAlarmIcon) Modifier.weight(1f, fill = false) else Modifier,
+                    text = item.subtitleText(
+                        nowMillis = nowMillis,
+                        dueDateTime = dueDateTime,
+                        dueDateTimeColor = dueDateTimeColor,
+                        repeatText = repeatText,
+                        showDeadlineCountdown = showDeadlineCountdown,
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = ClaudeSlateLight,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (showXHighAlarmIcon) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    PixelAlarmIcon(
+                        color = ClaudeSlateLight,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
         }
         PixelItemImageButton(
             hasImage = item.imageFileName != null,
@@ -2729,6 +2809,55 @@ private fun PixelSettingsIcon(color: Color, modifier: Modifier = Modifier) {
             topLeft = Offset(10.dp.toPx(), 11.dp.toPx()),
             size = Size(3.dp.toPx(), 4.dp.toPx()),
             style = Stroke(width = strokeWidth),
+        )
+    }
+}
+
+@Composable
+private fun PixelAlarmIcon(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(14.dp)) {
+        val strokeWidth = 1.5.dp.toPx()
+        drawCircle(
+            color = color,
+            radius = 4.3.dp.toPx(),
+            center = Offset(7.dp.toPx(), 7.5.dp.toPx()),
+            style = Stroke(width = strokeWidth),
+        )
+        drawLine(
+            color = color,
+            start = Offset(2.8.dp.toPx(), 3.2.dp.toPx()),
+            end = Offset(5.dp.toPx(), 1.4.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(9.dp.toPx(), 1.4.dp.toPx()),
+            end = Offset(11.2.dp.toPx(), 3.2.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(7.dp.toPx(), 7.5.dp.toPx()),
+            end = Offset(7.dp.toPx(), 4.9.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(7.dp.toPx(), 7.5.dp.toPx()),
+            end = Offset(9.4.dp.toPx(), 8.8.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(4.6.dp.toPx(), 12.3.dp.toPx()),
+            end = Offset(3.5.dp.toPx(), 13.2.dp.toPx()),
+            strokeWidth = strokeWidth,
+        )
+        drawLine(
+            color = color,
+            start = Offset(9.4.dp.toPx(), 12.3.dp.toPx()),
+            end = Offset(10.5.dp.toPx(), 13.2.dp.toPx()),
+            strokeWidth = strokeWidth,
         )
     }
 }

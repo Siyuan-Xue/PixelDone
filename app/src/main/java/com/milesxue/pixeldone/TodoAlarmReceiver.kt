@@ -1,113 +1,83 @@
 package com.milesxue.pixeldone
 
-import android.Manifest
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 
 class TodoAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (!canPostNotifications(context)) return
+        val firedDueAtMillis = intent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, 0L)
+        if (firedDueAtMillis <= 0L) return
 
-        val title = intent.getStringExtra(TodoAlarmScheduler.EXTRA_TODO_TITLE)
-            ?.takeIf { it.isNotBlank() }
-            ?: "Todo due"
-        val priority = intent.getStringExtra(TodoAlarmScheduler.EXTRA_TODO_PRIORITY)
-            ?.lowercase()
-            ?: "task"
-        val dueAtMillis = intent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, 0L)
-        val reminderRepeat = intent.getStringExtra(TodoAlarmScheduler.EXTRA_TODO_REPEAT)
-            ?.let { name -> ReminderRepeat.entries.firstOrNull { it.name == name } }
-            ?: ReminderRepeat.NONE
-        val todoId = intent.getStringExtra(TodoAlarmScheduler.EXTRA_TODO_ID) ?: title
-
-        val notificationManager = context.getSystemService(NotificationManager::class.java)
-        notificationManager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_HIGH,
-            ),
-        )
-
-        val openAppIntent = PendingIntent.getActivity(
-            context,
-            0,
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
-        val notification = Notification.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText("${priority.uppercase()}  ${dueAtMillis.formatAlarmTime()}${reminderRepeat.notificationSuffix()}")
-            .setContentIntent(openAppIntent)
-            .setAutoCancel(true)
-            .setShowWhen(true)
-            .setWhen(dueAtMillis)
-            .build()
-
-        notificationManager.notify(todoId.hashCode(), notification)
-        rescheduleRepeatingTodo(context, todoId, dueAtMillis)
-    }
-
-    private fun canPostNotifications(context: Context): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun Long.formatAlarmTime(): String {
-        return if (this > 0L) {
-            java.time.Instant.ofEpochMilli(this)
-                .atZone(java.time.ZoneId.systemDefault())
-                .toLocalDateTime()
-                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-        } else {
-            "Now"
-        }
-    }
-
-    private fun ReminderRepeat.notificationSuffix(): String {
-        return when (this) {
-            ReminderRepeat.NONE -> ""
-            ReminderRepeat.DAILY -> "  DAILY"
-            ReminderRepeat.WEEKLY -> "  WEEKLY"
-        }
-    }
-
-    private fun rescheduleRepeatingTodo(
-        context: Context,
-        todoId: String,
-        triggerAtMillis: Long,
-    ) {
         val storage = TodoPreferences.create(context)
-        val nowMillis = maxOf(System.currentTimeMillis(), triggerAtMillis)
-        val updatedState = advanceRepeatingTodoAfterReminder(
-            state = storage.loadTodoState(),
-            todoId = todoId,
-            nowMillis = nowMillis,
-        ) ?: return
-        storage.saveTodoState(updatedState)
+        val state = storage.loadTodoState()
+        val dueItems = todosDueForReminder(normalTodos(state), firedDueAtMillis)
+        if (dueItems.isEmpty()) return
+        if (wasRecentlyDispatched(context, dispatchSignature(firedDueAtMillis, dueItems))) return
 
-        val updatedItem = normalTodos(updatedState).firstOrNull { it.id == todoId } ?: return
-        TodoAlarmScheduler.schedule(
+        val xhighItems = dueItems.filter { it.priority == TodoPriority.XHIGH }
+        val shortItems = dueItems.filter { it.priority != TodoPriority.XHIGH }
+
+        if (xhighItems.isNotEmpty()) {
+            XHighAlarmService.start(
+                context = context,
+                items = xhighItems,
+                firedDueAtMillis = firedDueAtMillis,
+                companionShortItems = shortItems,
+            )
+        } else if (shortItems.isNotEmpty()) {
+            TodoReminderNotifier.showShortNotificationBatch(context, shortItems, firedDueAtMillis)
+        }
+
+        rescheduleDispatchedTodos(context, storage, state, dueItems, firedDueAtMillis)
+    }
+
+    private fun rescheduleDispatchedTodos(
+        context: Context,
+        storage: TodoPreferences,
+        state: TodoChecklistState,
+        dueItems: List<TodoItem>,
+        firedDueAtMillis: Long,
+    ) {
+        val updatedState = advanceRepeatingTodosAfterReminder(
+            state = state,
+            todoIds = dueItems.mapTo(mutableSetOf()) { it.id },
+            nowMillis = maxOf(System.currentTimeMillis(), firedDueAtMillis),
+        ) ?: state
+        if (updatedState != state) {
+            storage.saveTodoState(updatedState)
+        }
+
+        TodoAlarmScheduler.sync(
             context = context,
-            item = updatedItem,
-            nowMillis = nowMillis,
+            previousItems = normalTodos(state),
+            currentItems = normalTodos(updatedState),
         )
     }
 
-    companion object {
-        private const val CHANNEL_ID = "todo_alarms"
-        private const val CHANNEL_NAME = "Todo alarms"
+    private fun dispatchSignature(firedDueAtMillis: Long, items: List<TodoItem>): String {
+        return "$firedDueAtMillis:${items.map { it.id }.sorted().joinToString(",")}"
+    }
+
+    private fun wasRecentlyDispatched(context: Context, signature: String): Boolean {
+        val nowMillis = System.currentTimeMillis()
+        val preferences = context.getSharedPreferences(DISPATCH_PREFS_NAME, Context.MODE_PRIVATE)
+        val lastSignature = preferences.getString(KEY_LAST_SIGNATURE, null)
+        val lastDispatchedAt = preferences.getLong(KEY_LAST_DISPATCHED_AT, 0L)
+        if (signature == lastSignature && nowMillis - lastDispatchedAt in 0L..DISPATCH_DEDUP_WINDOW_MILLIS) {
+            return true
+        }
+        preferences.edit()
+            .putString(KEY_LAST_SIGNATURE, signature)
+            .putLong(KEY_LAST_DISPATCHED_AT, nowMillis)
+            .apply()
+        return false
+    }
+
+    private companion object {
+        private const val DISPATCH_PREFS_NAME = "todo_alarm_dispatch"
+        private const val KEY_LAST_SIGNATURE = "last_signature"
+        private const val KEY_LAST_DISPATCHED_AT = "last_dispatched_at"
+        private const val DISPATCH_DEDUP_WINDOW_MILLIS = 2L * 60L * 1000L
     }
 }

@@ -44,8 +44,48 @@ enum class SortMode {
     TIME,
 }
 
+enum class ReminderScheduleMode {
+    INEXACT_NOTIFICATION,
+    SYSTEM_ALARM,
+}
+
+enum class ReminderAlertMode {
+    SHORT_NOTIFICATION,
+    FULLSCREEN_ALARM,
+}
+
+enum class ReminderCapability {
+    NOTIFICATION_PERMISSION,
+    EXACT_ALARM_ACCESS,
+    FULL_SCREEN_INTENT_ACCESS,
+}
+
+object ReminderNotificationIds {
+    const val XHIGH_ALARM = 0x30000001
+    private const val SHORT_ITEM_NAMESPACE = 0x10000000
+    private const val SHORT_BATCH_NAMESPACE = 0x20000000
+    private const val SHORT_FOLLOW_UP_NAMESPACE = 0x28000000
+    private const val PAYLOAD_MASK = 0x0FFFFFFF
+    private const val SHORT_BATCH_PAYLOAD_MASK = 0x07FFFFFF
+
+    fun shortItem(todoId: String): Int {
+        return SHORT_ITEM_NAMESPACE or (todoId.hashCode() and PAYLOAD_MASK)
+    }
+
+    fun shortBatch(firedDueAtMillis: Long): Int {
+        val foldedTime = (firedDueAtMillis xor (firedDueAtMillis ushr 32)).toInt()
+        return SHORT_BATCH_NAMESPACE or (foldedTime and SHORT_BATCH_PAYLOAD_MASK)
+    }
+
+    fun shortFollowUp(firedDueAtMillis: Long): Int {
+        val foldedTime = (firedDueAtMillis xor (firedDueAtMillis ushr 32)).toInt()
+        return SHORT_FOLLOW_UP_NAMESPACE or (foldedTime and SHORT_BATCH_PAYLOAD_MASK)
+    }
+}
+
 internal const val DailyReminderIntervalMillis = 24L * 60L * 60L * 1000L
 internal const val WeeklyReminderIntervalMillis = 7L * DailyReminderIntervalMillis
+internal const val DefaultSnoozeIntervalMillis = 10L * 60L * 1000L
 
 const val DefaultChecklistId = "main"
 const val DefaultChecklistName = "MAIN"
@@ -535,6 +575,136 @@ fun shouldScheduleTodoAlarm(item: TodoItem, nowMillis: Long): Boolean {
     return nextReminderAtMillis(item, nowMillis) != null
 }
 
+fun reminderScheduleMode(item: TodoItem, nowMillis: Long): ReminderScheduleMode? {
+    if (!shouldScheduleTodoAlarm(item, nowMillis)) return null
+    return ReminderScheduleMode.SYSTEM_ALARM
+}
+
+fun reminderAlertMode(item: TodoItem, nowMillis: Long): ReminderAlertMode? {
+    if (!shouldScheduleTodoAlarm(item, nowMillis)) return null
+    return when (item.priority) {
+        TodoPriority.XHIGH -> ReminderAlertMode.FULLSCREEN_ALARM
+        TodoPriority.HIGH,
+        TodoPriority.MEDIUM,
+        TodoPriority.LOW,
+        -> ReminderAlertMode.SHORT_NOTIFICATION
+    }
+}
+
+fun requiredReminderCapabilities(item: TodoItem, nowMillis: Long): Set<ReminderCapability> {
+    return when (reminderAlertMode(item, nowMillis)) {
+        ReminderAlertMode.FULLSCREEN_ALARM -> setOf(
+            ReminderCapability.NOTIFICATION_PERMISSION,
+            ReminderCapability.EXACT_ALARM_ACCESS,
+            ReminderCapability.FULL_SCREEN_INTENT_ACCESS,
+        )
+        ReminderAlertMode.SHORT_NOTIFICATION -> setOf(
+            ReminderCapability.NOTIFICATION_PERMISSION,
+            ReminderCapability.EXACT_ALARM_ACCESS,
+        )
+        null -> emptySet()
+    }
+}
+
+fun canScheduleExactAlarmForSdk(sdkInt: Int, canScheduleExactAlarms: Boolean): Boolean {
+    return sdkInt < 31 || canScheduleExactAlarms
+}
+
+fun shouldDispatchTodoReminder(item: TodoItem, firedDueAtMillis: Long): Boolean {
+    if (isTrashedTodo(item) || item.completed || firedDueAtMillis <= 0L) return false
+    if (item.dueAtMillis <= 0L || firedDueAtMillis < item.dueAtMillis) return false
+
+    return when (item.reminderRepeat) {
+        ReminderRepeat.NONE -> item.dueAtMillis == firedDueAtMillis
+        ReminderRepeat.DAILY -> isAlignedRepeatingReminder(
+            dueAtMillis = item.dueAtMillis,
+            firedDueAtMillis = firedDueAtMillis,
+            intervalMillis = DailyReminderIntervalMillis,
+        )
+        ReminderRepeat.WEEKLY -> isAlignedRepeatingReminder(
+            dueAtMillis = item.dueAtMillis,
+            firedDueAtMillis = firedDueAtMillis,
+            intervalMillis = WeeklyReminderIntervalMillis,
+        )
+    }
+}
+
+fun shouldCancelUnschedulableTodoAlarm(
+    previousItem: TodoItem?,
+    item: TodoItem,
+    nowMillis: Long,
+): Boolean {
+    if (shouldScheduleTodoAlarm(item, nowMillis)) return false
+    val unchangedActivePastDueOneShot = previousItem == item &&
+        !item.completed &&
+        !isTrashedTodo(item) &&
+        item.reminderRepeat == ReminderRepeat.NONE &&
+        item.dueAtMillis in 1L..nowMillis
+    return !unchangedActivePastDueOneShot
+}
+
+fun todosDueForReminder(
+    items: List<TodoItem>,
+    firedDueAtMillis: Long,
+): List<TodoItem> {
+    return items
+        .filter { item -> shouldDispatchTodoReminder(item, firedDueAtMillis) }
+        .sortedWith(
+            compareBy<TodoItem> { priorityRank(it.priority) }
+                .thenBy { it.createdAtMillis }
+                .thenBy { it.id },
+        )
+}
+
+fun snoozeTodoAfterReminder(
+    item: TodoItem,
+    nowMillis: Long,
+    snoozeIntervalMillis: Long = DefaultSnoozeIntervalMillis,
+): TodoItem? {
+    if (isTrashedTodo(item) || item.completed) return null
+    return item.copy(dueAtMillis = nowMillis + snoozeIntervalMillis)
+}
+
+fun snoozeTodoAfterReminder(
+    state: TodoChecklistState,
+    todoId: String,
+    nowMillis: Long,
+    snoozeIntervalMillis: Long = DefaultSnoozeIntervalMillis,
+): TodoChecklistState? {
+    return snoozeTodosAfterReminder(
+        state = state,
+        todoIds = setOf(todoId),
+        nowMillis = nowMillis,
+        snoozeIntervalMillis = snoozeIntervalMillis,
+    )
+}
+
+fun snoozeTodosAfterReminder(
+    state: TodoChecklistState,
+    todoIds: Set<String>,
+    nowMillis: Long,
+    snoozeIntervalMillis: Long = DefaultSnoozeIntervalMillis,
+): TodoChecklistState? {
+    if (todoIds.isEmpty()) return null
+
+    var changed = false
+    val updatedLists = state.lists.map { checklist ->
+        if (isTrashChecklist(checklist)) return@map checklist
+        val updatedItems = checklist.items.map { item ->
+            if (item.id in todoIds) {
+                snoozeTodoAfterReminder(item, nowMillis, snoozeIntervalMillis)?.also {
+                    changed = true
+                } ?: item
+            } else {
+                item
+            }
+        }
+        if (updatedItems == checklist.items) checklist else checklist.copy(items = updatedItems)
+    }
+
+    return if (changed) state.copy(lists = updatedLists) else null
+}
+
 fun nextReminderAtMillis(item: TodoItem, nowMillis: Long): Long? {
     if (isTrashedTodo(item)) return null
     if (item.completed) return null
@@ -592,11 +762,25 @@ fun advanceRepeatingTodoAfterReminder(
     todoId: String,
     nowMillis: Long,
 ): TodoChecklistState? {
+    return advanceRepeatingTodosAfterReminder(
+        state = state,
+        todoIds = setOf(todoId),
+        nowMillis = nowMillis,
+    )
+}
+
+fun advanceRepeatingTodosAfterReminder(
+    state: TodoChecklistState,
+    todoIds: Set<String>,
+    nowMillis: Long,
+): TodoChecklistState? {
+    if (todoIds.isEmpty()) return null
+
     var changed = false
     val updatedLists = state.lists.map { checklist ->
         if (isTrashChecklist(checklist)) return@map checklist
         val updatedItems = checklist.items.map { item ->
-            if (item.id == todoId) {
+            if (item.id in todoIds) {
                 advanceRepeatingTodoAfterReminder(item, nowMillis)?.also {
                     changed = true
                 } ?: item
@@ -621,6 +805,14 @@ private fun nextRepeatingReminderAtMillis(
     val elapsedIntervals = elapsedMillis / intervalMillis
     val nextAtMillis = dueAtMillis + ((elapsedIntervals + 1L) * intervalMillis)
     return nextAtMillis.takeIf { it > nowMillis }
+}
+
+private fun isAlignedRepeatingReminder(
+    dueAtMillis: Long,
+    firedDueAtMillis: Long,
+    intervalMillis: Long,
+): Boolean {
+    return (firedDueAtMillis - dueAtMillis) % intervalMillis == 0L
 }
 
 private fun moveTodosToTrash(

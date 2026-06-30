@@ -2,6 +2,7 @@ package com.milesxue.pixeldone
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -245,6 +246,291 @@ class TodoEngineTest {
                 nowMillis = 1_000L,
             ),
         )
+    }
+
+    @Test
+    fun reminderModesMapAllPrioritiesToSystemAndOnlyXhighToFullscreenAlarm() {
+        assertEquals(
+            ReminderScheduleMode.SYSTEM_ALARM,
+            reminderScheduleMode(
+                item("xhigh", TodoPriority.XHIGH, due = 2_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            ReminderAlertMode.FULLSCREEN_ALARM,
+            reminderAlertMode(
+                item("xhigh", TodoPriority.XHIGH, due = 2_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            ReminderScheduleMode.SYSTEM_ALARM,
+            reminderScheduleMode(
+                item("high", TodoPriority.HIGH, due = 2_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            ReminderAlertMode.SHORT_NOTIFICATION,
+            reminderAlertMode(
+                item("high", TodoPriority.HIGH, due = 2_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            ReminderScheduleMode.SYSTEM_ALARM,
+            reminderScheduleMode(
+                item("mid", TodoPriority.MEDIUM, due = 2_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            ReminderScheduleMode.SYSTEM_ALARM,
+            reminderScheduleMode(
+                item("low", TodoPriority.LOW, due = 2_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertNull(
+            reminderScheduleMode(
+                item("done-xhigh", TodoPriority.XHIGH, due = 2_000L, completed = true),
+                nowMillis = 1_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun requiredReminderCapabilitiesDependOnAffectedTodoOnly() {
+        assertEquals(
+            setOf(
+                ReminderCapability.NOTIFICATION_PERMISSION,
+                ReminderCapability.EXACT_ALARM_ACCESS,
+                ReminderCapability.FULL_SCREEN_INTENT_ACCESS,
+            ),
+            requiredReminderCapabilities(
+                item("xhigh", TodoPriority.XHIGH, due = 2_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            setOf(
+                ReminderCapability.NOTIFICATION_PERMISSION,
+                ReminderCapability.EXACT_ALARM_ACCESS,
+            ),
+            requiredReminderCapabilities(
+                item("high", TodoPriority.HIGH, due = 2_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            emptySet<ReminderCapability>(),
+            requiredReminderCapabilities(
+                item("past", TodoPriority.XHIGH, due = 1_000L),
+                nowMillis = 1_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun reminderNotificationIdsUseSeparateNamespaces() {
+        val shortItemId = ReminderNotificationIds.shortItem("normal")
+        val shortBatchId = ReminderNotificationIds.shortBatch(2_000L)
+        val xhighId = ReminderNotificationIds.XHIGH_ALARM
+
+        assertTrue(shortItemId in 0x10000000..0x1FFFFFFF)
+        assertTrue(shortBatchId in 0x20000000..0x2FFFFFFF)
+        assertTrue(xhighId in 0x30000000..0x3FFFFFFF)
+        assertNotEquals(shortItemId, shortBatchId)
+        assertNotEquals(shortItemId, xhighId)
+        assertNotEquals(shortBatchId, xhighId)
+    }
+
+    @Test
+    fun exactAlarmAccessRequiresPermissionOnlyOnAndroid12AndLater() {
+        assertTrue(canScheduleExactAlarmForSdk(sdkInt = 30, canScheduleExactAlarms = false))
+        assertTrue(canScheduleExactAlarmForSdk(sdkInt = 31, canScheduleExactAlarms = true))
+        assertFalse(canScheduleExactAlarmForSdk(sdkInt = 31, canScheduleExactAlarms = false))
+        assertFalse(canScheduleExactAlarmForSdk(sdkInt = 37, canScheduleExactAlarms = false))
+    }
+
+    @Test
+    fun reminderDispatchRequiresCurrentActiveTodo() {
+        assertTrue(
+            shouldDispatchTodoReminder(
+                item("one-shot", TodoPriority.MEDIUM, due = 2_000L),
+                firedDueAtMillis = 2_000L,
+            ),
+        )
+        assertFalse(
+            shouldDispatchTodoReminder(
+                item("edited", TodoPriority.MEDIUM, due = 3_000L),
+                firedDueAtMillis = 2_000L,
+            ),
+        )
+        assertFalse(
+            shouldDispatchTodoReminder(
+                item("done", TodoPriority.MEDIUM, due = 2_000L, completed = true),
+                firedDueAtMillis = 2_000L,
+            ),
+        )
+        assertTrue(
+            shouldDispatchTodoReminder(
+                item("daily", TodoPriority.XHIGH, due = 1_000L, repeat = ReminderRepeat.DAILY),
+                firedDueAtMillis = 1_000L + DailyReminderIntervalMillis,
+            ),
+        )
+    }
+
+    @Test
+    fun unchangedPastDueOneShotAlarmIsPreservedDuringFullSync() {
+        val unchangedPastDue = item("late", TodoPriority.HIGH, due = 2_000L)
+        assertFalse(
+            shouldCancelUnschedulableTodoAlarm(
+                previousItem = unchangedPastDue,
+                item = unchangedPastDue,
+                nowMillis = 3_000L,
+            ),
+        )
+
+        assertTrue(
+            shouldCancelUnschedulableTodoAlarm(
+                previousItem = unchangedPastDue.copy(dueAtMillis = 4_000L),
+                item = unchangedPastDue,
+                nowMillis = 3_000L,
+            ),
+        )
+        assertTrue(
+            shouldCancelUnschedulableTodoAlarm(
+                previousItem = unchangedPastDue,
+                item = unchangedPastDue.copy(completed = true),
+                nowMillis = 3_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun todosDueForReminderCollectsSameTimeActiveTodosOnly() {
+        val dueItems = todosDueForReminder(
+            items = listOf(
+                item("low", TodoPriority.LOW, due = 2_000L, created = 4L),
+                item("xhigh", TodoPriority.XHIGH, due = 2_000L, created = 3L),
+                item("high", TodoPriority.HIGH, due = 2_000L, created = 2L),
+                item("done", TodoPriority.XHIGH, due = 2_000L, completed = true),
+                item("edited", TodoPriority.MEDIUM, due = 3_000L),
+                item(
+                    id = "trash",
+                    priority = TodoPriority.XHIGH,
+                    due = 2_000L,
+                    trashedFromChecklistId = DefaultChecklistId,
+                    trashedFromChecklistName = DefaultChecklistName,
+                    trashedAtMillis = 1_500L,
+                ),
+            ),
+            firedDueAtMillis = 2_000L,
+        )
+
+        assertEquals(listOf("xhigh", "high", "low"), dueItems.map { it.id })
+    }
+
+    @Test
+    fun snoozeReminderMovesDueTimeWithoutCompletingTodo() {
+        val todo = item("xhigh", TodoPriority.XHIGH, due = 2_000L)
+
+        val snoozed = snoozeTodoAfterReminder(
+            item = todo,
+            nowMillis = 5_000L,
+            snoozeIntervalMillis = 600L,
+        )
+
+        assertEquals(todo.copy(dueAtMillis = 5_600L), snoozed)
+        assertFalse(snoozed?.completed ?: true)
+        assertNull(
+            snoozeTodoAfterReminder(
+                item = todo.copy(completed = true),
+                nowMillis = 5_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun snoozeReminderUpdatesNestedChecklistState() {
+        val todo = item("xhigh", TodoPriority.XHIGH, due = 2_000L)
+        val state = TodoChecklistState(
+            lists = listOf(
+                TodoChecklist(
+                    id = DefaultChecklistId,
+                    name = DefaultChecklistName,
+                    items = listOf(todo),
+                    createdAtMillis = 1L,
+                ),
+                TodoChecklist(
+                    id = TrashChecklistId,
+                    name = TrashChecklistName,
+                    items = emptyList(),
+                    createdAtMillis = 2L,
+                ),
+            ),
+            selectedListId = DefaultChecklistId,
+        )
+
+        val snoozed = snoozeTodoAfterReminder(
+            state = state,
+            todoId = "xhigh",
+            nowMillis = 5_000L,
+            snoozeIntervalMillis = 600L,
+        )
+
+        assertEquals(
+            todo.copy(dueAtMillis = 5_600L),
+            snoozed?.lists?.first { it.id == DefaultChecklistId }?.items?.single(),
+        )
+        assertNull(snoozeTodoAfterReminder(state, "missing", nowMillis = 5_000L))
+    }
+
+    @Test
+    fun snoozeTodosAfterReminderUpdatesBatchWithoutTouchingCompletedOrTrash() {
+        val first = item("first", TodoPriority.XHIGH, due = 2_000L)
+        val second = item("second", TodoPriority.XHIGH, due = 2_000L)
+        val completed = item("completed", TodoPriority.XHIGH, due = 2_000L, completed = true)
+        val trashed = item(
+            id = "trashed",
+            priority = TodoPriority.XHIGH,
+            due = 2_000L,
+            trashedFromChecklistId = DefaultChecklistId,
+            trashedFromChecklistName = DefaultChecklistName,
+            trashedAtMillis = 1_000L,
+        )
+        val state = TodoChecklistState(
+            lists = listOf(
+                TodoChecklist(
+                    id = DefaultChecklistId,
+                    name = DefaultChecklistName,
+                    items = listOf(first, second, completed),
+                    createdAtMillis = 1L,
+                ),
+                TodoChecklist(
+                    id = TrashChecklistId,
+                    name = TrashChecklistName,
+                    items = listOf(trashed),
+                    createdAtMillis = 2L,
+                ),
+            ),
+            selectedListId = DefaultChecklistId,
+        )
+
+        val snoozed = snoozeTodosAfterReminder(
+            state = state,
+            todoIds = setOf("first", "second", "completed", "trashed"),
+            nowMillis = 5_000L,
+            snoozeIntervalMillis = 600L,
+        )!!
+        val mainItems = snoozed.lists.first { it.id == DefaultChecklistId }.items
+
+        assertEquals(5_600L, mainItems.first { it.id == "first" }.dueAtMillis)
+        assertEquals(5_600L, mainItems.first { it.id == "second" }.dueAtMillis)
+        assertEquals(2_000L, mainItems.first { it.id == "completed" }.dueAtMillis)
+        assertEquals(listOf(trashed), trashTodos(snoozed))
     }
 
     @Test
