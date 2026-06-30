@@ -249,7 +249,7 @@ class TodoEngineTest {
     }
 
     @Test
-    fun reminderModesMapAllPrioritiesToSystemAndOnlyXhighToFullscreenAlarm() {
+    fun reminderModesMapXhighToSystemAlarmAndOtherPrioritiesToShortNotifications() {
         assertEquals(
             ReminderScheduleMode.SYSTEM_ALARM,
             reminderScheduleMode(
@@ -265,7 +265,7 @@ class TodoEngineTest {
             ),
         )
         assertEquals(
-            ReminderScheduleMode.SYSTEM_ALARM,
+            ReminderScheduleMode.INEXACT_NOTIFICATION,
             reminderScheduleMode(
                 item("high", TodoPriority.HIGH, due = 2_000L),
                 nowMillis = 1_000L,
@@ -279,14 +279,14 @@ class TodoEngineTest {
             ),
         )
         assertEquals(
-            ReminderScheduleMode.SYSTEM_ALARM,
+            ReminderScheduleMode.INEXACT_NOTIFICATION,
             reminderScheduleMode(
                 item("mid", TodoPriority.MEDIUM, due = 2_000L),
                 nowMillis = 1_000L,
             ),
         )
         assertEquals(
-            ReminderScheduleMode.SYSTEM_ALARM,
+            ReminderScheduleMode.INEXACT_NOTIFICATION,
             reminderScheduleMode(
                 item("low", TodoPriority.LOW, due = 2_000L),
                 nowMillis = 1_000L,
@@ -316,7 +316,6 @@ class TodoEngineTest {
         assertEquals(
             setOf(
                 ReminderCapability.NOTIFICATION_PERMISSION,
-                ReminderCapability.EXACT_ALARM_ACCESS,
             ),
             requiredReminderCapabilities(
                 item("high", TodoPriority.HIGH, due = 2_000L),
@@ -352,6 +351,53 @@ class TodoEngineTest {
         assertTrue(canScheduleExactAlarmForSdk(sdkInt = 31, canScheduleExactAlarms = true))
         assertFalse(canScheduleExactAlarmForSdk(sdkInt = 31, canScheduleExactAlarms = false))
         assertFalse(canScheduleExactAlarmForSdk(sdkInt = 37, canScheduleExactAlarms = false))
+    }
+
+    @Test
+    fun xhighFallsBackToShortNotificationWhenExactAlarmAccessIsMissing() {
+        val xhigh = item("xhigh", TodoPriority.XHIGH, due = 2_000L)
+        val high = item("high", TodoPriority.HIGH, due = 2_000L)
+
+        assertEquals(
+            ReminderScheduleMode.SYSTEM_ALARM,
+            effectiveReminderScheduleMode(
+                item = xhigh,
+                nowMillis = 1_000L,
+                canScheduleExactAlarms = true,
+            ),
+        )
+        assertEquals(
+            ReminderAlertMode.FULLSCREEN_ALARM,
+            effectiveReminderAlertMode(
+                item = xhigh,
+                nowMillis = 1_000L,
+                canScheduleExactAlarms = true,
+            ),
+        )
+        assertEquals(
+            ReminderScheduleMode.INEXACT_NOTIFICATION,
+            effectiveReminderScheduleMode(
+                item = xhigh,
+                nowMillis = 1_000L,
+                canScheduleExactAlarms = false,
+            ),
+        )
+        assertEquals(
+            ReminderAlertMode.SHORT_NOTIFICATION,
+            effectiveReminderAlertMode(
+                item = xhigh,
+                nowMillis = 1_000L,
+                canScheduleExactAlarms = false,
+            ),
+        )
+        assertEquals(
+            ReminderScheduleMode.INEXACT_NOTIFICATION,
+            effectiveReminderScheduleMode(
+                item = high,
+                nowMillis = 1_000L,
+                canScheduleExactAlarms = false,
+            ),
+        )
     }
 
     @Test
@@ -431,6 +477,88 @@ class TodoEngineTest {
         )
 
         assertEquals(listOf("xhigh", "high", "low"), dueItems.map { it.id })
+    }
+
+    @Test
+    fun dispatchPlanStartsFullscreenForSystemXhighAndKeepsShortItemsAsCompanions() {
+        val items = listOf(
+            item("low", TodoPriority.LOW, due = 2_000L, created = 4L),
+            item("xhigh", TodoPriority.XHIGH, due = 2_000L, created = 3L),
+            item("high", TodoPriority.HIGH, due = 2_000L, created = 2L),
+        )
+
+        val plan = reminderDispatchPlan(
+            items = items,
+            firedDueAtMillis = 2_000L,
+            triggerTodoId = "xhigh",
+            triggerAlertMode = ReminderAlertMode.FULLSCREEN_ALARM,
+            canScheduleExactAlarms = true,
+        )
+
+        assertEquals(listOf("xhigh"), plan.fullscreenAlarmItems.map { it.id })
+        assertEquals(listOf("high", "low"), plan.shortNotificationItems.map { it.id })
+        assertEquals(listOf("xhigh", "high", "low"), plan.rescheduleItems.map { it.id })
+    }
+
+    @Test
+    fun dispatchPlanSuppressesNormalShortNotificationWhenSystemXhighOwnsTheSameTime() {
+        val items = listOf(
+            item("low", TodoPriority.LOW, due = 2_000L, created = 4L),
+            item("xhigh", TodoPriority.XHIGH, due = 2_000L, created = 3L),
+            item("high", TodoPriority.HIGH, due = 2_000L, created = 2L),
+        )
+
+        val plan = reminderDispatchPlan(
+            items = items,
+            firedDueAtMillis = 2_000L,
+            triggerTodoId = "high",
+            triggerAlertMode = ReminderAlertMode.SHORT_NOTIFICATION,
+            canScheduleExactAlarms = true,
+        )
+
+        assertTrue(plan.isEmpty)
+        assertEquals(emptyList<TodoItem>(), plan.rescheduleItems)
+    }
+
+    @Test
+    fun dispatchPlanUsesShortNotificationForXhighFallbackWhenExactAccessIsMissing() {
+        val items = listOf(
+            item("low", TodoPriority.LOW, due = 2_000L, created = 4L),
+            item("xhigh", TodoPriority.XHIGH, due = 2_000L, created = 3L),
+            item("high", TodoPriority.HIGH, due = 2_000L, created = 2L),
+        )
+
+        val plan = reminderDispatchPlan(
+            items = items,
+            firedDueAtMillis = 2_000L,
+            triggerTodoId = "xhigh",
+            triggerAlertMode = ReminderAlertMode.SHORT_NOTIFICATION,
+            canScheduleExactAlarms = false,
+        )
+
+        assertEquals(emptyList<TodoItem>(), plan.fullscreenAlarmItems)
+        assertEquals(listOf("xhigh", "high", "low"), plan.shortNotificationItems.map { it.id })
+        assertEquals(listOf("xhigh", "high", "low"), plan.rescheduleItems.map { it.id })
+    }
+
+    @Test
+    fun dispatchPlanTreatsStaleFullscreenTriggerAsShortWhenExactAccessWasRevoked() {
+        val items = listOf(
+            item("xhigh", TodoPriority.XHIGH, due = 2_000L, created = 1L),
+            item("high", TodoPriority.HIGH, due = 2_000L, created = 2L),
+        )
+
+        val plan = reminderDispatchPlan(
+            items = items,
+            firedDueAtMillis = 2_000L,
+            triggerTodoId = "xhigh",
+            triggerAlertMode = ReminderAlertMode.FULLSCREEN_ALARM,
+            canScheduleExactAlarms = false,
+        )
+
+        assertEquals(emptyList<TodoItem>(), plan.fullscreenAlarmItems)
+        assertEquals(listOf("xhigh", "high"), plan.shortNotificationItems.map { it.id })
+        assertEquals(listOf("xhigh", "high"), plan.rescheduleItems.map { it.id })
     }
 
     @Test

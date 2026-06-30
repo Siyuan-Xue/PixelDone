@@ -8,28 +8,41 @@ class TodoAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val firedDueAtMillis = intent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, 0L)
         if (firedDueAtMillis <= 0L) return
+        val triggerAlertMode = intent.getStringExtra(TodoAlarmScheduler.EXTRA_ALERT_MODE)
+            ?.let { mode -> ReminderAlertMode.entries.firstOrNull { it.name == mode } }
+            ?: ReminderAlertMode.SHORT_NOTIFICATION
+        val triggerTodoId = intent.getStringExtra(TodoAlarmScheduler.EXTRA_TODO_ID)
 
         val storage = TodoPreferences.create(context)
         val state = storage.loadTodoState()
-        val dueItems = todosDueForReminder(normalTodos(state), firedDueAtMillis)
-        if (dueItems.isEmpty()) return
-        if (wasRecentlyDispatched(context, dispatchSignature(firedDueAtMillis, dueItems))) return
-
-        val xhighItems = dueItems.filter { it.priority == TodoPriority.XHIGH }
-        val shortItems = dueItems.filter { it.priority != TodoPriority.XHIGH }
-
-        if (xhighItems.isNotEmpty()) {
-            XHighAlarmService.start(
-                context = context,
-                items = xhighItems,
-                firedDueAtMillis = firedDueAtMillis,
-                companionShortItems = shortItems,
-            )
-        } else if (shortItems.isNotEmpty()) {
-            TodoReminderNotifier.showShortNotificationBatch(context, shortItems, firedDueAtMillis)
+        val dispatchPlan = reminderDispatchPlan(
+            items = normalTodos(state),
+            firedDueAtMillis = firedDueAtMillis,
+            triggerTodoId = triggerTodoId,
+            triggerAlertMode = triggerAlertMode,
+            canScheduleExactAlarms = TodoAlarmScheduler.canScheduleExactAlarms(context),
+        )
+        if (dispatchPlan.isEmpty) return
+        if (wasRecentlyDispatched(context, dispatchSignature(firedDueAtMillis, triggerAlertMode, dispatchPlan))) {
+            return
         }
 
-        rescheduleDispatchedTodos(context, storage, state, dueItems, firedDueAtMillis)
+        if (dispatchPlan.fullscreenAlarmItems.isNotEmpty()) {
+            XHighAlarmService.start(
+                context = context,
+                items = dispatchPlan.fullscreenAlarmItems,
+                firedDueAtMillis = firedDueAtMillis,
+                companionShortItems = dispatchPlan.shortNotificationItems,
+            )
+        } else if (dispatchPlan.shortNotificationItems.isNotEmpty()) {
+            TodoReminderNotifier.showShortNotificationBatch(
+                context = context,
+                items = dispatchPlan.shortNotificationItems,
+                firedDueAtMillis = firedDueAtMillis,
+            )
+        }
+
+        rescheduleDispatchedTodos(context, storage, state, dispatchPlan.rescheduleItems, firedDueAtMillis)
     }
 
     private fun rescheduleDispatchedTodos(
@@ -55,8 +68,12 @@ class TodoAlarmReceiver : BroadcastReceiver() {
         )
     }
 
-    private fun dispatchSignature(firedDueAtMillis: Long, items: List<TodoItem>): String {
-        return "$firedDueAtMillis:${items.map { it.id }.sorted().joinToString(",")}"
+    private fun dispatchSignature(
+        firedDueAtMillis: Long,
+        triggerAlertMode: ReminderAlertMode,
+        dispatchPlan: ReminderDispatchPlan,
+    ): String {
+        return "$triggerAlertMode:$firedDueAtMillis:${dispatchPlan.signatureIds.joinToString(",")}"
     }
 
     private fun wasRecentlyDispatched(context: Context, signature: String): Boolean {

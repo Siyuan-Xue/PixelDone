@@ -54,6 +54,21 @@ enum class ReminderAlertMode {
     FULLSCREEN_ALARM,
 }
 
+data class ReminderDispatchPlan(
+    val fullscreenAlarmItems: List<TodoItem> = emptyList(),
+    val shortNotificationItems: List<TodoItem> = emptyList(),
+    val rescheduleItems: List<TodoItem> = emptyList(),
+) {
+    val isEmpty: Boolean
+        get() = fullscreenAlarmItems.isEmpty() && shortNotificationItems.isEmpty()
+
+    val signatureIds: List<String>
+        get() = (fullscreenAlarmItems + shortNotificationItems)
+            .map { it.id }
+            .distinct()
+            .sorted()
+}
+
 enum class ReminderCapability {
     NOTIFICATION_PERMISSION,
     EXACT_ALARM_ACCESS,
@@ -577,7 +592,13 @@ fun shouldScheduleTodoAlarm(item: TodoItem, nowMillis: Long): Boolean {
 
 fun reminderScheduleMode(item: TodoItem, nowMillis: Long): ReminderScheduleMode? {
     if (!shouldScheduleTodoAlarm(item, nowMillis)) return null
-    return ReminderScheduleMode.SYSTEM_ALARM
+    return when (item.priority) {
+        TodoPriority.XHIGH -> ReminderScheduleMode.SYSTEM_ALARM
+        TodoPriority.HIGH,
+        TodoPriority.MEDIUM,
+        TodoPriority.LOW,
+        -> ReminderScheduleMode.INEXACT_NOTIFICATION
+    }
 }
 
 fun reminderAlertMode(item: TodoItem, nowMillis: Long): ReminderAlertMode? {
@@ -600,9 +621,34 @@ fun requiredReminderCapabilities(item: TodoItem, nowMillis: Long): Set<ReminderC
         )
         ReminderAlertMode.SHORT_NOTIFICATION -> setOf(
             ReminderCapability.NOTIFICATION_PERMISSION,
-            ReminderCapability.EXACT_ALARM_ACCESS,
         )
         null -> emptySet()
+    }
+}
+
+fun effectiveReminderScheduleMode(
+    item: TodoItem,
+    nowMillis: Long,
+    canScheduleExactAlarms: Boolean,
+): ReminderScheduleMode? {
+    val idealMode = reminderScheduleMode(item, nowMillis) ?: return null
+    return if (idealMode == ReminderScheduleMode.SYSTEM_ALARM && !canScheduleExactAlarms) {
+        ReminderScheduleMode.INEXACT_NOTIFICATION
+    } else {
+        idealMode
+    }
+}
+
+fun effectiveReminderAlertMode(
+    item: TodoItem,
+    nowMillis: Long,
+    canScheduleExactAlarms: Boolean,
+): ReminderAlertMode? {
+    val idealMode = reminderAlertMode(item, nowMillis) ?: return null
+    return if (idealMode == ReminderAlertMode.FULLSCREEN_ALARM && !canScheduleExactAlarms) {
+        ReminderAlertMode.SHORT_NOTIFICATION
+    } else {
+        idealMode
     }
 }
 
@@ -654,6 +700,59 @@ fun todosDueForReminder(
                 .thenBy { it.createdAtMillis }
                 .thenBy { it.id },
         )
+}
+
+fun reminderDispatchPlan(
+    items: List<TodoItem>,
+    firedDueAtMillis: Long,
+    triggerTodoId: String?,
+    triggerAlertMode: ReminderAlertMode,
+    canScheduleExactAlarms: Boolean,
+): ReminderDispatchPlan {
+    val dueItems = todosDueForReminder(items, firedDueAtMillis)
+    if (dueItems.isEmpty()) return ReminderDispatchPlan()
+
+    val triggerItem = triggerTodoId?.let { id -> dueItems.firstOrNull { it.id == id } }
+    val xhighItems = dueItems.filter { it.priority == TodoPriority.XHIGH }
+    val shortItems = dueItems.filter { it.priority != TodoPriority.XHIGH }
+
+    if (triggerAlertMode == ReminderAlertMode.FULLSCREEN_ALARM) {
+        if (!canScheduleExactAlarms) {
+            return ReminderDispatchPlan(
+                shortNotificationItems = dueItems,
+                rescheduleItems = dueItems,
+            )
+        }
+        return if (xhighItems.isNotEmpty()) {
+            ReminderDispatchPlan(
+                fullscreenAlarmItems = xhighItems,
+                shortNotificationItems = shortItems,
+                rescheduleItems = dueItems,
+            )
+        } else {
+            ReminderDispatchPlan(
+                shortNotificationItems = shortItems,
+                rescheduleItems = shortItems,
+            )
+        }
+    }
+
+    val hasSystemXhighAtSameTime = xhighItems.isNotEmpty() && canScheduleExactAlarms
+    if (hasSystemXhighAtSameTime && triggerItem?.priority != TodoPriority.XHIGH) {
+        return ReminderDispatchPlan()
+    }
+
+    val dueShortItems = if (xhighItems.isNotEmpty() && !canScheduleExactAlarms) {
+        dueItems
+    } else if (triggerItem?.priority == TodoPriority.XHIGH) {
+        dueItems
+    } else {
+        shortItems
+    }
+    return ReminderDispatchPlan(
+        shortNotificationItems = dueShortItems,
+        rescheduleItems = dueShortItems,
+    )
 }
 
 fun snoozeTodoAfterReminder(

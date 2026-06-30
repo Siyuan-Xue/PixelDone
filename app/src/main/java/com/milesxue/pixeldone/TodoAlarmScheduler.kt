@@ -13,6 +13,7 @@ object TodoAlarmScheduler {
     const val EXTRA_TODO_PRIORITY = "com.milesxue.pixeldone.extra.TODO_PRIORITY"
     const val EXTRA_TODO_DUE_AT = "com.milesxue.pixeldone.extra.TODO_DUE_AT"
     const val EXTRA_TODO_REPEAT = "com.milesxue.pixeldone.extra.TODO_REPEAT"
+    const val EXTRA_ALERT_MODE = "com.milesxue.pixeldone.extra.ALERT_MODE"
 
     fun sync(
         context: Context,
@@ -48,6 +49,22 @@ object TodoAlarmScheduler {
         }
         cancel(context, item.id)
         val alarmManager = context.getSystemService(AlarmManager::class.java)
+        val hasExactAlarmAccess = canScheduleExactAlarms(context)
+        val scheduleMode = effectiveReminderScheduleMode(
+            item = item,
+            nowMillis = nowMillis,
+            canScheduleExactAlarms = hasExactAlarmAccess,
+        )
+        val alertMode = effectiveReminderAlertMode(
+            item = item,
+            nowMillis = nowMillis,
+            canScheduleExactAlarms = hasExactAlarmAccess,
+        )
+        if (scheduleMode == null || alertMode == null) {
+            cancel(context, item.id)
+            return emptySet()
+        }
+
         val alarmIntent = pendingIntent(
             context = context,
             itemId = item.id,
@@ -55,13 +72,23 @@ object TodoAlarmScheduler {
             priority = item.priority,
             dueAtMillis = triggerAtMillis,
             reminderRepeat = item.reminderRepeat,
+            alertMode = alertMode,
             flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             includeIdentityData = true,
         ) ?: return emptySet()
 
-        return when (reminderScheduleMode(item, nowMillis)) {
+        val missingCapabilities = mutableSetOf<ReminderCapability>()
+        if (
+            item.priority == TodoPriority.XHIGH &&
+            reminderScheduleMode(item, nowMillis) == ReminderScheduleMode.SYSTEM_ALARM &&
+            !hasExactAlarmAccess
+        ) {
+            missingCapabilities += ReminderCapability.EXACT_ALARM_ACCESS
+        }
+
+        return when (scheduleMode) {
             ReminderScheduleMode.SYSTEM_ALARM -> {
-                if (!canScheduleExactAlarms(context)) {
+                if (!hasExactAlarmAccess) {
                     cancel(context, item.id)
                     setOf(ReminderCapability.EXACT_ALARM_ACCESS)
                 } else {
@@ -72,27 +99,16 @@ object TodoAlarmScheduler {
                         ),
                         alarmIntent,
                     )
-                    emptySet()
+                    missingCapabilities
                 }
             }
             ReminderScheduleMode.INEXACT_NOTIFICATION -> {
-                if (!canScheduleExactAlarms(context)) {
-                    cancel(context, item.id)
-                    setOf(ReminderCapability.EXACT_ALARM_ACCESS)
-                } else {
-                    alarmManager.setAlarmClock(
-                        AlarmManager.AlarmClockInfo(
-                            triggerAtMillis,
-                            showIntent(context, item.id),
-                        ),
-                        alarmIntent,
-                    )
-                    emptySet()
-                }
-            }
-            null -> {
-                cancel(context, item.id)
-                emptySet()
+                alarmManager.set(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    alarmIntent,
+                )
+                missingCapabilities
             }
         }
     }
@@ -115,6 +131,7 @@ object TodoAlarmScheduler {
                 priority = TodoPriority.MEDIUM,
                 dueAtMillis = 0L,
                 reminderRepeat = ReminderRepeat.NONE,
+                alertMode = ReminderAlertMode.SHORT_NOTIFICATION,
                 flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
                 includeIdentityData = true,
             ),
@@ -125,6 +142,7 @@ object TodoAlarmScheduler {
                 priority = TodoPriority.MEDIUM,
                 dueAtMillis = 0L,
                 reminderRepeat = ReminderRepeat.NONE,
+                alertMode = ReminderAlertMode.SHORT_NOTIFICATION,
                 flags = PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
                 includeIdentityData = false,
             ),
@@ -141,6 +159,7 @@ object TodoAlarmScheduler {
         priority: TodoPriority,
         dueAtMillis: Long,
         reminderRepeat: ReminderRepeat,
+        alertMode: ReminderAlertMode,
         flags: Int,
         includeIdentityData: Boolean,
     ): PendingIntent? {
@@ -153,6 +172,7 @@ object TodoAlarmScheduler {
             putExtra(EXTRA_TODO_PRIORITY, priority.name)
             putExtra(EXTRA_TODO_DUE_AT, dueAtMillis)
             putExtra(EXTRA_TODO_REPEAT, reminderRepeat.name)
+            putExtra(EXTRA_ALERT_MODE, alertMode.name)
         }
         return PendingIntent.getBroadcast(context, itemId.hashCode(), intent, flags)
     }
