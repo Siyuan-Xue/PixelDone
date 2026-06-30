@@ -1888,13 +1888,14 @@ private fun TodoListPanel(
     LaunchedEffect(listClockActive, visibleDueAtMillis, showDeadlineCountdown) {
         if (listClockActive) {
             while (true) {
+                val nowMillis = System.currentTimeMillis()
+                listNowMillis = nowMillis
                 val delayMillis = nextTodoListClockRefreshDelayMillis(
-                    nowMillis = listNowMillis,
+                    nowMillis = nowMillis,
                     dueAtMillis = visibleDueAtMillis,
                     showDeadlineCountdown = showDeadlineCountdown,
                 ) ?: break
                 delay(delayMillis)
-                listNowMillis = System.currentTimeMillis()
             }
         }
     }
@@ -2869,7 +2870,7 @@ internal fun formatDeadlineCountdown(dueAtMillis: Long, nowMillis: Long): String
     val minutes = totalMinutes % 60L
     val value = "${days}D ${hours.toTwoDigits()}H ${minutes.toTwoDigits()}M"
 
-    return if (millisUntilDue < 0L) {
+    return if (millisUntilDue <= 0L) {
         "DDL OVERDUE $value"
     } else {
         "DDL $value"

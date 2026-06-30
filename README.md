@@ -22,6 +22,7 @@ Developer identity: CODEX & XUE.
 - Priority sorting uses XHigh, High, Mid, Low, then due time.
 - Show priority with approved Google status colors: Low green, Mid blue, High yellow, and XHigh red.
 - Highlight overdue todo row date/time in the same red used by delete icons.
+- Treat todos due at the exact current moment as already overdue instead of scheduling a new reminder.
 - Tap a row checkbox to mark a todo done or active again.
 - Keep completed-task sorting delayed for quick consecutive checks without jumping the list.
 - Reveal and briefly border-highlight newly added, edited, reactivated, or image-updated todos.
@@ -80,24 +81,26 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.5.3-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.5.4-debug.apk
 ```
 
-The current signed release APK is copied to:
-
-```text
-app/build/outputs/apk/release/PixelDone-2.5.3-release.apk
-```
+Formal signed release builds are outside this 2.5.4 debug iteration.
 
 ## Install
 
-Install the signed release build with:
+Install this debug iteration with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.5.3-release.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.5.4-debug.apk
 ```
 
-The formal package name is:
+The debug package name is:
+
+```text
+com.milesxue.pixeldone.debug
+```
+
+The formal package name remains:
 
 ```text
 com.milesxue.pixeldone
@@ -105,4 +108,4 @@ com.milesxue.pixeldone
 
 ## Status
 
-2.5.3 architecture refactor debug build verified.
+2.5.4 debug bugfix build for exact-current todo overdue handling.

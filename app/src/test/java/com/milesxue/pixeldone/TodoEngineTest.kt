@@ -230,7 +230,7 @@ class TodoEngineTest {
         )
         assertFalse(
             shouldScheduleTodoAlarm(
-                item("past", TodoPriority.MEDIUM, due = 1_000L),
+                item("current", TodoPriority.MEDIUM, due = 1_000L),
                 nowMillis = 1_000L,
             ),
         )
@@ -337,7 +337,7 @@ class TodoEngineTest {
         assertEquals(
             emptySet<ReminderCapability>(),
             requiredReminderCapabilities(
-                item("past", TodoPriority.XHIGH, due = 1_000L),
+                item("current", TodoPriority.XHIGH, due = 1_000L),
                 nowMillis = 1_000L,
             ),
         )
@@ -1314,6 +1314,7 @@ class TodoEngineTest {
             (2L * 60L * 60L * 1000L) -
             (3L * 60L * 1000L)
 
+        assertEquals("DDL OVERDUE 0D 00H 00M", formatDeadlineCountdown(now, now))
         assertEquals("DDL OVERDUE 1D 02H 03M", formatDeadlineCountdown(due, now))
     }
 
@@ -1337,7 +1338,7 @@ class TodoEngineTest {
         assertNull(
             nextTodoListClockRefreshDelayMillis(
                 nowMillis = 1_000L,
-                dueAtMillis = listOf(0L, 999L),
+                dueAtMillis = listOf(0L, 999L, 1_000L),
                 showDeadlineCountdown = false,
             ),
         )
