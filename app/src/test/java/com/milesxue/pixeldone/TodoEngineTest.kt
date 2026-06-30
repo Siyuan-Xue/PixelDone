@@ -429,6 +429,22 @@ class TodoEngineTest {
     }
 
     @Test
+    fun completedTodoDoesNotScheduleDispatchOrAppearInDueReminderSet() {
+        val completed = item(
+            id = "done",
+            priority = TodoPriority.XHIGH,
+            due = 2_000L,
+            completed = true,
+            repeat = ReminderRepeat.DAILY,
+        )
+
+        assertNull(nextReminderAtMillis(completed, nowMillis = 1_000L))
+        assertFalse(shouldScheduleTodoAlarm(completed, nowMillis = 1_000L))
+        assertFalse(shouldDispatchTodoReminder(completed, firedDueAtMillis = 2_000L))
+        assertEquals(emptyList<TodoItem>(), todosDueForReminder(listOf(completed), firedDueAtMillis = 2_000L))
+    }
+
+    @Test
     fun unchangedPastDueOneShotAlarmIsPreservedDuringFullSync() {
         val unchangedPastDue = item("late", TodoPriority.HIGH, due = 2_000L)
         assertFalse(
@@ -692,6 +708,46 @@ class TodoEngineTest {
                 dueAtMillis = 1_000L,
                 reminderRepeat = ReminderRepeat.WEEKLY,
                 nowMillis = 1_000L + DailyReminderIntervalMillis,
+            ),
+        )
+    }
+
+    @Test
+    fun normalizeRepeatingDueAtMillisAdvancesExpiredDailyAndWeeklyRules() {
+        assertEquals(
+            1_000L + DailyReminderIntervalMillis,
+            normalizeRepeatingDueAtMillis(
+                dueAtMillis = 1_000L,
+                reminderRepeat = ReminderRepeat.DAILY,
+                nowMillis = 1_000L,
+            ),
+        )
+        assertEquals(
+            2_000L + WeeklyReminderIntervalMillis,
+            normalizeRepeatingDueAtMillis(
+                dueAtMillis = 2_000L,
+                reminderRepeat = ReminderRepeat.WEEKLY,
+                nowMillis = 2_000L + DailyReminderIntervalMillis,
+            ),
+        )
+    }
+
+    @Test
+    fun normalizeRepeatingDueAtMillisKeepsFutureAndNonRepeatingDueTimes() {
+        assertEquals(
+            3_000L,
+            normalizeRepeatingDueAtMillis(
+                dueAtMillis = 3_000L,
+                reminderRepeat = ReminderRepeat.DAILY,
+                nowMillis = 2_000L,
+            ),
+        )
+        assertEquals(
+            1_000L,
+            normalizeRepeatingDueAtMillis(
+                dueAtMillis = 1_000L,
+                reminderRepeat = ReminderRepeat.NONE,
+                nowMillis = 2_000L,
             ),
         )
     }
@@ -1250,6 +1306,76 @@ class TodoEngineTest {
     }
 
     @Test
+    fun dueExpirationTreatsExactDueTimeAsExpired() {
+        assertFalse(isDueExpired(dueAtMillis = 1_000L, nowMillis = 999L))
+        assertTrue(isDueExpired(dueAtMillis = 1_000L, nowMillis = 1_000L))
+        assertTrue(isDueExpired(dueAtMillis = 1_000L, nowMillis = 1_001L))
+        assertFalse(isDueExpired(dueAtMillis = 0L, nowMillis = 1_000L))
+    }
+
+    @Test
+    fun todoListClockRefreshSkipsWhenNoDeadlineCanChangeDisplay() {
+        assertNull(
+            nextTodoListClockRefreshDelayMillis(
+                nowMillis = 1_000L,
+                dueAtMillis = emptyList(),
+                showDeadlineCountdown = false,
+            ),
+        )
+        assertNull(
+            nextTodoListClockRefreshDelayMillis(
+                nowMillis = 1_000L,
+                dueAtMillis = listOf(0L, 999L),
+                showDeadlineCountdown = false,
+            ),
+        )
+    }
+
+    @Test
+    fun todoListClockRefreshUsesNearestFutureDeadlineWhenCountdownIsHidden() {
+        assertEquals(
+            2_000L,
+            nextTodoListClockRefreshDelayMillis(
+                nowMillis = 1_000L,
+                dueAtMillis = listOf(8_000L, 3_000L),
+                showDeadlineCountdown = false,
+            ),
+        )
+    }
+
+    @Test
+    fun todoListClockRefreshUsesMinuteBoundaryWhenCountdownIsVisible() {
+        assertEquals(
+            59_000L,
+            nextTodoListClockRefreshDelayMillis(
+                nowMillis = 61_000L,
+                dueAtMillis = listOf(1_000L),
+                showDeadlineCountdown = true,
+            ),
+        )
+        assertEquals(
+            60_000L,
+            nextTodoListClockRefreshDelayMillis(
+                nowMillis = 120_000L,
+                dueAtMillis = listOf(1_000L),
+                showDeadlineCountdown = true,
+            ),
+        )
+    }
+
+    @Test
+    fun todoListClockRefreshPrioritizesDeadlineBeforeMinuteBoundary() {
+        assertEquals(
+            2_000L,
+            nextTodoListClockRefreshDelayMillis(
+                nowMillis = 61_000L,
+                dueAtMillis = listOf(63_000L),
+                showDeadlineCountdown = true,
+            ),
+        )
+    }
+
+    @Test
     fun completionSortDelayIsTwoSeconds() {
         assertEquals(2_000L, CompletionSortDelayMillis)
     }
@@ -1270,9 +1396,16 @@ class TodoEngineTest {
     }
 
     @Test
+    fun todoRowClickActionEditsDifferentTodoAndCancelsCurrentTodo() {
+        assertEquals(TodoRowClickAction.Edit, todoRowClickAction(itemId = "one", editingTaskId = null))
+        assertEquals(TodoRowClickAction.Edit, todoRowClickAction(itemId = "one", editingTaskId = "two"))
+        assertEquals(TodoRowClickAction.CancelEdit, todoRowClickAction(itemId = "one", editingTaskId = "one"))
+    }
+
+    @Test
     fun todoToggleFeedbackRecordsCompletedTodosWithoutHighlight() {
         val feedback = PendingTodoToggleFeedback()
-            .recordTodoToggle(id = "done", checked = true)
+            .recordTodoToggle(id = "done", wasCompleted = false, checked = true)
 
         assertEquals(setOf("done"), feedback.completedIds)
         assertEquals(emptySet<String>(), feedback.undoneIds)
@@ -1282,7 +1415,7 @@ class TodoEngineTest {
     @Test
     fun todoToggleFeedbackRecordsUndoneTodosOnly() {
         val feedback = PendingTodoToggleFeedback()
-            .recordTodoToggle(id = "undone", checked = false)
+            .recordTodoToggle(id = "undone", wasCompleted = true, checked = false)
 
         assertEquals(emptySet<String>(), feedback.completedIds)
         assertEquals(setOf("undone"), feedback.undoneIds)
@@ -1292,8 +1425,8 @@ class TodoEngineTest {
     @Test
     fun todoToggleFeedbackHighlightsUndoneTodosOnly() {
         val feedback = PendingTodoToggleFeedback()
-            .recordTodoToggle(id = "done", checked = true)
-            .recordTodoToggle(id = "undone", checked = false)
+            .recordTodoToggle(id = "done", wasCompleted = false, checked = true)
+            .recordTodoToggle(id = "undone", wasCompleted = true, checked = false)
 
         assertEquals(setOf("done"), feedback.completedIds)
         assertEquals(setOf("undone"), feedback.undoneIds)
@@ -1303,11 +1436,33 @@ class TodoEngineTest {
     @Test
     fun todoToggleFeedbackUsesLatestStateForRepeatedTodo() {
         val feedback = PendingTodoToggleFeedback()
-            .recordTodoToggle(id = "task", checked = true)
-            .recordTodoToggle(id = "task", checked = false)
-            .recordTodoToggle(id = "task", checked = true)
+            .recordTodoToggle(id = "task", wasCompleted = true, checked = true)
+            .recordTodoToggle(id = "task", wasCompleted = true, checked = false)
+            .recordTodoToggle(id = "task", wasCompleted = false, checked = true)
 
-        assertEquals(setOf("task"), feedback.completedIds)
+        assertEquals(emptySet<String>(), feedback.completedIds)
+        assertEquals(emptySet<String>(), feedback.undoneIds)
+        assertEquals(emptySet<String>(), feedback.highlightIds)
+    }
+
+    @Test
+    fun todoToggleFeedbackIgnoresIncompleteTaskThatReturnsToInitialState() {
+        val feedback = PendingTodoToggleFeedback()
+            .recordTodoToggle(id = "task", wasCompleted = false, checked = true)
+            .recordTodoToggle(id = "task", wasCompleted = true, checked = false)
+
+        assertEquals(emptySet<String>(), feedback.completedIds)
+        assertEquals(emptySet<String>(), feedback.undoneIds)
+        assertEquals(emptySet<String>(), feedback.highlightIds)
+    }
+
+    @Test
+    fun todoToggleFeedbackIgnoresCompletedTaskThatReturnsToInitialState() {
+        val feedback = PendingTodoToggleFeedback()
+            .recordTodoToggle(id = "task", wasCompleted = true, checked = false)
+            .recordTodoToggle(id = "task", wasCompleted = false, checked = true)
+
+        assertEquals(emptySet<String>(), feedback.completedIds)
         assertEquals(emptySet<String>(), feedback.undoneIds)
         assertEquals(emptySet<String>(), feedback.highlightIds)
     }

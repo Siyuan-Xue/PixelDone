@@ -154,6 +154,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal const val CompletionSortDelayMillis = 2_000L
+private const val MinuteMillis = 60_000L
 private const val TodoHighlightFadeMillis = 180
 
 private const val DeveloperCredit = "CODEX & XUE"
@@ -229,11 +230,27 @@ private data class TodoListHighlightRequest(
 )
 
 internal data class PendingTodoToggleFeedback(
-    val completedIds: Set<String> = emptySet(),
-    val undoneIds: Set<String> = emptySet(),
+    val initialCompletedById: Map<String, Boolean> = emptyMap(),
+    val latestCompletedById: Map<String, Boolean> = emptyMap(),
 ) {
+    val completedIds: Set<String>
+        get() = changedIds(finalCompleted = true)
+
+    val undoneIds: Set<String>
+        get() = changedIds(finalCompleted = false)
+
     val highlightIds: Set<String>
         get() = undoneIds
+
+    private fun changedIds(finalCompleted: Boolean): Set<String> {
+        return latestCompletedById
+            .filter { (id, latestCompleted) ->
+                latestCompleted == finalCompleted &&
+                    initialCompletedById[id] != null &&
+                    initialCompletedById[id] != latestCompleted
+            }
+            .keys
+    }
 }
 
 private sealed interface EditorMode {
@@ -363,12 +380,6 @@ private fun PixelDoneApp() {
                 todoListScrollRequest = TodoListScrollRequest(
                     sequence = scrollRequestSequence,
                     intent = TodoListScrollIntent.RevealTodos(feedback.undoneIds),
-                )
-            } else if (feedback.completedIds.isNotEmpty()) {
-                scrollRequestSequence += 1
-                todoListScrollRequest = TodoListScrollRequest(
-                    sequence = scrollRequestSequence,
-                    intent = TodoListScrollIntent.PreserveViewport,
                 )
             }
             val highlightIds = feedback.highlightIds
@@ -620,6 +631,12 @@ private fun PixelDoneApp() {
         if (isTrashSelected) return false
         val editingId = editingTaskId
         var affectedTodoId = editingId
+        val nowMillis = System.currentTimeMillis()
+        val normalizedDueAtMillis = normalizeRepeatingDueAtMillis(
+            dueAtMillis = dueAtMillis,
+            reminderRepeat = selectedReminderRepeat,
+            nowMillis = nowMillis,
+        )
         val updatedTodos = if (editingId == null) {
             if (titleInput.isBlank()) {
                 return false
@@ -630,8 +647,8 @@ private fun PixelDoneApp() {
                 id = newTodoId,
                 titleInput = titleInput,
                 priority = selectedPriority,
-                dueAtMillis = dueAtMillis,
-                createdAtMillis = System.currentTimeMillis(),
+                dueAtMillis = normalizedDueAtMillis,
+                createdAtMillis = nowMillis,
                 reminderRepeat = selectedReminderRepeat,
             )
 
@@ -645,7 +662,7 @@ private fun PixelDoneApp() {
                 id = editingId,
                 titleInput = titleInput,
                 priority = selectedPriority,
-                dueAtMillis = dueAtMillis,
+                dueAtMillis = normalizedDueAtMillis,
                 reminderRepeat = selectedReminderRepeat,
             ) ?: run {
                 return false
@@ -989,6 +1006,7 @@ private fun PixelDoneApp() {
         onPickDate = ::showDatePicker,
         onPickTime = ::showTimePicker,
         taskEditorVisible = taskEditorVisible,
+        editingTaskId = editingTaskId,
         isEditingTask = editingTaskId != null,
         onOpenTaskEditor = ::openNewTaskEditor,
         onOpenChecklistEditor = ::openNewChecklistEditor,
@@ -1034,18 +1052,22 @@ private fun PixelDoneApp() {
         showDeadlineCountdown = showDeadlineCountdown,
         onDeadlineCountdownChange = { showDeadlineCountdown = it },
         onToggleTodo = { id, checked ->
-            displayOrderIds = if (keepDisplayOrderDuringSortDelay && displayOrderIds.isNotEmpty()) {
-                displayOrderIds
-            } else {
-                sortedVisibleIds
+            val itemBeforeToggle = todos.firstOrNull { it.id == id }
+            if (itemBeforeToggle != null) {
+                displayOrderIds = if (keepDisplayOrderDuringSortDelay && displayOrderIds.isNotEmpty()) {
+                    displayOrderIds
+                } else {
+                    sortedVisibleIds
+                }
+                updateSelectedTodos(toggleTodoCompletion(todos, id))
+                pendingTodoToggleFeedback = pendingTodoToggleFeedback.recordTodoToggle(
+                    id = id,
+                    wasCompleted = itemBeforeToggle.completed,
+                    checked = checked,
+                )
+                keepDisplayOrderDuringSortDelay = true
+                sortDelayTick += 1
             }
-            updateSelectedTodos(toggleTodoCompletion(todos, id))
-            pendingTodoToggleFeedback = pendingTodoToggleFeedback.recordTodoToggle(
-                id = id,
-                checked = checked,
-            )
-            keepDisplayOrderDuringSortDelay = true
-            sortDelayTick += 1
         },
         onEditTodo = ::startEditing,
         onOpenTodoImage = { item ->
@@ -1123,6 +1145,7 @@ private fun PixelDoneScreen(
     onPickDate: () -> Unit,
     onPickTime: () -> Unit,
     taskEditorVisible: Boolean,
+    editingTaskId: String?,
     isEditingTask: Boolean,
     onOpenTaskEditor: () -> Unit,
     onOpenChecklistEditor: () -> Unit,
@@ -1205,6 +1228,7 @@ private fun PixelDoneScreen(
                 todoListScrollRequest = todoListScrollRequest,
                 todoListHighlightRequest = todoListHighlightRequest,
                 taskEditorVisible = taskEditorVisible,
+                editingTaskId = editingTaskId,
                 isEditingTask = isEditingTask,
                 onOpenTaskEditor = onOpenTaskEditor,
                 onOpenChecklistEditor = onOpenChecklistEditor,
@@ -1400,6 +1424,7 @@ private fun TaskWorkspacePanel(
     todoListScrollRequest: TodoListScrollRequest,
     todoListHighlightRequest: TodoListHighlightRequest,
     taskEditorVisible: Boolean,
+    editingTaskId: String?,
     isEditingTask: Boolean,
     onOpenTaskEditor: () -> Unit,
     onOpenChecklistEditor: () -> Unit,
@@ -1452,6 +1477,8 @@ private fun TaskWorkspacePanel(
             showNewTaskButton = !isTrashSelected && !taskEditorVisible && !checklistEditorVisible,
             onOpenTaskEditor = onOpenTaskEditor,
             onOpenChecklistEditor = onOpenChecklistEditor,
+            editingTaskId = editingTaskId,
+            onCancelEdit = onCancelEdit,
             modifier = Modifier.weight(1f),
         )
         if (!isTrashSelected && taskEditorVisible) {
@@ -1822,6 +1849,8 @@ private fun TodoListPanel(
     showNewTaskButton: Boolean,
     onOpenTaskEditor: () -> Unit,
     onOpenChecklistEditor: () -> Unit,
+    editingTaskId: String?,
+    onCancelEdit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sortedVisibleItems = if (isTrashSelected) {
@@ -1841,12 +1870,62 @@ private fun TodoListPanel(
     val visibleItemIds = visibleItems.map { it.id }
     val listState = rememberLazyListState()
     val hapticFeedback = LocalHapticFeedback.current
+    val context = LocalContext.current
+    var listNowMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var listClockActive by remember { mutableStateOf(true) }
     var activeHighlightedTodoIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var handledPreserveViewportSequence by remember { mutableStateOf(0) }
+    val visibleDueAtMillis = if (isTrashSelected) {
+        emptyList()
+    } else {
+        visibleItems.map { it.dueAtMillis }
+    }
     val shouldPreserveViewport =
         todoListScrollRequest.intent is TodoListScrollIntent.PreserveViewport &&
             todoListScrollRequest.sequence != handledPreserveViewportSequence &&
             visibleItems.isNotEmpty()
+
+    DisposableEffect(context) {
+        val lifecycle = (context as? ComponentActivity)?.lifecycle
+        if (lifecycle == null) {
+            onDispose {}
+        } else {
+            listClockActive = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+            if (listClockActive) {
+                listNowMillis = System.currentTimeMillis()
+            }
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> {
+                        listNowMillis = System.currentTimeMillis()
+                        listClockActive = true
+                    }
+                    Lifecycle.Event.ON_PAUSE -> {
+                        listClockActive = false
+                    }
+                    else -> Unit
+                }
+            }
+            lifecycle.addObserver(observer)
+            onDispose {
+                lifecycle.removeObserver(observer)
+            }
+        }
+    }
+
+    LaunchedEffect(listClockActive, visibleDueAtMillis, showDeadlineCountdown) {
+        if (listClockActive) {
+            while (true) {
+                val delayMillis = nextTodoListClockRefreshDelayMillis(
+                    nowMillis = listNowMillis,
+                    dueAtMillis = visibleDueAtMillis,
+                    showDeadlineCountdown = showDeadlineCountdown,
+                ) ?: break
+                delay(delayMillis)
+                listNowMillis = System.currentTimeMillis()
+            }
+        }
+    }
 
     LaunchedEffect(todoListHighlightRequest.sequence) {
         activeHighlightedTodoIds = if (todoListHighlightRequest.sequence > 0) {
@@ -1963,7 +2042,6 @@ private fun TodoListPanel(
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
-                val nowMillis = System.currentTimeMillis()
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,
@@ -1981,8 +2059,10 @@ private fun TodoListPanel(
                                 item = item,
                                 onToggleTodo = onToggleTodo,
                                 onEditTodo = onEditTodo,
+                                editingTaskId = editingTaskId,
+                                onCancelEdit = onCancelEdit,
                                 onOpenTodoImage = onOpenTodoImage,
-                                nowMillis = nowMillis,
+                                nowMillis = listNowMillis,
                                 showDeadlineCountdown = showDeadlineCountdown,
                                 highlighted = item.id in activeHighlightedTodoIds,
                             )
@@ -2027,21 +2107,63 @@ internal fun firstRevealTargetIndex(
         .takeIf { it >= 0 }
 }
 
+internal fun nextTodoListClockRefreshDelayMillis(
+    nowMillis: Long,
+    dueAtMillis: List<Long>,
+    showDeadlineCountdown: Boolean,
+): Long? {
+    val activeDueAtMillis = dueAtMillis.filter { it > 0L }
+    if (activeDueAtMillis.isEmpty()) return null
+
+    val nextDueDelayMillis = activeDueAtMillis
+        .filter { it > nowMillis }
+        .minOfOrNull { it - nowMillis }
+
+    if (!showDeadlineCountdown) {
+        return nextDueDelayMillis?.coerceAtLeast(1L)
+    }
+
+    val nextMinuteDelayMillis = millisUntilNextMinuteBoundary(nowMillis)
+    return listOfNotNull(nextDueDelayMillis, nextMinuteDelayMillis)
+        .minOrNull()
+        ?.coerceAtLeast(1L)
+}
+
+private fun millisUntilNextMinuteBoundary(nowMillis: Long): Long {
+    val remainder = ((nowMillis % MinuteMillis) + MinuteMillis) % MinuteMillis
+    return if (remainder == 0L) MinuteMillis else MinuteMillis - remainder
+}
+
+internal enum class TodoRowClickAction {
+    Edit,
+    CancelEdit,
+}
+
+internal fun todoRowClickAction(
+    itemId: String,
+    editingTaskId: String?,
+): TodoRowClickAction {
+    return if (itemId == editingTaskId) {
+        TodoRowClickAction.CancelEdit
+    } else {
+        TodoRowClickAction.Edit
+    }
+}
+
 internal fun PendingTodoToggleFeedback.recordTodoToggle(
     id: String,
+    wasCompleted: Boolean,
     checked: Boolean,
 ): PendingTodoToggleFeedback {
-    return if (checked) {
-        copy(
-            completedIds = completedIds + id,
-            undoneIds = undoneIds - id,
-        )
+    val initialStates = if (id in initialCompletedById) {
+        initialCompletedById
     } else {
-        copy(
-            completedIds = completedIds - id,
-            undoneIds = undoneIds + id,
-        )
+        initialCompletedById + (id to wasCompleted)
     }
+    return copy(
+        initialCompletedById = initialStates,
+        latestCompletedById = latestCompletedById + (id to checked),
+    )
 }
 
 @Composable
@@ -2049,6 +2171,8 @@ private fun TodoRow(
     item: TodoItem,
     onToggleTodo: (String, Boolean) -> Unit,
     onEditTodo: (TodoItem) -> Unit,
+    editingTaskId: String?,
+    onCancelEdit: () -> Unit,
     onOpenTodoImage: (TodoItem) -> Unit,
     nowMillis: Long,
     showDeadlineCountdown: Boolean,
@@ -2076,7 +2200,12 @@ private fun TodoRow(
             .fillMaxWidth()
             .border(borderWidth, borderColor, RectangleShape)
             .background(itemBackground)
-            .clickable { onEditTodo(item) }
+            .clickable {
+                when (todoRowClickAction(item.id, editingTaskId)) {
+                    TodoRowClickAction.Edit -> onEditTodo(item)
+                    TodoRowClickAction.CancelEdit -> onCancelEdit()
+                }
+            }
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2455,11 +2584,21 @@ private fun TodoImagePreviewDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                text = "Task image",
-                style = MaterialTheme.typography.titleMedium,
-                color = ClaudeSlateDark,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    modifier = Modifier.weight(1f),
+                    text = "Task image",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = ClaudeSlateDark,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                PixelDialogCloseButton(onClick = onDismiss)
+            }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2538,6 +2677,27 @@ private fun TodoImagePreviewDialog(
         containerColor = ClaudeGray100,
         tonalElevation = 0.dp,
     )
+}
+
+@Composable
+private fun PixelDialogCloseButton(
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .border(1.dp, ClaudeGray300, RectangleShape)
+            .background(ClaudeIvory)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "CLOSE",
+            style = MaterialTheme.typography.labelSmall,
+            color = ClaudeSlateDark,
+            maxLines = 1,
+        )
+    }
 }
 
 internal data class PreviewTransform(
@@ -3268,8 +3428,12 @@ private fun Long.formatDateTime(): String {
     return toLocalDateTime().format(DateTimeUiFormatter)
 }
 
+internal fun isDueExpired(dueAtMillis: Long, nowMillis: Long): Boolean {
+    return dueAtMillis > 0L && dueAtMillis <= nowMillis
+}
+
 private fun Long.isExpired(nowMillis: Long): Boolean {
-    return this > 0L && this < nowMillis
+    return isDueExpired(this, nowMillis)
 }
 
 internal fun formatDeadlineCountdown(dueAtMillis: Long, nowMillis: Long): String {
@@ -3346,6 +3510,7 @@ private fun PhonePreview() {
             onPickDate = {},
             onPickTime = {},
             taskEditorVisible = false,
+            editingTaskId = null,
             isEditingTask = false,
             onOpenTaskEditor = {},
             onOpenChecklistEditor = {},
@@ -3409,6 +3574,7 @@ private fun TabletPreview() {
             onPickDate = {},
             onPickTime = {},
             taskEditorVisible = true,
+            editingTaskId = "1",
             isEditingTask = true,
             onOpenTaskEditor = {},
             onOpenChecklistEditor = {},

@@ -64,7 +64,7 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.5.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.5.2-debug.apk
 ```
 
 The current signed release APK is copied to:

@@ -836,6 +836,19 @@ fun nextReminderAtMillis(
     }
 }
 
+fun normalizeRepeatingDueAtMillis(
+    dueAtMillis: Long,
+    reminderRepeat: ReminderRepeat,
+    nowMillis: Long,
+): Long {
+    if (reminderRepeat == ReminderRepeat.NONE) return dueAtMillis
+    return nextReminderAtMillis(
+        dueAtMillis = dueAtMillis,
+        reminderRepeat = reminderRepeat,
+        nowMillis = nowMillis,
+    ) ?: dueAtMillis
+}
+
 fun advanceRepeatingTodoAfterReminder(
     item: TodoItem,
     nowMillis: Long,
