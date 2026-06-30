@@ -4,6 +4,7 @@ import android.app.DownloadManager
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Environment
 import androidx.core.content.FileProvider
@@ -16,9 +17,49 @@ import kotlinx.coroutines.withContext
 internal const val UpdateApkMimeType = "application/vnd.android.package-archive"
 private const val UpdateDownloadPollMillis = 750L
 private const val UpdateDownloadMaxWaitMillis = 10 * 60 * 1_000L
+private const val UpdatePreferencesName = "pixel_done_update_downloads"
+private const val ActiveDownloadVersionKey = "active_download_version"
+private const val ActiveDownloadIdKey = "active_download_id"
+private const val ActiveDownloadFileNameKey = "active_download_file_name"
+private val PixelDoneReleaseApkRegex =
+    Regex("^${Regex.escape(PixelDoneProjectName)}-(\\d+(?:\\.\\d+){0,2})-release\\.apk$")
 
 internal fun updateReleaseApkFileName(version: String): String =
     "$PixelDoneProjectName-$version-release.apk"
+
+internal fun updateReleaseApkVersion(fileName: String): String? =
+    PixelDoneReleaseApkRegex.matchEntire(fileName)?.groupValues?.getOrNull(1)
+
+internal fun isPixelDoneReleaseApkFileName(fileName: String): Boolean =
+    updateReleaseApkVersion(fileName) != null
+
+internal fun staleUpdateReleaseApkFileNames(
+    fileNames: Iterable<String>,
+    latestFileName: String?,
+): List<String> {
+    return fileNames.filter { fileName ->
+        isPixelDoneReleaseApkFileName(fileName) &&
+            !fileName.equals(latestFileName, ignoreCase = true)
+    }
+}
+
+internal fun shouldCleanInstalledUpdate(
+    currentVersion: String,
+    downloadedVersion: String,
+): Boolean {
+    return normalizedSemanticVersion(currentVersion) != null &&
+        normalizedSemanticVersion(downloadedVersion) != null &&
+        !isNewerSemanticVersion(downloadedVersion, currentVersion)
+}
+
+internal fun activeUpdateDownloadMatchesLatest(
+    download: AppUpdateDownload?,
+    latestVersion: String,
+    latestFileName: String,
+): Boolean {
+    return download?.version == latestVersion &&
+        download.fileName.equals(latestFileName, ignoreCase = true)
+}
 
 internal data class AppUpdateDownload(
     val version: String,
@@ -58,10 +99,14 @@ private data class AppUpdateDownloadSnapshot(
 internal class AppUpdateDownloader(context: Context) {
     private val appContext = context.applicationContext
     private val downloadManager = appContext.getSystemService(DownloadManager::class.java)
+    private val preferences: SharedPreferences =
+        appContext.getSharedPreferences(UpdatePreferencesName, Context.MODE_PRIVATE)
 
     fun enqueue(info: AppUpdateInfo): AppUpdateDownloadResult {
         return try {
             val fileName = updateReleaseApkFileName(info.version)
+            cleanupStaleUpdateApkFiles(latestFileName = fileName)
+            reusableActiveDownload(info.version, fileName)?.let { return AppUpdateDownloadResult.Started(it) }
             downloadedApkFile(fileName).delete()
             val request = DownloadManager.Request(Uri.parse(info.apkDownloadUrl))
                 .setTitle("${PixelDoneProjectName} ${info.version}")
@@ -78,13 +123,13 @@ internal class AppUpdateDownloader(context: Context) {
                     fileName,
                 )
             val downloadId = downloadManager.enqueue(request)
-            AppUpdateDownloadResult.Started(
-                AppUpdateDownload(
-                    version = info.version,
-                    downloadId = downloadId,
-                    fileName = fileName,
-                ),
+            val download = AppUpdateDownload(
+                version = info.version,
+                downloadId = downloadId,
+                fileName = fileName,
             )
+            rememberActiveDownload(download)
+            AppUpdateDownloadResult.Started(download)
         } catch (_: Exception) {
             AppUpdateDownloadResult.Failed
         }
@@ -112,6 +157,8 @@ internal class AppUpdateDownloader(context: Context) {
                     }
                 }
                 DownloadManager.STATUS_FAILED -> {
+                    forgetActiveDownload(download)
+                    downloadedApkFile(download.fileName).delete()
                     return AppUpdateDownloadCompletion.Failed
                 }
                 DownloadManager.STATUS_PENDING,
@@ -123,7 +170,26 @@ internal class AppUpdateDownloader(context: Context) {
             delay(UpdateDownloadPollMillis)
             elapsedMillis += UpdateDownloadPollMillis
         }
+        forgetActiveDownload(download)
         return AppUpdateDownloadCompletion.Failed
+    }
+
+    fun cleanupInstalledUpdate(currentVersion: String): Boolean {
+        var cleaned = false
+        val activeDownload = activeDownload()
+        if (
+            activeDownload != null &&
+            shouldCleanInstalledUpdate(
+                currentVersion = currentVersion,
+                downloadedVersion = activeDownload.version,
+            )
+        ) {
+            cancelDownload(activeDownload)
+            forgetActiveDownload(activeDownload)
+            cleaned = downloadedApkFile(activeDownload.fileName).delete() || cleaned
+        }
+        cleaned = cleanupInstalledUpdateApkFiles(currentVersion) || cleaned
+        return cleaned
     }
 
     fun openInstallPrompt(download: AppUpdateDownload): Boolean {
@@ -172,8 +238,123 @@ internal class AppUpdateDownloader(context: Context) {
         }
     }
 
+    private fun reusableActiveDownload(version: String, fileName: String): AppUpdateDownload? {
+        val activeDownload = activeDownload()
+        if (!activeUpdateDownloadMatchesLatest(activeDownload, version, fileName)) {
+            activeDownload?.let { download ->
+                cancelDownload(download)
+                forgetActiveDownload(download)
+                downloadedApkFile(download.fileName).delete()
+            }
+            return null
+        }
+
+        val active = activeDownload ?: return null
+        val status = downloadSnapshot(active.downloadId)?.status
+        val targetFile = downloadedApkFile(active.fileName)
+        return when (status) {
+            DownloadManager.STATUS_PENDING,
+            DownloadManager.STATUS_RUNNING,
+            DownloadManager.STATUS_PAUSED,
+            -> active
+            DownloadManager.STATUS_SUCCESSFUL -> {
+                if (targetFile.isFile && targetFile.length() > 0L) {
+                    active
+                } else {
+                    forgetActiveDownload(active)
+                    targetFile.delete()
+                    null
+                }
+            }
+            DownloadManager.STATUS_FAILED,
+            null,
+            -> {
+                cancelDownload(active)
+                forgetActiveDownload(active)
+                targetFile.delete()
+                null
+            }
+            else -> null
+        }
+    }
+
+    private fun activeDownload(): AppUpdateDownload? {
+        val version = preferences.getString(ActiveDownloadVersionKey, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        val fileName = preferences.getString(ActiveDownloadFileNameKey, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        val downloadId = preferences.getLong(ActiveDownloadIdKey, -1L)
+            .takeIf { it >= 0L }
+            ?: return null
+        return AppUpdateDownload(
+            version = version,
+            downloadId = downloadId,
+            fileName = fileName,
+        )
+    }
+
+    private fun rememberActiveDownload(download: AppUpdateDownload) {
+        preferences.edit()
+            .putString(ActiveDownloadVersionKey, download.version)
+            .putLong(ActiveDownloadIdKey, download.downloadId)
+            .putString(ActiveDownloadFileNameKey, download.fileName)
+            .apply()
+    }
+
+    private fun forgetActiveDownload(download: AppUpdateDownload? = null) {
+        val active = activeDownload()
+        if (download != null && active != null && active.downloadId != download.downloadId) return
+        preferences.edit()
+            .remove(ActiveDownloadVersionKey)
+            .remove(ActiveDownloadIdKey)
+            .remove(ActiveDownloadFileNameKey)
+            .apply()
+    }
+
+    private fun cancelDownload(download: AppUpdateDownload) {
+        try {
+            downloadManager.remove(download.downloadId)
+        } catch (_: Exception) {
+            Unit
+        }
+    }
+
+    private fun cleanupStaleUpdateApkFiles(latestFileName: String): Boolean {
+        val files = updateDownloadDir().listFiles()
+            ?.filter { file -> file.isFile }
+            ?: return false
+        val staleFileNames = staleUpdateReleaseApkFileNames(
+            fileNames = files.map { file -> file.name },
+            latestFileName = latestFileName,
+        ).toSet()
+        return files
+            .filter { file -> file.name in staleFileNames }
+            .fold(false) { cleaned, file -> file.delete() || cleaned }
+    }
+
+    private fun cleanupInstalledUpdateApkFiles(currentVersion: String): Boolean {
+        return updateDownloadDir()
+            .listFiles()
+            ?.filter { file -> file.isFile }
+            ?.filter { file ->
+                val version = updateReleaseApkVersion(file.name) ?: return@filter false
+                shouldCleanInstalledUpdate(
+                    currentVersion = currentVersion,
+                    downloadedVersion = version,
+                )
+            }
+            ?.fold(false) { cleaned, file -> file.delete() || cleaned }
+            ?: false
+    }
+
+    private fun updateDownloadDir(): File =
+        appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: File(appContext.filesDir, "updates")
+
     private fun downloadedApkFile(fileName: String): File =
-        File(appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
+        File(updateDownloadDir(), fileName)
 }
 
 private fun android.database.Cursor.longColumn(name: String): Long {

@@ -21,4 +21,7 @@ internal class UpdateService(private val downloader: AppUpdateDownloader) {
 
     fun openInstallPrompt(download: AppUpdateDownload): Boolean =
         downloader.openInstallPrompt(download)
+
+    fun cleanupInstalledUpdate(currentVersion: String): Boolean =
+        downloader.cleanupInstalledUpdate(currentVersion)
 }

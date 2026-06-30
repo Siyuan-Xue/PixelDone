@@ -120,6 +120,39 @@ class AppUpdateCheckerTest {
     }
 
     @Test
+    fun releaseToUpdateCheckResult_downloadsOnlyLatestReleaseApkWhenManyVersionsBehind() {
+        val release = GitHubRelease(
+            tagName = "v2.5.6",
+            htmlUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v2.5.6",
+            assets = listOf(
+                ReleaseAsset(
+                    "PixelDone-2.5.4-release.apk",
+                    "https://example.test/2.5.4.apk",
+                ),
+                ReleaseAsset(
+                    "PixelDone-2.5.5-release.apk",
+                    "https://example.test/2.5.5.apk",
+                ),
+                ReleaseAsset(
+                    "PixelDone-2.5.6-release.apk",
+                    "https://example.test/2.5.6.apk",
+                ),
+            ),
+        )
+
+        val result = releaseToUpdateCheckResult(
+            release = release,
+            projectName = "PixelDone",
+            currentVersion = "2.3.0",
+        )
+
+        assertTrue(result is AppUpdateCheckResult.Available)
+        val available = result as AppUpdateCheckResult.Available
+        assertEquals("2.5.6", available.info.version)
+        assertEquals("https://example.test/2.5.6.apk", available.info.apkDownloadUrl)
+    }
+
+    @Test
     fun appUpdateInfo_keepsExactReleaseApkDownloadUrl() {
         val info = AppUpdateInfo(
             version = "1.3.1",

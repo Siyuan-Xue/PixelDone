@@ -1,12 +1,12 @@
-PixelDone v2.5.5 is a formal signed release for update-download feedback and image-preview UI polish.
+PixelDone v2.5.6 is a formal signed bugfix release for in-app update download handling.
 
 Highlights:
-- Shows `downloading` in the footer while the in-app updater silently downloads the latest release APK.
-- Updates footer download progress in real time, using percent when the APK size is known and downloaded MB when it is not.
-- Aligns the image preview close control with the task editor close/cancel interaction style.
-- Changes the image preview `CHANGE` action from a solid clay button to a softer clay-outline action, matching the restrained preview action set.
-- Preserves the 2.5.4 todo, reminder, storage, image, and update-install behavior.
+- Reuses an already active latest-version update download instead of queueing another APK download.
+- Cancels and forgets older active update downloads when a newer latest release is selected.
+- Deletes stale `PixelDone-*-release.apk` files from the app-private update download directory, keeping only the latest target APK.
+- Cleans the downloaded update APK after the app has successfully resumed on the installed target version.
+- Preserves the 2.5.5 footer progress, image preview UI, todo, reminder, storage, and install prompt behavior.
 
-Install note: use the attached signed release APK, `PixelDone-2.5.5-release.apk`, for direct installation or in-app update.
+Install note: use the attached signed release APK, `PixelDone-2.5.6-release.apk`, for direct installation or in-app update.
 
 CODEX & XUE

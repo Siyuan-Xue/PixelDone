@@ -37,6 +37,8 @@ Developer identity: CODEX & XUE.
 - Check GitHub Releases automatically on app start and show a quiet footer update state when a release is available.
 - Download only the exact latest formal release APK through Android DownloadManager.
 - Show `downloading` with live footer progress while an in-app update APK downloads silently.
+- Reuse the active latest update download instead of queueing older release APKs.
+- Clean stale or already-installed update APK files from the app-private update directory.
 - Open the system install confirmation after an in-app update APK finishes downloading.
 - Check quietly for the latest release on every app start without suppressing an available update.
 - Persist checklists and todos locally on the device with SharedPreferences JSON.
@@ -82,13 +84,13 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.5.5-release.apk
+app/build/outputs/apk/release/PixelDone-2.5.6-release.apk
 ```
 
 The local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.5.5-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.5.6-debug.apk
 ```
 
 ## Install
@@ -96,7 +98,7 @@ app/build/outputs/apk/debug/PixelDone-2.5.5-debug.apk
 Install this formal release with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.5.5-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.5.6-release.apk
 ```
 
 The formal package name is:
@@ -113,4 +115,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.5.5 formal signed release for update-download feedback and image-preview UI polish.
+2.5.6 formal signed bugfix release for latest-only update downloads and installed APK cleanup.

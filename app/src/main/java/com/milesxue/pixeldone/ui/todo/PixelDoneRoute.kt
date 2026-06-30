@@ -358,7 +358,12 @@ internal fun PixelDoneApp() {
         editorMode is EditorMode.NewChecklist || editorMode is EditorMode.EditChecklist
     val imagePreviewItem = todos.firstOrNull { it.id == imagePreviewTodoId }
 
+    fun cleanupInstalledUpdateIfNeeded() {
+        updateService.cleanupInstalledUpdate(BuildConfig.VERSION_NAME)
+    }
+
     LaunchedEffect(Unit) {
+        cleanupInstalledUpdateIfNeeded()
         val currentTodos = normalTodos(checklistState)
         reminderScheduler.sync(currentTodos, currentTodos)
     }
@@ -942,9 +947,11 @@ internal fun PixelDoneApp() {
         } else {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_START) {
+                    cleanupInstalledUpdateIfNeeded()
                     checkForUpdateSilently()
                 }
                 if (event == Lifecycle.Event.ON_RESUME) {
+                    cleanupInstalledUpdateIfNeeded()
                     val currentTodos = normalTodos(currentChecklistState)
                     reminderScheduler.sync(currentTodos, currentTodos)
                     pendingFullScreenPermissionTodoId?.let { id ->
