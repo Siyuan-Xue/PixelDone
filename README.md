@@ -9,10 +9,12 @@ Developer identity: CODEX & XUE.
 - Add todos with a name, four-step priority, and date/time.
 - Keep multiple local checklists, starting from a default `MAIN` list.
 - Keep a fixed `TRASH` list for soft-deleted tasks.
+- Keep a fixed `SETTINGS` list for app options instead of todo storage.
 - Expand the top bar to switch checklists and edit checklist names.
 - Long-press the `+` control to create a new checklist while short press still creates a task.
 - Tap a todo row to edit it in the bottom editor.
 - Attach one local image to each todo with the row image button.
+- Show completed todos in a compact row that hides subtitles and image actions.
 - Preview, replace, or remove a todo image without requesting broad photo-library permission.
 - Decode todo image previews safely for large camera images while preserving the original attachment file.
 - Delete an edited todo from the task editor, matching the checklist editor delete flow.
@@ -43,9 +45,11 @@ Developer identity: CODEX & XUE.
 - Reuse the active latest update download instead of queueing older release APKs.
 - Clean stale or already-installed update APK files from the app-private update directory.
 - Open the system install confirmation after an in-app update APK finishes downloading.
+- Open Android's install-unknown-apps settings first when update installation permission is missing.
 - Check quietly for the latest release on every app start without suppressing an available update.
+- Use the `SETTINGS` list to switch LIGHT/DARK display mode, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Persist checklists and todos locally on the device with SharedPreferences JSON.
-- Keep dark system bar icons explicit against the light PixelDone surface.
+- Keep system bars aligned with the selected light or dark PixelDone theme.
 
 ## Tech Stack
 
@@ -87,13 +91,13 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.5.7-release.apk
+app/build/outputs/apk/release/PixelDone-2.6.0-release.apk
 ```
 
 The local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.5.7-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.6.0-debug.apk
 ```
 
 ## Install
@@ -101,7 +105,7 @@ app/build/outputs/apk/debug/PixelDone-2.5.7-debug.apk
 Install this formal release with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.5.7-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.6.0-release.apk
 ```
 
 The formal package name is:
@@ -118,4 +122,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.5.7 formal signed patch release for in-app update prompt and download progress dialogs.
+2.6.0 formal signed feature release for Settings, dark mode, permission reconfiguration, and compact completed rows.

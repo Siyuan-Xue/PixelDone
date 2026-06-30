@@ -23,6 +23,12 @@ fun createInitialChecklistState(
                 items = emptyList(),
                 createdAtMillis = createdAtMillis,
             ),
+            TodoChecklist(
+                id = SettingsChecklistId,
+                name = SettingsChecklistName,
+                items = emptyList(),
+                createdAtMillis = createdAtMillis,
+            ),
         ),
         selectedListId = DefaultChecklistId,
     )
@@ -30,7 +36,7 @@ fun createInitialChecklistState(
 
 fun selectedChecklistOf(state: TodoChecklistState): TodoChecklist {
     return state.lists.firstOrNull { it.id == state.selectedListId }
-        ?: state.lists.firstOrNull { !isTrashChecklist(it) }
+        ?: state.lists.firstOrNull(::isNormalChecklist)
         ?: state.lists.first()
 }
 
@@ -39,7 +45,7 @@ fun allTodos(state: TodoChecklistState): List<TodoItem> {
 }
 
 fun normalTodos(state: TodoChecklistState): List<TodoItem> {
-    return state.lists.filterNot(::isTrashChecklist).flatMap { it.items }
+    return state.lists.filter(::isNormalChecklist).flatMap { it.items }
 }
 
 fun trashTodos(state: TodoChecklistState): List<TodoItem> {
@@ -47,7 +53,7 @@ fun trashTodos(state: TodoChecklistState): List<TodoItem> {
 }
 
 fun normalChecklistCount(state: TodoChecklistState): Int {
-    return state.lists.count { !isTrashChecklist(it) }
+    return state.lists.count(::isNormalChecklist)
 }
 
 fun isTrashChecklist(checklist: TodoChecklist): Boolean {
@@ -56,6 +62,26 @@ fun isTrashChecklist(checklist: TodoChecklist): Boolean {
 
 fun isTrashChecklistId(id: String): Boolean {
     return id == TrashChecklistId
+}
+
+fun isSettingsChecklist(checklist: TodoChecklist): Boolean {
+    return checklist.id == SettingsChecklistId
+}
+
+fun isSettingsChecklistId(id: String): Boolean {
+    return id == SettingsChecklistId
+}
+
+fun isSpecialChecklist(checklist: TodoChecklist): Boolean {
+    return isTrashChecklist(checklist) || isSettingsChecklist(checklist)
+}
+
+fun isSpecialChecklistId(id: String): Boolean {
+    return isTrashChecklistId(id) || isSettingsChecklistId(id)
+}
+
+fun isNormalChecklist(checklist: TodoChecklist): Boolean {
+    return !isSpecialChecklist(checklist)
 }
 
 fun isTrashedTodo(item: TodoItem): Boolean {
@@ -78,6 +104,7 @@ fun isChecklistNameAvailable(
     val name = nameInput.trim()
     if (name.isEmpty()) return false
     if (name.equals(TrashChecklistName, ignoreCase = true)) return false
+    if (name.equals(SettingsChecklistName, ignoreCase = true)) return false
 
     return state.lists.none { checklist ->
         checklist.id != editingId && checklist.name.equals(name, ignoreCase = true)
@@ -90,7 +117,7 @@ fun createTodoChecklist(
     nameInput: String,
     createdAtMillis: Long,
 ): TodoChecklistState? {
-    if (isTrashChecklistId(id)) return null
+    if (isSpecialChecklistId(id)) return null
 
     val name = nameInput.trim()
     if (!isChecklistNameAvailable(state, name)) return null
@@ -102,9 +129,9 @@ fun createTodoChecklist(
         createdAtMillis = createdAtMillis,
     )
     return state.copy(
-        lists = state.lists.filterNot(::isTrashChecklist) +
+        lists = state.lists.filter(::isNormalChecklist) +
             checklist +
-            state.lists.filter(::isTrashChecklist),
+            state.lists.filter(::isSpecialChecklist),
         selectedListId = checklist.id,
     )
 }
@@ -114,7 +141,7 @@ fun renameTodoChecklist(
     id: String,
     nameInput: String,
 ): TodoChecklistState? {
-    if (isTrashChecklistId(id)) return null
+    if (isSpecialChecklistId(id)) return null
 
     val name = nameInput.trim()
     if (!isChecklistNameAvailable(state, name, editingId = id)) return null
@@ -142,10 +169,10 @@ fun deleteTodoChecklist(
     id: String,
     trashedAtMillis: Long,
 ): TodoChecklistState? {
-    if (isTrashChecklistId(id)) return null
+    if (isSpecialChecklistId(id)) return null
     if (normalChecklistCount(state) <= 1) return null
 
-    val checklistToDelete = state.lists.firstOrNull { it.id == id } ?: return null
+    val checklistToDelete = state.lists.firstOrNull { it.id == id && isNormalChecklist(it) } ?: return null
     val trash = state.lists.firstOrNull(::isTrashChecklist) ?: return null
     val movedItems = checklistToDelete.items.map { item ->
         item.toTrashItem(
@@ -164,7 +191,7 @@ fun deleteTodoChecklist(
         }
 
     val selectedListId = if (state.selectedListId == id) {
-        updatedLists.first { !isTrashChecklist(it) }.id
+        updatedLists.first(::isNormalChecklist).id
     } else {
         state.selectedListId
     }
@@ -180,8 +207,9 @@ fun moveTodoItemToTrash(
     todoId: String,
     trashedAtMillis: Long,
 ): TodoChecklistState? {
-    if (isTrashChecklistId(checklistId)) return null
-    val sourceChecklist = state.lists.firstOrNull { it.id == checklistId } ?: return null
+    if (isSpecialChecklistId(checklistId)) return null
+    val sourceChecklist = state.lists.firstOrNull { it.id == checklistId && isNormalChecklist(it) }
+        ?: return null
     val itemToMove = sourceChecklist.items.firstOrNull { it.id == todoId } ?: return null
 
     return moveTodosToTrash(
@@ -197,8 +225,9 @@ fun moveCompletedTodosToTrash(
     checklistId: String,
     trashedAtMillis: Long,
 ): TodoChecklistState? {
-    if (isTrashChecklistId(checklistId)) return null
-    val sourceChecklist = state.lists.firstOrNull { it.id == checklistId } ?: return null
+    if (isSpecialChecklistId(checklistId)) return null
+    val sourceChecklist = state.lists.firstOrNull { it.id == checklistId && isNormalChecklist(it) }
+        ?: return null
     val completedIds = sourceChecklist.items
         .filter { it.completed }
         .mapTo(mutableSetOf()) { it.id }
@@ -220,11 +249,11 @@ fun restoreTodoFromTrash(
     val trash = state.lists.firstOrNull(::isTrashChecklist) ?: return null
     val trashedItem = trash.items.firstOrNull { it.id == todoId } ?: return null
     val originalChecklistId = trashedItem.trashedFromChecklistId
-        ?.takeIf { it.isNotBlank() && !isTrashChecklistId(it) }
+        ?.takeIf { it.isNotBlank() && !isSpecialChecklistId(it) }
     val originalChecklist = originalChecklistId?.let { id ->
-        state.lists.firstOrNull { it.id == id && !isTrashChecklist(it) }
+        state.lists.firstOrNull { it.id == id && isNormalChecklist(it) }
     }
-    val fallbackChecklist = state.lists.firstOrNull { !isTrashChecklist(it) }
+    val fallbackChecklist = state.lists.firstOrNull(::isNormalChecklist)
     val targetChecklistId = originalChecklist?.id
         ?: originalChecklistId
         ?: fallbackChecklist?.id
@@ -239,7 +268,9 @@ fun restoreTodoFromTrash(
                 items = emptyList(),
                 createdAtMillis = restoredAtMillis,
             )
-            state.lists.filterNot(::isTrashChecklist) + restoredChecklist + trash
+            state.lists.filter(::isNormalChecklist) +
+                restoredChecklist +
+                state.lists.filter(::isSpecialChecklist)
         }
         fallbackChecklist != null -> state.lists
         else -> {
@@ -249,7 +280,9 @@ fun restoreTodoFromTrash(
                 items = emptyList(),
                 createdAtMillis = restoredAtMillis,
             )
-            state.lists.filterNot(::isTrashChecklist) + fallbackMain + trash
+            state.lists.filter(::isNormalChecklist) +
+                fallbackMain +
+                state.lists.filter(::isSpecialChecklist)
         }
     }
 
@@ -299,6 +332,8 @@ fun updateChecklistItems(
     checklistId: String,
     items: List<TodoItem>,
 ): TodoChecklistState? {
+    if (isSettingsChecklistId(checklistId)) return null
+
     var found = false
     val updatedLists = state.lists.map { checklist ->
         if (checklist.id == checklistId) {
@@ -318,6 +353,7 @@ fun normalizeChecklistState(
 ): TodoChecklistState {
     val trashItems = mutableListOf<TodoItem>()
     var trashCreatedAtMillis: Long? = null
+    var settingsCreatedAtMillis: Long? = null
     val validNormalLists = state.lists.mapNotNull { checklist ->
         val name = checklist.name.trim()
         if (checklist.id.isBlank() || name.isEmpty()) {
@@ -340,11 +376,13 @@ fun normalizeChecklistState(
             return@mapNotNull null
         }
 
-        val normalName = if (name.equals(TrashChecklistName, ignoreCase = true)) {
-            "$TrashChecklistName LIST"
-        } else {
-            name
+        if (isSettingsChecklist(checklist)) {
+            settingsCreatedAtMillis = settingsCreatedAtMillis ?: checklist.createdAtMillis
+            trashItems += checklist.items.filter(::isTrashedTodo)
+            return@mapNotNull null
         }
+
+        val normalName = sanitizedNormalChecklistName(name)
         val normalItems = checklist.items.filterNot(::isTrashedTodo)
         trashItems += checklist.items.filter(::isTrashedTodo)
         checklist.copy(
@@ -368,7 +406,13 @@ fun normalizeChecklistState(
         items = trashItems,
         createdAtMillis = trashCreatedAtMillis ?: fallbackCreatedAtMillis,
     )
-    val validLists = normalLists + trashChecklist
+    val settingsChecklist = TodoChecklist(
+        id = SettingsChecklistId,
+        name = SettingsChecklistName,
+        items = emptyList(),
+        createdAtMillis = settingsCreatedAtMillis ?: fallbackCreatedAtMillis,
+    )
+    val validLists = normalLists + trashChecklist + settingsChecklist
 
     val selectedId = if (validLists.any { it.id == state.selectedListId }) {
         state.selectedListId
@@ -430,9 +474,19 @@ private fun restoredChecklistName(item: TodoItem): String {
         ?.takeIf { it.isNotEmpty() }
         ?: return DefaultChecklistName
 
-    return if (sourceName.equals(TrashChecklistName, ignoreCase = true)) {
+    return if (sourceName.equals(TrashChecklistName, ignoreCase = true) ||
+        sourceName.equals(SettingsChecklistName, ignoreCase = true)
+    ) {
         DefaultChecklistName
     } else {
         sourceName
+    }
+}
+
+private fun sanitizedNormalChecklistName(name: String): String {
+    return when {
+        name.equals(TrashChecklistName, ignoreCase = true) -> "$TrashChecklistName LIST"
+        name.equals(SettingsChecklistName, ignoreCase = true) -> "$SettingsChecklistName LIST"
+        else -> name
     }
 }

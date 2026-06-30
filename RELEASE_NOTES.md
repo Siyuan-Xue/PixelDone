@@ -1,12 +1,12 @@
-PixelDone v2.5.7 is a formal signed patch release for the in-app update prompt and download progress experience.
+PixelDone v2.6.0 is a formal signed feature release for settings, theme control, and completed-task polish.
 
 Highlights:
-- Shows an update prompt dialog when a new version is available and update prompts have not been disabled.
-- Opens a download progress dialog after the user starts an update from the prompt or footer.
-- Makes the progress dialog dismissible without canceling the silent DownloadManager update.
-- Keeps the footer update entry available so users can still start the update when prompts are disabled.
-- Preserves the latest-only download reuse, installed APK cleanup, todo, reminder, storage, and install prompt behavior.
+- Adds a fixed `SETTINGS` checklist that opens PixelDone settings instead of a todo container.
+- Adds LIGHT/DARK display control, update prompt visibility, app version, and update checking from Settings.
+- Adds permission status and reconfiguration actions for notifications, exact alarms, full-screen alarms, and update installs.
+- Makes completed todo rows more compact by hiding subtitles and image actions while keeping the title centered.
+- Requests Android's install-unknown-apps setting before opening a downloaded update APK when needed.
 
-Install note: use the attached signed release APK, `PixelDone-2.5.7-release.apk`, for direct installation or in-app update.
+Install note: use the attached signed release APK, `PixelDone-2.6.0-release.apk`, for direct installation or in-app update. Formal updates keep `com.milesxue.pixeldone` and the same release signing key so existing permissions survive normal overwrite installs.
 
 CODEX & XUE

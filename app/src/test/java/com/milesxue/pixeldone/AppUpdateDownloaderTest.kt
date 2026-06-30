@@ -11,6 +11,9 @@ import com.milesxue.pixeldone.data.update.updateReleaseApkFileName
 import com.milesxue.pixeldone.ui.todo.formatDownloadedMegabytes
 import com.milesxue.pixeldone.ui.todo.formatUpdateDownloadMessage
 import com.milesxue.pixeldone.ui.todo.shouldShowAvailableUpdateDialog
+import com.milesxue.pixeldone.ui.todo.shouldShowUpdatePromptSetting
+import com.milesxue.pixeldone.ui.todo.UpdateInstallPermissionAction
+import com.milesxue.pixeldone.ui.todo.updateInstallPermissionAction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -59,7 +62,7 @@ class AppUpdateDownloaderTest {
     fun shouldCleanInstalledUpdate_onlyCleansWhenCurrentVersionReachedDownloadedVersion() {
         assertFalse(shouldCleanInstalledUpdate(currentVersion = "2.5.5", downloadedVersion = "2.5.6"))
         assertTrue(shouldCleanInstalledUpdate(currentVersion = "2.5.6", downloadedVersion = "2.5.6"))
-        assertTrue(shouldCleanInstalledUpdate(currentVersion = "2.5.7", downloadedVersion = "2.5.6"))
+        assertTrue(shouldCleanInstalledUpdate(currentVersion = "2.6.0", downloadedVersion = "2.5.7"))
         assertFalse(shouldCleanInstalledUpdate(currentVersion = "bad", downloadedVersion = "2.5.6"))
         assertFalse(shouldCleanInstalledUpdate(currentVersion = "2.5.6", downloadedVersion = "bad"))
     }
@@ -82,8 +85,8 @@ class AppUpdateDownloaderTest {
         assertFalse(
             activeUpdateDownloadMatchesLatest(
                 download = active,
-                latestVersion = "2.5.7",
-                latestFileName = "PixelDone-2.5.7-release.apk",
+                latestVersion = "2.6.0",
+                latestFileName = "PixelDone-2.6.0-release.apk",
             ),
         )
     }
@@ -138,6 +141,24 @@ class AppUpdateDownloaderTest {
                 neverShowUpdateDialog = false,
                 hasActiveUpdateDownload = true,
             ),
+        )
+    }
+
+    @Test
+    fun shouldShowUpdatePromptSetting_invertsStoredNeverShowPreference() {
+        assertTrue(shouldShowUpdatePromptSetting(neverShowUpdateDialog = false))
+        assertFalse(shouldShowUpdatePromptSetting(neverShowUpdateDialog = true))
+    }
+
+    @Test
+    fun updateInstallPermissionAction_requestsConfigurationWhenInstallerPermissionIsMissing() {
+        assertEquals(
+            UpdateInstallPermissionAction.RequestInstallPermission,
+            updateInstallPermissionAction(hasInstallUpdatePermission = false),
+        )
+        assertEquals(
+            UpdateInstallPermissionAction.OpenInstaller,
+            updateInstallPermissionAction(hasInstallUpdatePermission = true),
         )
     }
 }

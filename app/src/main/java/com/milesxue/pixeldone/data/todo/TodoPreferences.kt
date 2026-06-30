@@ -71,11 +71,21 @@ class TodoPreferences(private val sharedPreferences: SharedPreferences) : TodoSt
             .apply()
     }
 
+    fun loadDarkTheme(): Boolean =
+        sharedPreferences.getBoolean(KEY_DARK_THEME, false)
+
+    fun saveDarkTheme(darkTheme: Boolean) {
+        sharedPreferences.edit()
+            .putBoolean(KEY_DARK_THEME, darkTheme)
+            .apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "pixel_done_todos"
         private const val KEY_TODOS = "todos"
         private const val KEY_CHECKLIST_STATE = "checklist_state"
         private const val KEY_NEVER_SHOW_UPDATE_DIALOG = "never_show_update_dialog"
+        private const val KEY_DARK_THEME = "dark_theme"
 
         fun create(context: Context): TodoPreferences {
             val prefs = context.applicationContext.getSharedPreferences(

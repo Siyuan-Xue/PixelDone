@@ -2,8 +2,10 @@ package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.todo.TodoRepository
 import com.milesxue.pixeldone.domain.todo.ReminderCapability
+import com.milesxue.pixeldone.domain.todo.SettingsChecklistId
 import com.milesxue.pixeldone.domain.todo.SortMode
 import com.milesxue.pixeldone.domain.todo.TodoItem
+import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.domain.todo.createInitialChecklistState
 import com.milesxue.pixeldone.domain.todo.updateChecklistItems
 import com.milesxue.pixeldone.reminder.ReminderScheduler
@@ -19,7 +21,7 @@ class PixelDoneViewModelTest {
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
         val scheduler = FakeReminderScheduler()
         val viewModel = PixelDoneViewModel(repository, scheduler)
-        val todo = TodoItem("one", "One", com.milesxue.pixeldone.domain.todo.TodoPriority.HIGH, 2_000L, false, 1L)
+        val todo = TodoItem("one", "One", TodoPriority.HIGH, 2_000L, false, 1L)
         val updated = updateChecklistItems(initial, initial.selectedListId, listOf(todo))!!
 
         viewModel.onAction(PixelDoneAction.ReplaceChecklistState(updated))
@@ -27,6 +29,30 @@ class PixelDoneViewModelTest {
         assertEquals(updated, repository.state.value)
         assertEquals(updated, viewModel.uiState.value.checklistState)
         assertEquals(listOf(todo), scheduler.lastCurrentItems)
+    }
+
+    @Test
+    fun replaceChecklistStateExcludesSettingsItemsFromReminderSync() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val scheduler = FakeReminderScheduler()
+        val viewModel = PixelDoneViewModel(repository, scheduler)
+        val normalTodo = TodoItem("normal", "Normal", TodoPriority.HIGH, 2_000L, false, 1L)
+        val settingsTodo = TodoItem("settings", "Settings", TodoPriority.HIGH, 2_000L, false, 1L)
+        val withNormal = updateChecklistItems(initial, initial.selectedListId, listOf(normalTodo))!!
+        val corruptedSettings = withNormal.copy(
+            lists = withNormal.lists.map { checklist ->
+                if (checklist.id == SettingsChecklistId) {
+                    checklist.copy(items = listOf(settingsTodo))
+                } else {
+                    checklist
+                }
+            },
+        )
+
+        viewModel.onAction(PixelDoneAction.ReplaceChecklistState(corruptedSettings))
+
+        assertEquals(listOf(normalTodo), scheduler.lastCurrentItems)
     }
 
     @Test

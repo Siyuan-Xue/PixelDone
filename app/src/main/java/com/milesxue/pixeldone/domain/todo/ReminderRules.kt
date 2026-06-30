@@ -208,7 +208,7 @@ fun snoozeTodosAfterReminder(
 
     var changed = false
     val updatedLists = state.lists.map { checklist ->
-        if (isTrashChecklist(checklist)) return@map checklist
+        if (!isNormalChecklist(checklist)) return@map checklist
         val updatedItems = checklist.items.map { item ->
             if (item.id in todoIds) {
                 snoozeTodoAfterReminder(item, nowMillis, snoozeIntervalMillis)?.also {
@@ -310,7 +310,7 @@ fun advanceRepeatingTodosAfterReminder(
 
     var changed = false
     val updatedLists = state.lists.map { checklist ->
-        if (isTrashChecklist(checklist)) return@map checklist
+        if (!isNormalChecklist(checklist)) return@map checklist
         val updatedItems = checklist.items.map { item ->
             if (item.id in todoIds) {
                 advanceRepeatingTodoAfterReminder(item, nowMillis)?.also {

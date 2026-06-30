@@ -7,7 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.ui.graphics.toArgb
 import com.milesxue.pixeldone.ui.theme.ClaudeIvory
-import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
+import com.milesxue.pixeldone.ui.theme.ClaudeSlateDark
 import com.milesxue.pixeldone.ui.todo.PixelDoneApp
 
 /**
@@ -21,23 +21,29 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyPixelDoneSystemBars()
         setContent {
-            PixelDoneTheme {
-                PixelDoneApp()
-            }
+            PixelDoneApp()
         }
     }
 }
 
-fun ComponentActivity.applyPixelDoneSystemBars() {
-    val backgroundScrim = ClaudeIvory.toArgb()
+fun ComponentActivity.applyPixelDoneSystemBars(darkTheme: Boolean = false) {
+    val backgroundScrim = if (darkTheme) ClaudeSlateDark.toArgb() else ClaudeIvory.toArgb()
     enableEdgeToEdge(
-        statusBarStyle = SystemBarStyle.light(
-            scrim = android.graphics.Color.TRANSPARENT,
-            darkScrim = android.graphics.Color.TRANSPARENT,
-        ),
-        navigationBarStyle = SystemBarStyle.light(
-            scrim = backgroundScrim,
-            darkScrim = backgroundScrim,
-        ),
+        statusBarStyle = if (darkTheme) {
+            SystemBarStyle.dark(scrim = android.graphics.Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(
+                scrim = android.graphics.Color.TRANSPARENT,
+                darkScrim = android.graphics.Color.TRANSPARENT,
+            )
+        },
+        navigationBarStyle = if (darkTheme) {
+            SystemBarStyle.dark(scrim = backgroundScrim)
+        } else {
+            SystemBarStyle.light(
+                scrim = backgroundScrim,
+                darkScrim = backgroundScrim,
+            )
+        },
     )
 }

@@ -106,20 +106,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.milesxue.pixeldone.ui.theme.ClaudeCactus
-import com.milesxue.pixeldone.ui.theme.ClaudeClay
-import com.milesxue.pixeldone.ui.theme.ClaudeClayInteractive
-import com.milesxue.pixeldone.ui.theme.ClaudeGray100
-import com.milesxue.pixeldone.ui.theme.ClaudeGray300
-import com.milesxue.pixeldone.ui.theme.ClaudeGray600
-import com.milesxue.pixeldone.ui.theme.ClaudeIvory
-import com.milesxue.pixeldone.ui.theme.ClaudeIvoryMedium
-import com.milesxue.pixeldone.ui.theme.ClaudeMineral
-import com.milesxue.pixeldone.ui.theme.ClaudeOat
-import com.milesxue.pixeldone.ui.theme.ClaudeSlateDark
-import com.milesxue.pixeldone.ui.theme.ClaudeSlateLight
 import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
-import com.milesxue.pixeldone.ui.theme.PixelError
 import com.milesxue.pixeldone.ui.todo.components.FloatingNewTaskButton
 import com.milesxue.pixeldone.ui.todo.components.PixelAlarmIcon
 import com.milesxue.pixeldone.ui.todo.components.PixelBatchDeleteDoneButton
@@ -145,6 +132,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 import com.milesxue.pixeldone.BuildConfig
+import com.milesxue.pixeldone.applyPixelDoneSystemBars
 import com.milesxue.pixeldone.data.image.TodoImageStore
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
 import com.milesxue.pixeldone.data.update.AppUpdateDownload
@@ -154,6 +142,7 @@ import com.milesxue.pixeldone.data.update.AppUpdateDownloadResult
 import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.domain.todo.*
+import com.milesxue.pixeldone.ui.theme.PixelDoneColors
 internal const val CompletionSortDelayMillis = 2_000L
 private const val MinuteMillis = 60_000L
 private const val TodoHighlightFadeMillis = 180
@@ -228,6 +217,29 @@ internal fun shouldShowAvailableUpdateDialog(
     neverShowUpdateDialog: Boolean,
     hasActiveUpdateDownload: Boolean,
 ): Boolean = !neverShowUpdateDialog && !hasActiveUpdateDownload
+
+internal fun shouldShowUpdatePromptSetting(neverShowUpdateDialog: Boolean): Boolean =
+    !neverShowUpdateDialog
+
+internal enum class UpdateInstallPermissionAction {
+    OpenInstaller,
+    RequestInstallPermission,
+}
+
+internal fun updateInstallPermissionAction(hasInstallUpdatePermission: Boolean): UpdateInstallPermissionAction {
+    return if (hasInstallUpdatePermission) {
+        UpdateInstallPermissionAction.OpenInstaller
+    } else {
+        UpdateInstallPermissionAction.RequestInstallPermission
+    }
+}
+
+private data class PermissionSettingsState(
+    val notificationsGranted: Boolean,
+    val exactAlarmGranted: Boolean,
+    val fullScreenIntentGranted: Boolean,
+    val installUpdatesGranted: Boolean,
+)
 
 private sealed interface DeleteConfirmation {
     data class SingleTodo(val id: String, val title: String) : DeleteConfirmation
@@ -310,6 +322,7 @@ internal fun PixelDoneApp() {
     val viewModel: PixelDoneViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val checklistState = uiState.checklistState
+    var darkTheme by remember { mutableStateOf(todoPreferences.loadDarkTheme()) }
     var titleInput by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TodoPriority.MEDIUM) }
     var selectedReminderRepeat by remember { mutableStateOf(ReminderRepeat.NONE) }
@@ -327,6 +340,7 @@ internal fun PixelDoneApp() {
     var pendingTodoToggleFeedback by remember { mutableStateOf(PendingTodoToggleFeedback()) }
     var pendingReminderPermissionTodoId by remember { mutableStateOf<String?>(null) }
     var pendingFullScreenPermissionTodoId by remember { mutableStateOf<String?>(null) }
+    var pendingUpdateInstallDownload by remember { mutableStateOf<AppUpdateDownload?>(null) }
     var deleteConfirmation by remember { mutableStateOf<DeleteConfirmation?>(null) }
     var imagePreviewTodoId by remember { mutableStateOf<String?>(null) }
     var pendingImageTodoId by remember { mutableStateOf<String?>(null) }
@@ -340,6 +354,7 @@ internal fun PixelDoneApp() {
     var updatePromptInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var showUpdateProgressDialog by remember { mutableStateOf(false) }
     var updateProgressDialogDismissed by remember { mutableStateOf(false) }
+    var permissionRefreshTick by remember { mutableStateOf(0) }
     var scrollRequestSequence by remember { mutableStateOf(0) }
     var highlightRequestSequence by remember { mutableStateOf(0) }
     var todoListScrollRequest by remember {
@@ -361,6 +376,8 @@ internal fun PixelDoneApp() {
     val selectedChecklist = selectedChecklistOf(checklistState)
     val currentChecklistState by rememberUpdatedState(checklistState)
     val isTrashSelected = isTrashChecklist(selectedChecklist)
+    val isSettingsSelected = isSettingsChecklist(selectedChecklist)
+    val isNormalChecklistSelected = isNormalChecklist(selectedChecklist)
     val todos = selectedChecklist.items
     val activeCount = activeTodoCount(selectedChecklist)
     val completedCount = completedTodoCount(selectedChecklist)
@@ -370,6 +387,10 @@ internal fun PixelDoneApp() {
     val checklistEditorVisible =
         editorMode is EditorMode.NewChecklist || editorMode is EditorMode.EditChecklist
     val imagePreviewItem = todos.firstOrNull { it.id == imagePreviewTodoId }
+
+    LaunchedEffect(darkTheme) {
+        (context as? ComponentActivity)?.applyPixelDoneSystemBars(darkTheme)
+    }
 
     fun cleanupInstalledUpdateIfNeeded() {
         updateService.cleanupInstalledUpdate(BuildConfig.VERSION_NAME)
@@ -468,6 +489,55 @@ internal fun PixelDoneApp() {
             context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
     }
 
+    fun hasInstallUpdatePermission(): Boolean {
+        return context.packageManager.canRequestPackageInstalls()
+    }
+
+    fun currentPermissionSettingsState(): PermissionSettingsState {
+        return PermissionSettingsState(
+            notificationsGranted = hasNotificationPermission(),
+            exactAlarmGranted = reminderScheduler.canScheduleExactAlarms(),
+            fullScreenIntentGranted = hasFullScreenIntentAccess(),
+            installUpdatesGranted = hasInstallUpdatePermission(),
+        )
+    }
+
+    fun openPackageSettingsAction(action: String) {
+        try {
+            context.startActivity(
+                Intent(action).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                },
+            )
+        } catch (_: ActivityNotFoundException) {
+            try {
+                context.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    },
+                )
+            } catch (_: ActivityNotFoundException) {
+                Unit
+            }
+        }
+    }
+
+    fun openAppNotificationSettings() {
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                },
+            )
+        } catch (_: ActivityNotFoundException) {
+            openPackageSettingsAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        }
+    }
+
+    fun openInstallUpdateSettings() {
+        openPackageSettingsAction(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+    }
+
     fun missingReminderCapabilities(item: TodoItem): Set<ReminderCapability> {
         val nowMillis = System.currentTimeMillis()
         return requiredReminderCapabilities(item, nowMillis).filterTo(mutableSetOf()) { capability ->
@@ -492,20 +562,13 @@ internal fun PixelDoneApp() {
                 Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT
             else -> return
         }
-        try {
-            context.startActivity(
-                Intent(action).apply {
-                    data = Uri.parse("package:${context.packageName}")
-                },
-            )
-        } catch (_: ActivityNotFoundException) {
-            // Some Android builds omit these settings panels; leave the reminder degraded.
-        }
+        openPackageSettingsAction(action)
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
+        permissionRefreshTick += 1
         if (granted) {
             val currentTodos = normalTodos(currentChecklistState)
             reminderScheduler.sync(currentTodos, currentTodos)
@@ -514,6 +577,17 @@ internal fun PixelDoneApp() {
                 ?.let(::requestSystemReminderPermissionIfNeeded)
         }
         pendingReminderPermissionTodoId = null
+    }
+
+    fun requestNotificationPermissionFromSettings() {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !hasNotificationPermission()
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            openAppNotificationSettings()
+        }
     }
 
     fun requestReminderPermissionsIfNeeded(item: TodoItem) {
@@ -596,7 +670,7 @@ internal fun PixelDoneApp() {
     }
 
     fun openNewTaskEditor() {
-        if (isTrashSelected) return
+        if (!isNormalChecklistSelected) return
         clearEditor()
         dueAtMillis = defaultDueAtMillis()
         editorMode = EditorMode.NewTask
@@ -644,7 +718,7 @@ internal fun PixelDoneApp() {
     }
 
     fun submitTodo(): Boolean {
-        if (isTrashSelected) return false
+        if (!isNormalChecklistSelected) return false
         val editingId = editingTaskId
         var affectedTodoId = editingId
         val nowMillis = System.currentTimeMillis()
@@ -698,7 +772,7 @@ internal fun PixelDoneApp() {
     }
 
     fun startEditing(item: TodoItem) {
-        if (isTrashSelected) return
+        if (!isNormalChecklistSelected) return
         editorMode = EditorMode.EditTask(item.id)
         titleInput = item.title
         selectedPriority = item.priority
@@ -707,7 +781,7 @@ internal fun PixelDoneApp() {
     }
 
     fun startEditingChecklist(checklist: TodoChecklist) {
-        if (isTrashChecklist(checklist)) return
+        if (!isNormalChecklist(checklist)) return
         headerExpanded = true
         editorMode = EditorMode.EditChecklist(checklist.id)
         checklistNameInput = checklist.name
@@ -716,8 +790,8 @@ internal fun PixelDoneApp() {
 
     fun submitChecklist(): Boolean {
         val editingId = editingChecklistId
-        if (editingId == TrashChecklistId) {
-            checklistEditorError = "TRASH is locked."
+        if (editingId != null && isSpecialChecklistId(editingId)) {
+            checklistEditorError = "This list is locked."
             return false
         }
         val trimmedName = checklistNameInput.trim()
@@ -862,6 +936,15 @@ internal fun PixelDoneApp() {
         todoPreferences.saveNeverShowUpdateDialog(neverShow)
     }
 
+    fun setShowUpdateDialogs(showDialogs: Boolean) {
+        setNeverShowUpdateDialog(!showDialogs)
+    }
+
+    fun setDarkThemePreference(enabled: Boolean) {
+        darkTheme = enabled
+        todoPreferences.saveDarkTheme(enabled)
+    }
+
     fun dismissUpdatePromptDialog() {
         showUpdatePromptDialog = false
         updatePromptInfo = null
@@ -875,6 +958,24 @@ internal fun PixelDoneApp() {
     fun dismissUpdateProgressDialog() {
         showUpdateProgressDialog = false
         updateProgressDialogDismissed = true
+    }
+
+    fun openDownloadedUpdate(download: AppUpdateDownload): Boolean {
+        when (updateInstallPermissionAction(hasInstallUpdatePermission())) {
+            UpdateInstallPermissionAction.RequestInstallPermission -> {
+                pendingUpdateInstallDownload = download
+                updateUiState = AppUpdateUiState(
+                    status = UpdateUiStatus.Installing,
+                    message = "allow install",
+                )
+                openInstallUpdateSettings()
+                return true
+            }
+            UpdateInstallPermissionAction.OpenInstaller -> Unit
+        }
+
+        pendingUpdateInstallDownload = null
+        return updateService.openInstallPrompt(download)
     }
 
     fun startUpdateDownload(info: AppUpdateInfo, revealProgressDialog: Boolean = false) {
@@ -910,7 +1011,7 @@ internal fun PixelDoneApp() {
                     updateProgressDialogDismissed = false
                     if (
                         completion == AppUpdateDownloadCompletion.Success &&
-                        updateService.openInstallPrompt(result.download)
+                        openDownloadedUpdate(result.download)
                     ) {
                         updateUiState = AppUpdateUiState(
                             status = UpdateUiStatus.Installing,
@@ -1006,9 +1107,25 @@ internal fun PixelDoneApp() {
                     checkForUpdateSilently()
                 }
                 if (event == Lifecycle.Event.ON_RESUME) {
+                    permissionRefreshTick += 1
                     cleanupInstalledUpdateIfNeeded()
                     val currentTodos = normalTodos(currentChecklistState)
                     reminderScheduler.sync(currentTodos, currentTodos)
+                    val pendingInstall = pendingUpdateInstallDownload
+                    if (pendingInstall != null && hasInstallUpdatePermission()) {
+                        pendingUpdateInstallDownload = null
+                        updateUiState = if (updateService.openInstallPrompt(pendingInstall)) {
+                            AppUpdateUiState(
+                                status = UpdateUiStatus.Installing,
+                                message = "install: ${versionLabel(pendingInstall.version)}",
+                            )
+                        } else {
+                            AppUpdateUiState(
+                                status = UpdateUiStatus.Offline,
+                                message = "update failed",
+                            )
+                        }
+                    }
                     pendingFullScreenPermissionTodoId?.let { id ->
                         val item = normalTodos(currentChecklistState).firstOrNull { it.id == id }
                         pendingFullScreenPermissionTodoId = null
@@ -1051,164 +1168,183 @@ internal fun PixelDoneApp() {
         }
     }
 
-    PixelDoneScreen(
-        checklists = checklistState.lists,
-        selectedChecklistId = selectedChecklist.id,
-        selectedChecklistName = selectedChecklist.name,
-        isTrashSelected = isTrashSelected,
-        headerExpanded = headerExpanded,
-        onHeaderExpandedChange = { headerExpanded = it },
-        onSelectChecklist = ::selectChecklist,
-        onEditChecklist = { id ->
-            checklistState.lists.firstOrNull { it.id == id }?.let(::startEditingChecklist)
-        },
-        todos = todos,
-        activeCount = activeCount,
-        completedCount = completedCount,
-        titleInput = titleInput,
-        onTitleInputChange = { titleInput = it },
-        selectedPriority = selectedPriority,
-        onPriorityChange = { selectedPriority = it },
-        selectedReminderRepeat = selectedReminderRepeat,
-        onReminderRepeatChange = { selectedReminderRepeat = it },
-        dueAtMillis = dueAtMillis,
-        onPickDate = ::showDatePicker,
-        onPickTime = ::showTimePicker,
-        taskEditorVisible = taskEditorVisible,
-        editingTaskId = editingTaskId,
-        isEditingTask = editingTaskId != null,
-        onOpenTaskEditor = ::openNewTaskEditor,
-        onOpenChecklistEditor = ::openNewChecklistEditor,
-        onSubmitTodo = ::submitTodo,
-        onCancelEdit = ::cancelEditing,
-        checklistNameInput = checklistNameInput,
-        onChecklistNameInputChange = {
-            checklistNameInput = it
-            checklistEditorError = null
-        },
-        checklistEditorVisible = checklistEditorVisible,
-        isEditingChecklist = editingChecklistId != null,
-        checklistEditorError = checklistEditorError,
-        canDeleteChecklist = !isTrashSelected && normalChecklistCount(checklistState) > 1,
-        onSubmitChecklist = ::submitChecklist,
-        onDeleteChecklist = {
-            editingChecklistId?.let { id ->
+    PixelDoneTheme(darkTheme = darkTheme) {
+        PixelDoneScreen(
+            checklists = checklistState.lists,
+            selectedChecklistId = selectedChecklist.id,
+            selectedChecklistName = selectedChecklist.name,
+            isTrashSelected = isTrashSelected,
+            isSettingsSelected = isSettingsSelected,
+            headerExpanded = headerExpanded,
+            onHeaderExpandedChange = { headerExpanded = it },
+            onSelectChecklist = ::selectChecklist,
+            onEditChecklist = { id ->
                 checklistState.lists
-                    .firstOrNull { it.id == id && !isTrashChecklist(it) }
-                    ?.let { checklist ->
-                    deleteConfirmation = DeleteConfirmation.Checklist(
-                        id = checklist.id,
-                        name = checklist.name,
-                        todoCount = checklist.items.size,
+                    .firstOrNull { it.id == id && isNormalChecklist(it) }
+                    ?.let(::startEditingChecklist)
+            },
+            todos = todos,
+            activeCount = activeCount,
+            completedCount = completedCount,
+            titleInput = titleInput,
+            onTitleInputChange = { titleInput = it },
+            selectedPriority = selectedPriority,
+            onPriorityChange = { selectedPriority = it },
+            selectedReminderRepeat = selectedReminderRepeat,
+            onReminderRepeatChange = { selectedReminderRepeat = it },
+            dueAtMillis = dueAtMillis,
+            onPickDate = ::showDatePicker,
+            onPickTime = ::showTimePicker,
+            taskEditorVisible = taskEditorVisible,
+            editingTaskId = editingTaskId,
+            isEditingTask = editingTaskId != null,
+            onOpenTaskEditor = ::openNewTaskEditor,
+            onOpenChecklistEditor = ::openNewChecklistEditor,
+            onSubmitTodo = ::submitTodo,
+            onCancelEdit = ::cancelEditing,
+            checklistNameInput = checklistNameInput,
+            onChecklistNameInputChange = {
+                checklistNameInput = it
+                checklistEditorError = null
+            },
+            checklistEditorVisible = checklistEditorVisible,
+            isEditingChecklist = editingChecklistId != null,
+            checklistEditorError = checklistEditorError,
+            canDeleteChecklist = isNormalChecklistSelected && normalChecklistCount(checklistState) > 1,
+            onSubmitChecklist = ::submitChecklist,
+            onDeleteChecklist = {
+                editingChecklistId?.let { id ->
+                    checklistState.lists
+                        .firstOrNull { it.id == id && isNormalChecklist(it) }
+                        ?.let { checklist ->
+                            deleteConfirmation = DeleteConfirmation.Checklist(
+                                id = checklist.id,
+                                name = checklist.name,
+                                todoCount = checklist.items.size,
+                            )
+                        }
+                }
+            },
+            sortMode = sortMode,
+            onSortModeChange = {
+                requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
+                keepDisplayOrderDuringSortDelay = false
+                pendingTodoToggleFeedback = PendingTodoToggleFeedback()
+                sortMode = it
+            },
+            hideCompleted = hideCompleted,
+            onHideCompletedChange = {
+                requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
+                keepDisplayOrderDuringSortDelay = false
+                pendingTodoToggleFeedback = PendingTodoToggleFeedback()
+                hideCompleted = it
+            },
+            showDeadlineCountdown = showDeadlineCountdown,
+            onDeadlineCountdownChange = { showDeadlineCountdown = it },
+            onToggleTodo = { id, checked ->
+                val itemBeforeToggle = todos.firstOrNull { it.id == id }
+                if (itemBeforeToggle != null) {
+                    displayOrderIds = if (keepDisplayOrderDuringSortDelay && displayOrderIds.isNotEmpty()) {
+                        displayOrderIds
+                    } else {
+                        sortedVisibleIds
+                    }
+                    updateSelectedTodos(toggleTodoCompletion(todos, id))
+                    pendingTodoToggleFeedback = pendingTodoToggleFeedback.recordTodoToggle(
+                        id = id,
+                        wasCompleted = itemBeforeToggle.completed,
+                        checked = checked,
                     )
+                    keepDisplayOrderDuringSortDelay = true
+                    sortDelayTick += 1
                 }
-            }
-        },
-        sortMode = sortMode,
-        onSortModeChange = {
-            requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
-            keepDisplayOrderDuringSortDelay = false
-            pendingTodoToggleFeedback = PendingTodoToggleFeedback()
-            sortMode = it
-        },
-        hideCompleted = hideCompleted,
-        onHideCompletedChange = {
-            requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
-            keepDisplayOrderDuringSortDelay = false
-            pendingTodoToggleFeedback = PendingTodoToggleFeedback()
-            hideCompleted = it
-        },
-        showDeadlineCountdown = showDeadlineCountdown,
-        onDeadlineCountdownChange = { showDeadlineCountdown = it },
-        onToggleTodo = { id, checked ->
-            val itemBeforeToggle = todos.firstOrNull { it.id == id }
-            if (itemBeforeToggle != null) {
-                displayOrderIds = if (keepDisplayOrderDuringSortDelay && displayOrderIds.isNotEmpty()) {
-                    displayOrderIds
-                } else {
-                    sortedVisibleIds
+            },
+            onEditTodo = ::startEditing,
+            onOpenTodoImage = { item ->
+                if (isNormalChecklistSelected) {
+                    if (item.imageFileName == null) {
+                        openTodoImagePicker(item.id)
+                    } else {
+                        imagePreviewTodoId = item.id
+                    }
                 }
-                updateSelectedTodos(toggleTodoCompletion(todos, id))
-                pendingTodoToggleFeedback = pendingTodoToggleFeedback.recordTodoToggle(
-                    id = id,
-                    wasCompleted = itemBeforeToggle.completed,
-                    checked = checked,
-                )
-                keepDisplayOrderDuringSortDelay = true
-                sortDelayTick += 1
-            }
-        },
-        onEditTodo = ::startEditing,
-        onOpenTodoImage = { item ->
-            if (!isTrashSelected) {
-                if (item.imageFileName == null) {
-                    openTodoImagePicker(item.id)
-                } else {
-                    imagePreviewTodoId = item.id
+            },
+            onDeleteEditingTodo = {
+                editingTaskId?.let { id ->
+                    todos.firstOrNull { it.id == id }?.let { item ->
+                        deleteConfirmation = DeleteConfirmation.SingleTodo(item.id, item.title)
+                    }
                 }
-            }
-        },
-        onDeleteEditingTodo = {
-            editingTaskId?.let { id ->
-                todos.firstOrNull { it.id == id }?.let { item ->
-                    deleteConfirmation = DeleteConfirmation.SingleTodo(item.id, item.title)
+            },
+            onDeleteCompleted = {
+                if (isNormalChecklistSelected) {
+                    val completedCount = todos.count { it.completed }
+                    if (completedCount > 0) {
+                        deleteConfirmation = DeleteConfirmation.CompletedTodos(completedCount)
+                    }
                 }
-            }
-        },
-        onDeleteCompleted = {
-            if (!isTrashSelected) {
-                val completedCount = todos.count { it.completed }
-                if (completedCount > 0) {
-                    deleteConfirmation = DeleteConfirmation.CompletedTodos(completedCount)
+            },
+            onRestoreTodo = ::restoreTrashTodo,
+            onDeleteAllTrash = {
+                val trashCount = trashTodos(checklistState).size
+                if (trashCount > 0) {
+                    deleteConfirmation = DeleteConfirmation.TrashTodos(trashCount)
                 }
-            }
-        },
-        onRestoreTodo = ::restoreTrashTodo,
-        onDeleteAllTrash = {
-            val trashCount = trashTodos(checklistState).size
-            if (trashCount > 0) {
-                deleteConfirmation = DeleteConfirmation.TrashTodos(trashCount)
-            }
-        },
-        displayOrderIds = displayOrderIds,
-        keepDisplayOrder = keepDisplayOrderDuringSortDelay,
-        todoListScrollRequest = todoListScrollRequest,
-        todoListHighlightRequest = todoListHighlightRequest,
-        updateUiState = updateUiState,
-        onUpdateClick = ::handleUpdateClick,
-    )
-    UpdateAvailableDialog(
-        info = if (showUpdatePromptDialog) updatePromptInfo else null,
-        currentVersion = BuildConfig.VERSION_NAME,
-        neverShowUpdateDialog = neverShowUpdateDialog,
-        onNeverShowUpdateDialogChange = ::setNeverShowUpdateDialog,
-        onUpdate = { info ->
-            dismissUpdatePromptDialog()
-            startUpdateDownload(info, revealProgressDialog = true)
-        },
-        onDismiss = ::dismissUpdatePromptDialog,
-    )
-    UpdateDownloadProgressDialog(
-        download = if (showUpdateProgressDialog && !updateProgressDialogDismissed) {
-            activeUpdateDownload
-        } else {
-            null
-        },
-        updateUiState = updateUiState,
-        onDismiss = ::dismissUpdateProgressDialog,
-    )
-    DeleteConfirmationDialog(
-        confirmation = deleteConfirmation,
-        onConfirm = ::confirmDelete,
-        onDismiss = { deleteConfirmation = null },
-    )
-    TodoImagePreviewDialog(
-        item = imagePreviewItem,
-        imageStore = imageStore,
-        onChange = { item -> openTodoImagePicker(item.id) },
-        onRemove = { item -> removeTodoImage(item.id) },
-        onDismiss = { imagePreviewTodoId = null },
-    )
+            },
+            displayOrderIds = displayOrderIds,
+            keepDisplayOrder = keepDisplayOrderDuringSortDelay,
+            todoListScrollRequest = todoListScrollRequest,
+            todoListHighlightRequest = todoListHighlightRequest,
+            updateUiState = updateUiState,
+            onUpdateClick = ::handleUpdateClick,
+            darkTheme = darkTheme,
+            onDarkThemeChange = ::setDarkThemePreference,
+            showUpdateDialogs = shouldShowUpdatePromptSetting(neverShowUpdateDialog),
+            onShowUpdateDialogsChange = ::setShowUpdateDialogs,
+            currentVersion = BuildConfig.VERSION_NAME,
+            permissionSettingsState = permissionRefreshTick.let { currentPermissionSettingsState() },
+            onRequestNotificationPermission = ::requestNotificationPermissionFromSettings,
+            onRequestExactAlarmPermission = {
+                openPackageSettingsAction(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+            },
+            onRequestFullScreenIntentPermission = {
+                openPackageSettingsAction(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
+            },
+            onRequestInstallUpdatesPermission = ::openInstallUpdateSettings,
+        )
+        UpdateAvailableDialog(
+            info = if (showUpdatePromptDialog) updatePromptInfo else null,
+            currentVersion = BuildConfig.VERSION_NAME,
+            neverShowUpdateDialog = neverShowUpdateDialog,
+            onNeverShowUpdateDialogChange = ::setNeverShowUpdateDialog,
+            onUpdate = { info ->
+                dismissUpdatePromptDialog()
+                startUpdateDownload(info, revealProgressDialog = true)
+            },
+            onDismiss = ::dismissUpdatePromptDialog,
+        )
+        UpdateDownloadProgressDialog(
+            download = if (showUpdateProgressDialog && !updateProgressDialogDismissed) {
+                activeUpdateDownload
+            } else {
+                null
+            },
+            updateUiState = updateUiState,
+            onDismiss = ::dismissUpdateProgressDialog,
+        )
+        DeleteConfirmationDialog(
+            confirmation = deleteConfirmation,
+            onConfirm = ::confirmDelete,
+            onDismiss = { deleteConfirmation = null },
+        )
+        TodoImagePreviewDialog(
+            item = imagePreviewItem,
+            imageStore = imageStore,
+            onChange = { item -> openTodoImagePicker(item.id) },
+            onRemove = { item -> removeTodoImage(item.id) },
+            onDismiss = { imagePreviewTodoId = null },
+        )
+    }
 }
 
 @Composable
@@ -1217,6 +1353,7 @@ private fun PixelDoneScreen(
     selectedChecklistId: String,
     selectedChecklistName: String,
     isTrashSelected: Boolean,
+    isSettingsSelected: Boolean,
     headerExpanded: Boolean,
     onHeaderExpandedChange: (Boolean) -> Unit,
     onSelectChecklist: (String) -> Unit,
@@ -1267,11 +1404,22 @@ private fun PixelDoneScreen(
     todoListHighlightRequest: TodoListHighlightRequest,
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
+    darkTheme: Boolean,
+    onDarkThemeChange: (Boolean) -> Unit,
+    showUpdateDialogs: Boolean,
+    onShowUpdateDialogsChange: (Boolean) -> Unit,
+    currentVersion: String,
+    permissionSettingsState: PermissionSettingsState,
+    onRequestNotificationPermission: () -> Unit,
+    onRequestExactAlarmPermission: () -> Unit,
+    onRequestFullScreenIntentPermission: () -> Unit,
+    onRequestInstallUpdatesPermission: () -> Unit,
 ) {
+    val colors = PixelDoneColors.current
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(ClaudeIvory)
+            .background(colors.background)
             .systemBarsPadding()
             .imePadding()
             .padding(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 0.dp),
@@ -1288,6 +1436,7 @@ private fun PixelDoneScreen(
                 selectedChecklistId = selectedChecklistId,
                 selectedChecklistName = selectedChecklistName,
                 isTrashSelected = isTrashSelected,
+                isSettingsSelected = isSettingsSelected,
                 activeCount = activeCount,
                 completedCount = completedCount,
                 expanded = headerExpanded,
@@ -1298,6 +1447,7 @@ private fun PixelDoneScreen(
             TaskWorkspacePanel(
                 todos = todos,
                 isTrashSelected = isTrashSelected,
+                isSettingsSelected = isSettingsSelected,
                 sortMode = sortMode,
                 onSortModeChange = onSortModeChange,
                 hideCompleted = hideCompleted,
@@ -1340,6 +1490,18 @@ private fun PixelDoneScreen(
                 canDeleteChecklist = canDeleteChecklist,
                 onSubmitChecklist = onSubmitChecklist,
                 onDeleteChecklist = onDeleteChecklist,
+                updateUiState = updateUiState,
+                onUpdateClick = onUpdateClick,
+                darkTheme = darkTheme,
+                onDarkThemeChange = onDarkThemeChange,
+                showUpdateDialogs = showUpdateDialogs,
+                onShowUpdateDialogsChange = onShowUpdateDialogsChange,
+                currentVersion = currentVersion,
+                permissionSettingsState = permissionSettingsState,
+                onRequestNotificationPermission = onRequestNotificationPermission,
+                onRequestExactAlarmPermission = onRequestExactAlarmPermission,
+                onRequestFullScreenIntentPermission = onRequestFullScreenIntentPermission,
+                onRequestInstallUpdatesPermission = onRequestInstallUpdatesPermission,
                 compactForKeyboard = imeVisible,
                 modifier = Modifier.weight(1f),
             )
@@ -1357,6 +1519,7 @@ private fun Header(
     selectedChecklistId: String,
     selectedChecklistName: String,
     isTrashSelected: Boolean,
+    isSettingsSelected: Boolean,
     activeCount: Int,
     completedCount: Int,
     expanded: Boolean,
@@ -1365,14 +1528,14 @@ private fun Header(
     onEditChecklist: (String) -> Unit,
 ) {
     val scrollState = rememberScrollState()
-    val statusText = if (isTrashSelected) {
-        "ITEMS ${activeCount + completedCount}"
-    } else {
-        "ACTIVE $activeCount  DONE $completedCount"
+    val colors = PixelDoneColors.current
+    val statusText = when {
+        isSettingsSelected -> "OPTIONS"
+        isTrashSelected -> "ITEMS ${activeCount + completedCount}"
+        else -> "ACTIVE $activeCount  DONE $completedCount"
     }
 
     PixelPanel(
-        color = ClaudeGray100,
         borderWidth = 2.dp,
         contentPadding = PaddingValues(12.dp),
     ) {
@@ -1386,7 +1549,7 @@ private fun Header(
         ) {
             Text(
                 text = selectedChecklistName,
-                color = ClaudeSlateDark,
+                color = colors.textPrimary,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -1398,7 +1561,7 @@ private fun Header(
             Text(
                 text = statusText,
                 style = MaterialTheme.typography.labelSmall,
-                color = ClaudeSlateLight,
+                color = colors.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1416,7 +1579,7 @@ private fun Header(
                     ChecklistPickerRow(
                         checklist = checklist,
                         selected = checklist.id == selectedChecklistId,
-                        canEdit = !isTrashChecklist(checklist),
+                        canEdit = isNormalChecklist(checklist),
                         onSelect = { onSelectChecklist(checklist.id) },
                         onEdit = { onEditChecklist(checklist.id) },
                     )
@@ -1426,7 +1589,7 @@ private fun Header(
             Text(
                 text = "LONG PRESS \"+\" TO CREATE LIST",
                 style = MaterialTheme.typography.labelSmall,
-                color = ClaudeSlateLight,
+                color = colors.textSecondary,
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1444,8 +1607,14 @@ private fun ChecklistPickerRow(
     onSelect: () -> Unit,
     onEdit: () -> Unit,
 ) {
-    val borderColor = if (selected) ClaudeClayInteractive else ClaudeGray300
-    val backgroundColor = if (selected) ClaudeOat else ClaudeIvory
+    val colors = PixelDoneColors.current
+    val borderColor = if (selected) colors.primaryInteractive else colors.borderWeak
+    val backgroundColor = if (selected) colors.selectedSurface else colors.surfaceSoft
+    val subtitle = when {
+        isSettingsChecklist(checklist) -> "APP OPTIONS"
+        isTrashChecklist(checklist) -> "ITEMS ${checklist.items.size}"
+        else -> "ACTIVE ${activeTodoCount(checklist)}  DONE ${completedTodoCount(checklist)}"
+    }
 
     Row(
         modifier = Modifier
@@ -1463,7 +1632,7 @@ private fun ChecklistPickerRow(
         ) {
             Text(
                 text = checklist.name,
-                color = ClaudeSlateDark,
+                color = colors.textPrimary,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -1473,13 +1642,9 @@ private fun ChecklistPickerRow(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = if (isTrashChecklist(checklist)) {
-                    "ITEMS ${checklist.items.size}"
-                } else {
-                    "ACTIVE ${activeTodoCount(checklist)}  DONE ${completedTodoCount(checklist)}"
-                },
+                text = subtitle,
                 style = MaterialTheme.typography.labelSmall,
-                color = ClaudeSlateLight,
+                color = colors.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1494,6 +1659,7 @@ private fun ChecklistPickerRow(
 private fun TaskWorkspacePanel(
     todos: List<TodoItem>,
     isTrashSelected: Boolean,
+    isSettingsSelected: Boolean,
     sortMode: SortMode,
     onSortModeChange: (SortMode) -> Unit,
     hideCompleted: Boolean,
@@ -1536,41 +1702,73 @@ private fun TaskWorkspacePanel(
     canDeleteChecklist: Boolean,
     onSubmitChecklist: () -> Boolean,
     onDeleteChecklist: () -> Unit,
+    updateUiState: AppUpdateUiState,
+    onUpdateClick: () -> Unit,
+    darkTheme: Boolean,
+    onDarkThemeChange: (Boolean) -> Unit,
+    showUpdateDialogs: Boolean,
+    onShowUpdateDialogsChange: (Boolean) -> Unit,
+    currentVersion: String,
+    permissionSettingsState: PermissionSettingsState,
+    onRequestNotificationPermission: () -> Unit,
+    onRequestExactAlarmPermission: () -> Unit,
+    onRequestFullScreenIntentPermission: () -> Unit,
+    onRequestInstallUpdatesPermission: () -> Unit,
     compactForKeyboard: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val isNormalChecklistSelected = !isTrashSelected && !isSettingsSelected
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(PixelReadFrameInset),
     ) {
-        TodoListPanel(
-            todos = todos,
-            isTrashSelected = isTrashSelected,
-            sortMode = sortMode,
-            onSortModeChange = onSortModeChange,
-            hideCompleted = hideCompleted,
-            onHideCompletedChange = onHideCompletedChange,
-            showDeadlineCountdown = showDeadlineCountdown,
-            onDeadlineCountdownChange = onDeadlineCountdownChange,
-            completedCount = completedCount,
-            onToggleTodo = onToggleTodo,
-            onEditTodo = onEditTodo,
-            onOpenTodoImage = onOpenTodoImage,
-            onDeleteCompleted = onDeleteCompleted,
-            onRestoreTodo = onRestoreTodo,
-            onDeleteAllTrash = onDeleteAllTrash,
-            displayOrderIds = displayOrderIds,
-            keepDisplayOrder = keepDisplayOrder,
-            todoListScrollRequest = todoListScrollRequest,
-            todoListHighlightRequest = todoListHighlightRequest,
-            showNewTaskButton = !isTrashSelected && !taskEditorVisible && !checklistEditorVisible,
-            onOpenTaskEditor = onOpenTaskEditor,
-            onOpenChecklistEditor = onOpenChecklistEditor,
-            editingTaskId = editingTaskId,
-            onCancelEdit = onCancelEdit,
-            modifier = Modifier.weight(1f),
-        )
-        if (!isTrashSelected && taskEditorVisible) {
+        if (isSettingsSelected) {
+            SettingsPanel(
+                darkTheme = darkTheme,
+                onDarkThemeChange = onDarkThemeChange,
+                showUpdateDialogs = showUpdateDialogs,
+                onShowUpdateDialogsChange = onShowUpdateDialogsChange,
+                currentVersion = currentVersion,
+                updateUiState = updateUiState,
+                onUpdateClick = onUpdateClick,
+                permissionState = permissionSettingsState,
+                onRequestNotificationPermission = onRequestNotificationPermission,
+                onRequestExactAlarmPermission = onRequestExactAlarmPermission,
+                onRequestFullScreenIntentPermission = onRequestFullScreenIntentPermission,
+                onRequestInstallUpdatesPermission = onRequestInstallUpdatesPermission,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            TodoListPanel(
+                todos = todos,
+                isTrashSelected = isTrashSelected,
+                sortMode = sortMode,
+                onSortModeChange = onSortModeChange,
+                hideCompleted = hideCompleted,
+                onHideCompletedChange = onHideCompletedChange,
+                showDeadlineCountdown = showDeadlineCountdown,
+                onDeadlineCountdownChange = onDeadlineCountdownChange,
+                completedCount = completedCount,
+                onToggleTodo = onToggleTodo,
+                onEditTodo = onEditTodo,
+                onOpenTodoImage = onOpenTodoImage,
+                onDeleteCompleted = onDeleteCompleted,
+                onRestoreTodo = onRestoreTodo,
+                onDeleteAllTrash = onDeleteAllTrash,
+                displayOrderIds = displayOrderIds,
+                keepDisplayOrder = keepDisplayOrder,
+                todoListScrollRequest = todoListScrollRequest,
+                todoListHighlightRequest = todoListHighlightRequest,
+                showNewTaskButton = isNormalChecklistSelected && !taskEditorVisible && !checklistEditorVisible,
+                onOpenTaskEditor = onOpenTaskEditor,
+                onOpenChecklistEditor = onOpenChecklistEditor,
+                editingTaskId = editingTaskId,
+                onCancelEdit = onCancelEdit,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (isNormalChecklistSelected && taskEditorVisible) {
             TaskEditorPanel(
                 titleInput = titleInput,
                 onTitleInputChange = onTitleInputChange,
@@ -1588,7 +1786,7 @@ private fun TaskWorkspacePanel(
                 onDeleteTodo = onDeleteEditingTodo,
                 compactForKeyboard = compactForKeyboard,
             )
-        } else if (!isTrashSelected && checklistEditorVisible) {
+        } else if (isNormalChecklistSelected && checklistEditorVisible) {
             ChecklistEditorPanel(
                 nameInput = checklistNameInput,
                 onNameInputChange = onChecklistNameInputChange,
@@ -1603,6 +1801,252 @@ private fun TaskWorkspacePanel(
         }
     }
 }
+
+@Composable
+private fun SettingsPanel(
+    darkTheme: Boolean,
+    onDarkThemeChange: (Boolean) -> Unit,
+    showUpdateDialogs: Boolean,
+    onShowUpdateDialogsChange: (Boolean) -> Unit,
+    currentVersion: String,
+    updateUiState: AppUpdateUiState,
+    onUpdateClick: () -> Unit,
+    permissionState: PermissionSettingsState,
+    onRequestNotificationPermission: () -> Unit,
+    onRequestExactAlarmPermission: () -> Unit,
+    onRequestFullScreenIntentPermission: () -> Unit,
+    onRequestInstallUpdatesPermission: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val scrollState = rememberScrollState()
+    val updateActionText = when (updateUiState.status) {
+        UpdateUiStatus.Available -> "UPDATE"
+        UpdateUiStatus.Checking -> "CHECKING"
+        UpdateUiStatus.Downloading -> "DOWNLOADING"
+        UpdateUiStatus.Installing -> "INSTALL"
+        else -> "CHECK"
+    }
+    val updateActionEnabled = updateUiState.status != UpdateUiStatus.Checking &&
+        updateUiState.status != UpdateUiStatus.Downloading &&
+        updateUiState.status != UpdateUiStatus.Installing
+
+    PixelPanel(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            SettingsSectionTitle("DISPLAY")
+            SettingsSegmentedRow(
+                title = "THEME",
+                value = darkTheme,
+                options = listOf(false, true),
+                label = { if (it) "DARK" else "LIGHT" },
+                onSelected = onDarkThemeChange,
+            )
+
+            SettingsSectionTitle("UPDATES")
+            SettingsSegmentedRow(
+                title = "UPDATE POPUP",
+                value = showUpdateDialogs,
+                options = listOf(true, false),
+                label = { if (it) "ON" else "OFF" },
+                onSelected = onShowUpdateDialogsChange,
+            )
+            SettingsActionRow(
+                title = "CHECK UPDATE",
+                value = updateUiState.message ?: "current: v$currentVersion",
+                actionText = updateActionText,
+                onAction = onUpdateClick,
+                enabled = updateActionEnabled,
+            )
+
+            SettingsSectionTitle("PERMISSIONS")
+            SettingsActionRow(
+                title = "NOTIFICATIONS",
+                value = permissionState.notificationsGranted.permissionLabel(),
+                actionText = "CONFIG",
+                onAction = onRequestNotificationPermission,
+            )
+            SettingsActionRow(
+                title = "EXACT ALARM",
+                value = permissionState.exactAlarmGranted.permissionLabel(),
+                actionText = "CONFIG",
+                onAction = onRequestExactAlarmPermission,
+            )
+            SettingsActionRow(
+                title = "FULL SCREEN",
+                value = permissionState.fullScreenIntentGranted.permissionLabel(),
+                actionText = "CONFIG",
+                onAction = onRequestFullScreenIntentPermission,
+            )
+            SettingsActionRow(
+                title = "INSTALL UPDATES",
+                value = permissionState.installUpdatesGranted.permissionLabel(),
+                actionText = "CONFIG",
+                onAction = onRequestInstallUpdatesPermission,
+            )
+
+            SettingsSectionTitle("ABOUT")
+            SettingsAboutTextRow(
+                title = "APP",
+                value = "PixelDone",
+            )
+            SettingsAboutTextRow(
+                title = "MAKER",
+                value = "CODEX x XUE",
+                valueColor = colors.primary,
+            )
+            SettingsAboutTextRow(
+                title = "UPDATE PERMISSIONS",
+                value = "same package + signature",
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSectionTitle(text: String) {
+    val colors = PixelDoneColors.current
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = colors.textSecondary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun SettingsActionRow(
+    title: String,
+    value: String,
+    actionText: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val colors = PixelDoneColors.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surfaceSoft)
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SettingsRowText(
+            title = title,
+            value = value,
+            modifier = Modifier.weight(1f),
+        )
+        PixelButton(
+            text = actionText,
+            onClick = onAction,
+            enabled = enabled,
+            modifier = Modifier.width(104.dp),
+            primary = false,
+            selected = value == "NEEDS SETUP",
+        )
+    }
+}
+
+@Composable
+private fun SettingsAboutTextRow(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color? = null,
+) {
+    val colors = PixelDoneColors.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.width(128.dp),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall,
+            color = valueColor ?: colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun <T> SettingsSegmentedRow(
+    title: String,
+    value: T,
+    options: List<T>,
+    label: (T) -> String,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surfaceSoft)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SettingsRowText(title = title, value = label(value))
+        PixelSegmentedControl(
+            options = options,
+            selected = value,
+            label = label,
+            onSelected = onSelected,
+        )
+    }
+}
+
+@Composable
+private fun SettingsRowText(
+    title: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueColor: Color? = null,
+) {
+    val colors = PixelDoneColors.current
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall,
+            color = valueColor ?: colors.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private fun Boolean.permissionLabel(): String =
+    if (this) "GRANTED" else "NEEDS SETUP"
 
 @Composable
 private fun TaskEditorPanel(
@@ -1625,6 +2069,7 @@ private fun TaskEditorPanel(
     val focusManager = LocalFocusManager.current
     val hapticFeedback = LocalHapticFeedback.current
     val titleFocusRequester = remember { FocusRequester() }
+    val colors = PixelDoneColors.current
 
     LaunchedEffect(isEditing) {
         if (!isEditing) {
@@ -1649,12 +2094,12 @@ private fun TaskEditorPanel(
             Text(
                 text = if (isEditing) "EDIT TASK" else "NEW TASK",
                 style = MaterialTheme.typography.labelLarge,
-                color = ClaudeSlateLight,
+                color = colors.textSecondary,
             )
             Text(
                 text = if (isEditing) "CANCEL" else "CLOSE",
                 style = MaterialTheme.typography.labelLarge,
-                color = ClaudeClayInteractive,
+                color = colors.primaryInteractive,
             )
         }
 
@@ -1682,13 +2127,15 @@ private fun TaskEditorPanel(
                     },
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ClaudeClay,
-                    unfocusedBorderColor = ClaudeGray300,
-                    focusedContainerColor = ClaudeIvory,
-                    unfocusedContainerColor = ClaudeIvory,
-                    cursorColor = ClaudeClayInteractive,
-                    focusedLabelColor = ClaudeClayInteractive,
-                    unfocusedLabelColor = ClaudeGray600,
+                    focusedBorderColor = colors.primary,
+                    unfocusedBorderColor = colors.borderWeak,
+                    focusedContainerColor = colors.surfaceSoft,
+                    unfocusedContainerColor = colors.surfaceSoft,
+                    cursorColor = colors.primaryInteractive,
+                    focusedLabelColor = colors.primaryInteractive,
+                    unfocusedLabelColor = colors.textSecondary,
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary,
                 ),
             )
             if (compactForKeyboard) {
@@ -1698,7 +2145,7 @@ private fun TaskEditorPanel(
             Text(
                 text = "PRIORITY",
                 style = MaterialTheme.typography.labelMedium,
-                color = ClaudeSlateLight,
+                color = colors.textSecondary,
             )
             Spacer(modifier = Modifier.height(6.dp))
             PrioritySlider(
@@ -1709,7 +2156,7 @@ private fun TaskEditorPanel(
             Text(
                 text = "TIME / ALARM",
                 style = MaterialTheme.typography.labelMedium,
-                color = ClaudeSlateLight,
+                color = colors.textSecondary,
             )
             Spacer(modifier = Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1730,7 +2177,7 @@ private fun TaskEditorPanel(
             Text(
                 text = "REPEAT",
                 style = MaterialTheme.typography.labelMedium,
-                color = ClaudeSlateLight,
+                color = colors.textSecondary,
             )
             Spacer(modifier = Modifier.height(6.dp))
             PixelSegmentedControl(
@@ -1797,6 +2244,7 @@ private fun ChecklistEditorPanel(
     val focusManager = LocalFocusManager.current
     val hapticFeedback = LocalHapticFeedback.current
     val nameFocusRequester = remember { FocusRequester() }
+    val colors = PixelDoneColors.current
 
     LaunchedEffect(isEditing) {
         if (!isEditing) {
@@ -1815,12 +2263,12 @@ private fun ChecklistEditorPanel(
             Text(
                 text = if (isEditing) "EDIT LIST" else "NEW LIST",
                 style = MaterialTheme.typography.labelLarge,
-                color = ClaudeSlateLight,
+                color = colors.textSecondary,
             )
             Text(
                 text = "CANCEL",
                 style = MaterialTheme.typography.labelLarge,
-                color = ClaudeClayInteractive,
+                color = colors.primaryInteractive,
             )
         }
 
@@ -1849,16 +2297,19 @@ private fun ChecklistEditorPanel(
                     },
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = ClaudeClay,
-                    unfocusedBorderColor = ClaudeGray300,
-                    errorBorderColor = PixelError,
-                    focusedContainerColor = ClaudeIvory,
-                    unfocusedContainerColor = ClaudeIvory,
-                    errorContainerColor = ClaudeIvory,
-                    cursorColor = ClaudeClayInteractive,
-                    focusedLabelColor = ClaudeClayInteractive,
-                    unfocusedLabelColor = ClaudeGray600,
-                    errorLabelColor = PixelError,
+                    focusedBorderColor = colors.primary,
+                    unfocusedBorderColor = colors.borderWeak,
+                    errorBorderColor = colors.error,
+                    focusedContainerColor = colors.surfaceSoft,
+                    unfocusedContainerColor = colors.surfaceSoft,
+                    errorContainerColor = colors.surfaceSoft,
+                    cursorColor = colors.primaryInteractive,
+                    focusedLabelColor = colors.primaryInteractive,
+                    unfocusedLabelColor = colors.textSecondary,
+                    errorLabelColor = colors.error,
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary,
+                    errorTextColor = colors.textPrimary,
                 ),
             )
             errorText?.let { text ->
@@ -1866,7 +2317,7 @@ private fun ChecklistEditorPanel(
                 Text(
                     text = text,
                     style = MaterialTheme.typography.labelSmall,
-                    color = PixelError,
+                    color = colors.error,
                 )
             }
             if (compactForKeyboard) {
@@ -2269,21 +2720,27 @@ private fun TodoRow(
     highlighted: Boolean,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val itemBackground = if (item.completed) ClaudeCactus.copy(alpha = 0.35f) else ClaudeIvory
+    val colors = PixelDoneColors.current
+    val itemBackground = if (item.completed) colors.completedSurface else colors.surfaceSoft
     val borderColor by animateColorAsState(
-        targetValue = if (highlighted) ClaudeClayInteractive else ClaudeGray300,
+        targetValue = if (highlighted) colors.primaryInteractive else colors.borderWeak,
         animationSpec = tween(durationMillis = TodoHighlightFadeMillis),
         label = "todoRowHighlightBorder",
     )
     val borderWidth = if (highlighted) 2.dp else 1.dp
     val dueDateTime = item.dueAtMillis.formatDateTime()
-    val dueDateTimeColor = if (item.dueAtMillis.isExpired(nowMillis)) PixelError else ClaudeSlateLight
+    val dueDateTimeColor = if (item.dueAtMillis.isExpired(nowMillis)) colors.error else colors.textSecondary
     val repeatText = if (item.reminderRepeat != ReminderRepeat.NONE) {
         "  ${item.reminderRepeat.uiLabel()}"
     } else {
         ""
     }
     val showXHighAlarmIcon = item.priority == TodoPriority.XHIGH && !item.completed
+    val rowPadding = if (item.completed) {
+        PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+    } else {
+        PaddingValues(8.dp)
+    }
 
     Row(
         modifier = Modifier
@@ -2296,14 +2753,14 @@ private fun TodoRow(
                     TodoRowClickAction.CancelEdit -> onCancelEdit()
                 }
             }
-            .padding(8.dp),
+            .padding(rowPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
             modifier = Modifier
                 .width(5.dp)
-                .height(48.dp)
+                .height(if (item.completed) 32.dp else 48.dp)
                 .background(item.priority.priorityColor()),
         )
         Checkbox(
@@ -2315,52 +2772,56 @@ private fun TodoRow(
                 onToggleTodo(item.id, checked)
             },
             colors = CheckboxDefaults.colors(
-                checkedColor = ClaudeMineral,
-                uncheckedColor = ClaudeGray600,
-                checkmarkColor = ClaudeIvory,
+                checkedColor = colors.success,
+                uncheckedColor = colors.textSecondary,
+                checkmarkColor = colors.background,
             ),
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (item.completed) ClaudeGray600 else ClaudeSlateDark,
+                color = if (item.completed) colors.textSecondary else colors.textPrimary,
                 textDecoration = if (item.completed) TextDecoration.LineThrough else null,
-                maxLines = 2,
+                maxLines = if (item.completed) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.heightIn(min = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    modifier = if (showXHighAlarmIcon) Modifier.weight(1f, fill = false) else Modifier,
-                    text = item.subtitleText(
-                        nowMillis = nowMillis,
-                        dueDateTime = dueDateTime,
-                        dueDateTimeColor = dueDateTimeColor,
-                        repeatText = repeatText,
-                        showDeadlineCountdown = showDeadlineCountdown,
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ClaudeSlateLight,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (showXHighAlarmIcon) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    PixelAlarmIcon(
-                        color = ClaudeSlateLight,
-                        modifier = Modifier.size(14.dp),
+            if (!item.completed) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.heightIn(min = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        modifier = if (showXHighAlarmIcon) Modifier.weight(1f, fill = false) else Modifier,
+                        text = item.subtitleText(
+                            nowMillis = nowMillis,
+                            dueDateTime = dueDateTime,
+                            dueDateTimeColor = dueDateTimeColor,
+                            repeatText = repeatText,
+                            showDeadlineCountdown = showDeadlineCountdown,
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
+                    if (showXHighAlarmIcon) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        PixelAlarmIcon(
+                            color = colors.textSecondary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
                 }
             }
         }
-        PixelItemImageButton(
-            hasImage = item.imageFileName != null,
-            onClick = { onOpenTodoImage(item) },
-        )
+        if (!item.completed) {
+            PixelItemImageButton(
+                hasImage = item.imageFileName != null,
+                onClick = { onOpenTodoImage(item) },
+            )
+        }
     }
 }
 
@@ -2369,23 +2830,29 @@ private fun TrashTodoRow(
     item: TodoItem,
     onRestoreTodo: (String) -> Unit,
 ) {
-    val itemBackground = if (item.completed) ClaudeCactus.copy(alpha = 0.35f) else ClaudeIvory
+    val colors = PixelDoneColors.current
+    val itemBackground = if (item.completed) colors.completedSurface else colors.surfaceSoft
     val sourceName = item.trashedFromChecklistName?.takeIf { it.isNotBlank() }
         ?: DefaultChecklistName
+    val rowPadding = if (item.completed) {
+        PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+    } else {
+        PaddingValues(8.dp)
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, ClaudeGray300, RectangleShape)
+            .border(1.dp, colors.borderWeak, RectangleShape)
             .background(itemBackground)
-            .padding(8.dp),
+            .padding(rowPadding),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
             modifier = Modifier
                 .width(5.dp)
-                .height(48.dp)
+                .height(if (item.completed) 32.dp else 48.dp)
                 .background(item.priority.priorityColor()),
         )
         Checkbox(
@@ -2393,31 +2860,33 @@ private fun TrashTodoRow(
             onCheckedChange = null,
             enabled = false,
             colors = CheckboxDefaults.colors(
-                checkedColor = ClaudeMineral,
-                uncheckedColor = ClaudeGray600,
-                disabledCheckedColor = ClaudeMineral.copy(alpha = 0.45f),
-                disabledUncheckedColor = ClaudeGray300,
-                disabledIndeterminateColor = ClaudeGray300,
-                checkmarkColor = ClaudeIvory,
+                checkedColor = colors.success,
+                uncheckedColor = colors.textSecondary,
+                disabledCheckedColor = colors.success.copy(alpha = 0.45f),
+                disabledUncheckedColor = colors.borderWeak,
+                disabledIndeterminateColor = colors.borderWeak,
+                checkmarkColor = colors.background,
             ),
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.bodyLarge,
-                color = if (item.completed) ClaudeGray600 else ClaudeSlateDark,
+                color = if (item.completed) colors.textSecondary else colors.textPrimary,
                 textDecoration = if (item.completed) TextDecoration.LineThrough else null,
-                maxLines = 2,
+                maxLines = if (item.completed) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "FROM $sourceName",
-                style = MaterialTheme.typography.labelSmall,
-                color = ClaudeSlateLight,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (!item.completed) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "FROM $sourceName",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         PixelRestoreButton(
             onClick = { onRestoreTodo(item.id) },
@@ -2427,18 +2896,19 @@ private fun TrashTodoRow(
 
 @Composable
 private fun EmptyState(text: String, modifier: Modifier = Modifier) {
+    val colors = PixelDoneColors.current
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .border(1.dp, ClaudeGray300, RectangleShape)
-            .background(ClaudeIvoryMedium)
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surfaceRaised)
             .padding(16.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            color = ClaudeSlateLight,
+            color = colors.textSecondary,
         )
     }
 }
@@ -2448,15 +2918,16 @@ private fun Footer(
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
 ) {
+    val colors = PixelDoneColors.current
     val message = updateUiState.message
     if (message != null) {
         val messageColor = when (updateUiState.status) {
-            UpdateUiStatus.Offline -> PixelError
+            UpdateUiStatus.Offline -> colors.error
             UpdateUiStatus.Available,
             UpdateUiStatus.Downloading,
             UpdateUiStatus.Installing,
-            -> ClaudeClay
-            else -> ClaudeSlateDark
+            -> colors.primary
+            else -> colors.textPrimary
         }
         Box(
             modifier = Modifier
@@ -2493,7 +2964,7 @@ private fun Footer(
     ) {
         Text(
             text = "PIXELDONE",
-            color = ClaudeSlateDark,
+            color = colors.textPrimary,
             fontFamily = FontFamily.Monospace,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
@@ -2502,7 +2973,7 @@ private fun Footer(
         )
         Text(
             text = DeveloperCredit,
-            color = ClaudeClay,
+            color = colors.primary,
             fontFamily = FontFamily.Monospace,
             fontSize = 8.sp,
             fontWeight = FontWeight.SemiBold,
@@ -2514,9 +2985,9 @@ private fun Footer(
         UpdateMark(
             state = updateUiState,
             onClick = onUpdateClick,
-            idleColor = ClaudeSlateLight,
-            activeColor = ClaudeClay,
-            errorColor = PixelError,
+            idleColor = colors.textSecondary,
+            activeColor = colors.primary,
+            errorColor = colors.error,
         )
     }
 }
@@ -2620,6 +3091,7 @@ private fun UpdateAvailableDialog(
     onDismiss: () -> Unit,
 ) {
     if (info == null) return
+    val colors = PixelDoneColors.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2627,7 +3099,7 @@ private fun UpdateAvailableDialog(
             Text(
                 text = "Update available",
                 style = MaterialTheme.typography.titleMedium,
-                color = ClaudeSlateDark,
+                color = colors.textPrimary,
             )
         },
         text = {
@@ -2635,13 +3107,13 @@ private fun UpdateAvailableDialog(
                 Text(
                     text = "PixelDone can update from v$currentVersion to v${info.version}.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = ClaudeSlateLight,
+                    color = colors.textSecondary,
                 )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, ClaudeGray300, RectangleShape)
-                        .background(ClaudeIvory)
+                        .border(1.dp, colors.borderWeak, RectangleShape)
+                        .background(colors.surfaceSoft)
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -2650,16 +3122,16 @@ private fun UpdateAvailableDialog(
                         checked = neverShowUpdateDialog,
                         onCheckedChange = onNeverShowUpdateDialogChange,
                         colors = CheckboxDefaults.colors(
-                            checkedColor = ClaudeClay,
-                            uncheckedColor = ClaudeGray600,
-                            checkmarkColor = ClaudeIvory,
+                            checkedColor = colors.primary,
+                            uncheckedColor = colors.textSecondary,
+                            checkmarkColor = colors.background,
                         ),
                     )
                     Text(
                         modifier = Modifier.weight(1f),
                         text = "DO NOT SHOW AGAIN",
                         style = MaterialTheme.typography.labelMedium,
-                        color = ClaudeSlateDark,
+                        color = colors.textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -2681,7 +3153,7 @@ private fun UpdateAvailableDialog(
             )
         },
         shape = RectangleShape,
-        containerColor = ClaudeGray100,
+        containerColor = colors.surface,
         tonalElevation = 0.dp,
     )
 }
@@ -2694,6 +3166,7 @@ private fun UpdateDownloadProgressDialog(
 ) {
     if (download == null) return
 
+    val colors = PixelDoneColors.current
     val message = updateUiState.message ?: formatUpdateDownloadMessage(download.version)
 
     AlertDialog(
@@ -2702,7 +3175,7 @@ private fun UpdateDownloadProgressDialog(
             Text(
                 text = "Downloading update",
                 style = MaterialTheme.typography.titleMedium,
-                color = ClaudeSlateDark,
+                color = colors.textPrimary,
             )
         },
         text = {
@@ -2710,7 +3183,7 @@ private fun UpdateDownloadProgressDialog(
                 Text(
                     text = message,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = ClaudeSlateDark,
+                    color = colors.textPrimary,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -2719,7 +3192,7 @@ private fun UpdateDownloadProgressDialog(
                 Text(
                     text = "You can close this dialog. The update will keep downloading silently.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = ClaudeSlateLight,
+                    color = colors.textSecondary,
                 )
             }
         },
@@ -2731,7 +3204,7 @@ private fun UpdateDownloadProgressDialog(
             )
         },
         shape = RectangleShape,
-        containerColor = ClaudeGray100,
+        containerColor = colors.surface,
         tonalElevation = 0.dp,
     )
 }
@@ -2741,20 +3214,21 @@ private fun UpdateProgressBar(
     progress: AppUpdateDownloadProgress,
     modifier: Modifier = Modifier,
 ) {
+    val colors = PixelDoneColors.current
     val percent = progress.percent
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(10.dp)
-            .border(1.dp, ClaudeClay, RectangleShape)
-            .background(ClaudeClay.copy(alpha = 0.14f)),
+            .border(1.dp, colors.primary, RectangleShape)
+            .background(colors.primary.copy(alpha = 0.14f)),
     ) {
         if (percent != null && percent > 0) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(percent.coerceIn(0, 100) / 100f)
                     .height(8.dp)
-                    .background(ClaudeClay),
+                    .background(colors.primary),
             )
         }
     }
@@ -2820,6 +3294,7 @@ private fun TodoImagePreviewDialog(
             )
         } ?: Offset.Zero
     }
+    val colors = PixelDoneColors.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2833,7 +3308,7 @@ private fun TodoImagePreviewDialog(
                     modifier = Modifier.weight(1f),
                     text = "Task image",
                     style = MaterialTheme.typography.titleMedium,
-                    color = ClaudeSlateDark,
+                    color = colors.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -2843,7 +3318,7 @@ private fun TodoImagePreviewDialog(
                         .clickable(onClick = onDismiss)
                         .padding(horizontal = 4.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelLarge,
-                    color = ClaudeClayInteractive,
+                    color = colors.primaryInteractive,
                     maxLines = 1,
                 )
             }
@@ -2853,7 +3328,7 @@ private fun TodoImagePreviewDialog(
                 Text(
                     text = item.title,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = ClaudeSlateLight,
+                    color = colors.textSecondary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -2861,8 +3336,8 @@ private fun TodoImagePreviewDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 180.dp, max = 320.dp)
-                        .border(1.dp, ClaudeGray300, RectangleShape)
-                        .background(ClaudeIvory)
+                        .border(1.dp, colors.borderWeak, RectangleShape)
+                        .background(colors.surfaceSoft)
                         .clipToBounds()
                         .onSizeChanged { size ->
                             previewViewportSize = Size(
@@ -2878,14 +3353,14 @@ private fun TodoImagePreviewDialog(
                             Text(
                                 text = "Loading image...",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = ClaudeSlateLight,
+                                color = colors.textSecondary,
                             )
                         }
                         TodoImagePreviewLoadState.Unavailable -> {
                             Text(
                                 text = "Image unavailable.",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = ClaudeSlateLight,
+                                color = colors.textSecondary,
                             )
                         }
                         is TodoImagePreviewLoadState.Ready -> {
@@ -2922,7 +3397,7 @@ private fun TodoImagePreviewDialog(
             }
         },
         shape = RectangleShape,
-        containerColor = ClaudeGray100,
+        containerColor = colors.surface,
         tonalElevation = 0.dp,
     )
 }
@@ -3013,6 +3488,7 @@ private fun DeleteConfirmationDialog(
     if (confirmation == null) return
 
     val hapticFeedback = LocalHapticFeedback.current
+    val colors = PixelDoneColors.current
     val titleText = when (confirmation) {
         is DeleteConfirmation.SingleTodo -> "Delete task?"
         is DeleteConfirmation.CompletedTodos -> "Delete done tasks?"
@@ -3034,14 +3510,14 @@ private fun DeleteConfirmationDialog(
             Text(
                 text = titleText,
                 style = MaterialTheme.typography.titleMedium,
-                color = ClaudeSlateDark,
+                color = colors.textPrimary,
             )
         },
         text = {
             Text(
                 text = bodyText,
                 style = MaterialTheme.typography.bodyMedium,
-                color = ClaudeSlateLight,
+                color = colors.textSecondary,
             )
         },
         confirmButton = {
@@ -3062,7 +3538,7 @@ private fun DeleteConfirmationDialog(
             )
         },
         shape = RectangleShape,
-        containerColor = ClaudeGray100,
+        containerColor = colors.surface,
         tonalElevation = 0.dp,
     )
 }
@@ -3143,7 +3619,7 @@ private fun TodoItem.subtitleText(
     showDeadlineCountdown: Boolean,
 ) = buildAnnotatedString {
     if (showDeadlineCountdown) {
-        withStyle(SpanStyle(color = if (dueAtMillis.isExpired(nowMillis)) PixelError else ClaudeSlateLight)) {
+        withStyle(SpanStyle(color = dueDateTimeColor)) {
             append(formatDeadlineCountdown(dueAtMillis, nowMillis))
         }
     } else {
@@ -3166,6 +3642,7 @@ private fun PhonePreview() {
             selectedChecklistId = checklists.first().id,
             selectedChecklistName = checklists.first().name,
             isTrashSelected = false,
+            isSettingsSelected = false,
             headerExpanded = false,
             onHeaderExpandedChange = {},
             onSelectChecklist = {},
@@ -3216,6 +3693,16 @@ private fun PhonePreview() {
             todoListHighlightRequest = previewHighlightRequest(),
             updateUiState = AppUpdateUiState(),
             onUpdateClick = {},
+            darkTheme = false,
+            onDarkThemeChange = {},
+            showUpdateDialogs = true,
+            onShowUpdateDialogsChange = {},
+            currentVersion = "2.6.0",
+            permissionSettingsState = previewPermissionSettingsState(),
+            onRequestNotificationPermission = {},
+            onRequestExactAlarmPermission = {},
+            onRequestFullScreenIntentPermission = {},
+            onRequestInstallUpdatesPermission = {},
         )
     }
 }
@@ -3230,6 +3717,7 @@ private fun TabletPreview() {
             selectedChecklistId = checklists.first().id,
             selectedChecklistName = checklists.first().name,
             isTrashSelected = false,
+            isSettingsSelected = false,
             headerExpanded = true,
             onHeaderExpandedChange = {},
             onSelectChecklist = {},
@@ -3280,6 +3768,16 @@ private fun TabletPreview() {
             todoListHighlightRequest = previewHighlightRequest(),
             updateUiState = AppUpdateUiState(status = UpdateUiStatus.Available),
             onUpdateClick = {},
+            darkTheme = false,
+            onDarkThemeChange = {},
+            showUpdateDialogs = true,
+            onShowUpdateDialogsChange = {},
+            currentVersion = "2.6.0",
+            permissionSettingsState = previewPermissionSettingsState(),
+            onRequestNotificationPermission = {},
+            onRequestExactAlarmPermission = {},
+            onRequestFullScreenIntentPermission = {},
+            onRequestInstallUpdatesPermission = {},
         )
     }
 }
@@ -3322,6 +3820,21 @@ private fun previewChecklists(): List<TodoChecklist> {
             items = emptyList(),
             createdAtMillis = 3L,
         ),
+        TodoChecklist(
+            id = SettingsChecklistId,
+            name = SettingsChecklistName,
+            items = emptyList(),
+            createdAtMillis = 4L,
+        ),
+    )
+}
+
+private fun previewPermissionSettingsState(): PermissionSettingsState {
+    return PermissionSettingsState(
+        notificationsGranted = true,
+        exactAlarmGranted = false,
+        fullScreenIntentGranted = true,
+        installUpdatesGranted = false,
     )
 }
 

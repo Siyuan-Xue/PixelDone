@@ -49,24 +49,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.milesxue.pixeldone.domain.todo.ReminderRepeat
 import com.milesxue.pixeldone.domain.todo.TodoPriority
-import com.milesxue.pixeldone.ui.theme.ClaudeCactus
-import com.milesxue.pixeldone.ui.theme.ClaudeClay
-import com.milesxue.pixeldone.ui.theme.ClaudeClayInteractive
-import com.milesxue.pixeldone.ui.theme.ClaudeCoral
-import com.milesxue.pixeldone.ui.theme.ClaudeGray100
-import com.milesxue.pixeldone.ui.theme.ClaudeGray200
-import com.milesxue.pixeldone.ui.theme.ClaudeGray300
-import com.milesxue.pixeldone.ui.theme.ClaudeGray600
-import com.milesxue.pixeldone.ui.theme.ClaudeIvory
-import com.milesxue.pixeldone.ui.theme.ClaudeIvoryMedium
-import com.milesxue.pixeldone.ui.theme.ClaudeOat
-import com.milesxue.pixeldone.ui.theme.ClaudeSlateDark
-import com.milesxue.pixeldone.ui.theme.ClaudeSlateLight
 import com.milesxue.pixeldone.ui.theme.GoogleBlue
 import com.milesxue.pixeldone.ui.theme.GoogleGreen
 import com.milesxue.pixeldone.ui.theme.GoogleRed
 import com.milesxue.pixeldone.ui.theme.GoogleYellow
-import com.milesxue.pixeldone.ui.theme.PixelError
+import com.milesxue.pixeldone.ui.theme.PixelDoneColors
 import kotlin.math.roundToInt
 
 /**
@@ -82,15 +69,16 @@ internal fun PixelBatchDeleteDoneButton(
     enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val colors = PixelDoneColors.current
     Box(
         modifier = modifier
             .size(44.dp)
-            .border(1.dp, if (enabled) PixelError else ClaudeGray300, RectangleShape)
-            .background(if (enabled) ClaudeCoral else ClaudeGray200)
+            .border(1.dp, if (enabled) colors.error else colors.borderWeak, RectangleShape)
+            .background(if (enabled) colors.destructiveSurface else colors.disabledSurface)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        PixelTrashIcon(color = if (enabled) ClaudeSlateDark else ClaudeGray600)
+        PixelTrashIcon(color = if (enabled) colors.textPrimary else colors.disabledText)
         PixelDoneBadge(
             enabled = enabled,
             modifier = Modifier
@@ -105,16 +93,17 @@ internal fun PixelSettingsButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = PixelDoneColors.current
     Box(
         modifier = modifier
             .size(36.dp)
-            .border(1.dp, ClaudeGray300, RectangleShape)
-            .background(ClaudeIvoryMedium)
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surfaceRaised)
             .clickable(onClick = onClick)
             .semantics { contentDescription = "EDIT LIST" },
         contentAlignment = Alignment.Center,
     ) {
-        PixelSettingsIcon(color = ClaudeSlateDark)
+        PixelSettingsIcon(color = colors.textPrimary)
     }
 }
 
@@ -123,15 +112,16 @@ internal fun PixelItemDeleteButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = PixelDoneColors.current
     Box(
         modifier = modifier
             .size(36.dp)
-            .border(1.dp, ClaudeGray300, RectangleShape)
-            .background(ClaudeIvoryMedium)
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surfaceRaised)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        PixelTrashIcon(color = PixelError)
+        PixelTrashIcon(color = colors.error)
     }
 }
 
@@ -141,9 +131,10 @@ internal fun PixelItemImageButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val borderColor = if (hasImage) ClaudeClayInteractive else ClaudeGray300
-    val backgroundColor = if (hasImage) ClaudeOat else ClaudeIvoryMedium
-    val iconColor = if (hasImage) ClaudeClayInteractive else ClaudeSlateLight
+    val colors = PixelDoneColors.current
+    val borderColor = if (hasImage) colors.primaryInteractive else colors.borderWeak
+    val backgroundColor = if (hasImage) colors.selectedSurface else colors.surfaceRaised
+    val iconColor = if (hasImage) colors.primaryInteractive else colors.textSecondary
 
     Box(
         modifier = modifier
@@ -165,16 +156,17 @@ internal fun PixelRestoreButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = PixelDoneColors.current
     Box(
         modifier = modifier
             .size(36.dp)
-            .border(1.dp, ClaudeClayInteractive, RectangleShape)
-            .background(ClaudeOat)
+            .border(1.dp, colors.primaryInteractive, RectangleShape)
+            .background(colors.selectedSurface)
             .clickable(onClick = onClick)
             .semantics { contentDescription = "RESTORE TASK" },
         contentAlignment = Alignment.Center,
     ) {
-        PixelRestoreIcon(color = ClaudeClayInteractive)
+        PixelRestoreIcon(color = colors.primaryInteractive)
     }
 }
 
@@ -335,12 +327,13 @@ internal fun FloatingNewTaskButton(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val hapticFeedback = LocalHapticFeedback.current
+    val colors = PixelDoneColors.current
 
     Box(
         modifier = modifier
             .size(56.dp)
-            .background(if (pressed) ClaudeClayInteractive else ClaudeClay, RectangleShape)
-            .border(2.dp, ClaudeSlateDark, RectangleShape)
+            .background(if (pressed) colors.primaryInteractive else colors.primary, RectangleShape)
+            .border(2.dp, colors.textPrimary, RectangleShape)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -355,7 +348,7 @@ internal fun FloatingNewTaskButton(
     ) {
         Text(
             text = "+",
-            color = ClaudeSlateDark,
+            color = colors.onPrimary,
             fontFamily = FontFamily.Monospace,
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
@@ -366,23 +359,24 @@ internal fun FloatingNewTaskButton(
 
 @Composable
 private fun PixelDoneBadge(enabled: Boolean, modifier: Modifier = Modifier) {
+    val colors = PixelDoneColors.current
     Box(
         modifier = modifier
             .size(14.dp)
-            .border(1.dp, if (enabled) ClaudeSlateDark else ClaudeGray300, RectangleShape)
-            .background(if (enabled) ClaudeCactus else ClaudeGray200),
+            .border(1.dp, if (enabled) colors.textPrimary else colors.borderWeak, RectangleShape)
+            .background(if (enabled) colors.completedSurface else colors.disabledSurface),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(modifier = Modifier.size(8.dp)) {
             val strokeWidth = 1.5.dp.toPx()
             drawLine(
-                color = if (enabled) ClaudeSlateDark else ClaudeGray600,
+                color = if (enabled) colors.textPrimary else colors.disabledText,
                 start = Offset(1.dp.toPx(), 4.dp.toPx()),
                 end = Offset(3.dp.toPx(), 6.dp.toPx()),
                 strokeWidth = strokeWidth,
             )
             drawLine(
-                color = if (enabled) ClaudeSlateDark else ClaudeGray600,
+                color = if (enabled) colors.textPrimary else colors.disabledText,
                 start = Offset(3.dp.toPx(), 6.dp.toPx()),
                 end = Offset(7.dp.toPx(), 1.dp.toPx()),
                 strokeWidth = strokeWidth,
@@ -432,17 +426,21 @@ private fun PixelTrashIcon(color: Color, modifier: Modifier = Modifier) {
 @Composable
 internal fun PixelPanel(
     modifier: Modifier = Modifier,
-    color: Color = ClaudeGray100,
-    borderColor: Color = ClaudeGray600,
+    color: Color = Color.Unspecified,
+    borderColor: Color = Color.Unspecified,
     borderWidth: Dp = 2.dp,
     contentPadding: PaddingValues = PaddingValues(12.dp),
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val colors = PixelDoneColors.current
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = color,
+        color = if (color == Color.Unspecified) colors.surface else color,
         shape = RectangleShape,
-        border = BorderStroke(borderWidth, borderColor),
+        border = BorderStroke(
+            borderWidth,
+            if (borderColor == Color.Unspecified) colors.border else borderColor,
+        ),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
@@ -461,6 +459,7 @@ internal fun <T> PixelSegmentedControl(
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = PixelDoneColors.current
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -475,11 +474,11 @@ internal fun <T> PixelSegmentedControl(
                 shape = RectangleShape,
                 border = BorderStroke(
                     width = if (isSelected) 2.dp else 1.dp,
-                    color = if (isSelected) ClaudeClayInteractive else ClaudeGray300,
+                    color = if (isSelected) colors.primaryInteractive else colors.borderWeak,
                 ),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isSelected) ClaudeOat else ClaudeIvoryMedium,
-                    contentColor = ClaudeSlateDark,
+                    containerColor = if (isSelected) colors.selectedSurface else colors.surfaceRaised,
+                    contentColor = colors.textPrimary,
                 ),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
             ) {
@@ -507,6 +506,7 @@ internal fun PrioritySlider(
     onSelected: (TodoPriority) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = PixelDoneColors.current
     val selectedIndex = PrioritySliderValues.indexOf(selected)
         .takeIf { it >= 0 }
         ?: PrioritySliderValues.indexOf(TodoPriority.MEDIUM)
@@ -528,8 +528,8 @@ internal fun PrioritySlider(
             colors = SliderDefaults.colors(
                 thumbColor = selectedColor,
                 activeTrackColor = selectedColor,
-                inactiveTrackColor = ClaudeGray300,
-                activeTickColor = ClaudeIvory,
+                inactiveTrackColor = colors.borderWeak,
+                activeTickColor = colors.background,
                 inactiveTickColor = selectedColor,
             ),
         )
@@ -541,7 +541,7 @@ internal fun PrioritySlider(
                 Text(
                     text = priority.uiLabel(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (priority == selected) ClaudeSlateDark else ClaudeSlateLight,
+                    color = if (priority == selected) colors.textPrimary else colors.textSecondary,
                     fontWeight = if (priority == selected) FontWeight.Bold else FontWeight.Normal,
                     textAlign = TextAlign.Center,
                     maxLines = 1,
@@ -562,19 +562,20 @@ internal fun PixelButton(
     selected: Boolean = false,
     clayOutline: Boolean = false,
 ) {
+    val colors = PixelDoneColors.current
     val containerColor = when {
-        destructive -> ClaudeCoral
-        clayOutline -> ClaudeClay.copy(alpha = 0.16f)
-        primary -> ClaudeClay
-        selected -> ClaudeOat
-        else -> ClaudeIvoryMedium
+        destructive -> colors.destructiveSurface
+        clayOutline -> colors.primary.copy(alpha = 0.16f)
+        primary -> colors.primary
+        selected -> colors.selectedSurface
+        else -> colors.surfaceRaised
     }
     val borderColor = when {
-        destructive -> PixelError
-        clayOutline -> ClaudeClay
-        primary -> ClaudeClayInteractive
-        selected -> ClaudeClayInteractive
-        else -> ClaudeGray300
+        destructive -> colors.error
+        clayOutline -> colors.primary
+        primary -> colors.primaryInteractive
+        selected -> colors.primaryInteractive
+        else -> colors.borderWeak
     }
 
     Button(
@@ -582,12 +583,12 @@ internal fun PixelButton(
         enabled = enabled,
         modifier = modifier.heightIn(min = 44.dp),
         shape = RectangleShape,
-        border = BorderStroke(if (selected) 2.dp else 1.dp, if (enabled) borderColor else ClaudeGray300),
+        border = BorderStroke(if (selected) 2.dp else 1.dp, if (enabled) borderColor else colors.borderWeak),
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
-            contentColor = ClaudeSlateDark,
-            disabledContainerColor = ClaudeGray200,
-            disabledContentColor = ClaudeGray600,
+            contentColor = if (primary) colors.onPrimary else colors.textPrimary,
+            disabledContainerColor = colors.disabledSurface,
+            disabledContentColor = colors.disabledText,
         ),
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
     ) {

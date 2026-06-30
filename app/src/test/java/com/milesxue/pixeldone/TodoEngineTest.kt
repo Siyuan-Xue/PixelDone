@@ -931,12 +931,17 @@ class TodoEngineTest {
         val state = createInitialChecklistState(legacyTodos, createdAtMillis = 42L)
 
         assertEquals(DefaultChecklistId, state.selectedListId)
-        assertEquals(listOf(DefaultChecklistId, TrashChecklistId), state.lists.map { it.id })
+        assertEquals(
+            listOf(DefaultChecklistId, TrashChecklistId, SettingsChecklistId),
+            state.lists.map { it.id },
+        )
         assertEquals(DefaultChecklistName, state.lists.first { it.id == DefaultChecklistId }.name)
         assertEquals(42L, state.lists.first { it.id == DefaultChecklistId }.createdAtMillis)
         assertEquals(legacyTodos, state.lists.first { it.id == DefaultChecklistId }.items)
         assertEquals(TrashChecklistName, state.lists.first { it.id == TrashChecklistId }.name)
         assertEquals(emptyList<TodoItem>(), state.lists.first { it.id == TrashChecklistId }.items)
+        assertEquals(SettingsChecklistName, state.lists.first { it.id == SettingsChecklistId }.name)
+        assertEquals(emptyList<TodoItem>(), state.lists.first { it.id == SettingsChecklistId }.items)
     }
 
     @Test
@@ -951,12 +956,17 @@ class TodoEngineTest {
         )!!
 
         assertEquals("work", withWork.selectedListId)
-        assertEquals(listOf(DefaultChecklistId, "work", TrashChecklistId), withWork.lists.map { it.id })
+        assertEquals(
+            listOf(DefaultChecklistId, "work", TrashChecklistId, SettingsChecklistId),
+            withWork.lists.map { it.id },
+        )
         assertEquals("Work", withWork.lists.first { it.id == "work" }.name)
         assertNull(createTodoChecklist(withWork, "blank", " ", createdAtMillis = 3L))
         assertNull(createTodoChecklist(withWork, "duplicate", "work", createdAtMillis = 3L))
         assertNull(createTodoChecklist(withWork, "trash-name", "TRASH", createdAtMillis = 3L))
+        assertNull(createTodoChecklist(withWork, "settings-name", "SETTINGS", createdAtMillis = 3L))
         assertNull(createTodoChecklist(withWork, TrashChecklistId, "Other", createdAtMillis = 3L))
+        assertNull(createTodoChecklist(withWork, SettingsChecklistId, "Other", createdAtMillis = 3L))
     }
 
     @Test
@@ -973,7 +983,9 @@ class TodoEngineTest {
         assertEquals("Home", renamed.lists.first { it.id == DefaultChecklistId }.name)
         assertNull(renameTodoChecklist(renamed, DefaultChecklistId, "WORK"))
         assertNull(renameTodoChecklist(renamed, DefaultChecklistId, "TRASH"))
+        assertNull(renameTodoChecklist(renamed, DefaultChecklistId, "SETTINGS"))
         assertNull(renameTodoChecklist(renamed, TrashChecklistId, "Archive"))
+        assertNull(renameTodoChecklist(renamed, SettingsChecklistId, "Archive"))
         assertNull(renameTodoChecklist(renamed, "missing", "Other"))
     }
 
@@ -992,7 +1004,10 @@ class TodoEngineTest {
 
         val deletedSelected = deleteTodoChecklist(state, "work", trashedAtMillis = 99L)!!
 
-        assertEquals(listOf(DefaultChecklistId, TrashChecklistId), deletedSelected.lists.map { it.id })
+        assertEquals(
+            listOf(DefaultChecklistId, TrashChecklistId, SettingsChecklistId),
+            deletedSelected.lists.map { it.id },
+        )
         assertEquals(DefaultChecklistId, deletedSelected.selectedListId)
         assertEquals(emptyList<TodoItem>(), deletedSelected.lists.first { it.id == DefaultChecklistId }.items)
         val trashItems = trashTodos(deletedSelected)
@@ -1003,6 +1018,7 @@ class TodoEngineTest {
         assertEquals(99L, trashItems.first().trashedAtMillis)
         assertNull(deleteTodoChecklist(deletedSelected, DefaultChecklistId, trashedAtMillis = 100L))
         assertNull(deleteTodoChecklist(state, TrashChecklistId, trashedAtMillis = 100L))
+        assertNull(deleteTodoChecklist(state, SettingsChecklistId, trashedAtMillis = 100L))
     }
 
     @Test
@@ -1021,6 +1037,8 @@ class TodoEngineTest {
         assertEquals(listOf(mainTodo), updated.lists.first { it.id == DefaultChecklistId }.items)
         assertEquals(listOf(workTodo), updated.lists.first { it.id == "work" }.items)
         assertEquals(listOf(mainTodo, workTodo), allTodos(updated))
+        assertEquals(listOf(mainTodo, workTodo), normalTodos(updated))
+        assertNull(updateChecklistItems(updated, SettingsChecklistId, listOf(workTodo)))
     }
 
     @Test
@@ -1047,9 +1065,14 @@ class TodoEngineTest {
 
         val normalized = normalizeChecklistState(state, fallbackCreatedAtMillis = 10L)
 
-        assertEquals(listOf(DefaultChecklistId, TrashChecklistId), normalized.lists.map { it.id })
+        assertEquals(
+            listOf(DefaultChecklistId, TrashChecklistId, SettingsChecklistId),
+            normalized.lists.map { it.id },
+        )
         assertEquals(DefaultChecklistId, normalized.selectedListId)
         assertEquals(TrashChecklistName, normalized.lists.first { it.id == TrashChecklistId }.name)
+        assertEquals(SettingsChecklistName, normalized.lists.first { it.id == SettingsChecklistId }.name)
+        assertEquals(emptyList<TodoItem>(), normalized.lists.first { it.id == SettingsChecklistId }.items)
         assertEquals(listOf(trashed), trashTodos(normalized))
         assertEquals(1, normalChecklistCount(normalized))
     }
@@ -1160,13 +1183,22 @@ class TodoEngineTest {
                     items = listOf(trashedItem),
                     createdAtMillis = 1L,
                 ),
+                TodoChecklist(
+                    id = SettingsChecklistId,
+                    name = SettingsChecklistName,
+                    items = emptyList(),
+                    createdAtMillis = 1L,
+                ),
             ),
             selectedListId = TrashChecklistId,
         )
 
         val restored = restoreTodoFromTrash(state, "old", restoredAtMillis = 9L)!!
 
-        assertEquals(listOf("other", "deleted", TrashChecklistId), restored.lists.map { it.id })
+        assertEquals(
+            listOf("other", "deleted", TrashChecklistId, SettingsChecklistId),
+            restored.lists.map { it.id },
+        )
         val recreatedList = restored.lists.first { it.id == "deleted" }
         assertEquals("Deleted", recreatedList.name)
         assertEquals(9L, recreatedList.createdAtMillis)
@@ -1199,13 +1231,19 @@ class TodoEngineTest {
                     items = listOf(trashedItem),
                     createdAtMillis = 1L,
                 ),
+                TodoChecklist(
+                    id = SettingsChecklistId,
+                    name = SettingsChecklistName,
+                    items = emptyList(),
+                    createdAtMillis = 1L,
+                ),
             ),
             selectedListId = TrashChecklistId,
         )
 
         val restored = restoreTodoFromTrash(state, "old", restoredAtMillis = 9L)!!
 
-        assertEquals(listOf("other", TrashChecklistId), restored.lists.map { it.id })
+        assertEquals(listOf("other", TrashChecklistId, SettingsChecklistId), restored.lists.map { it.id })
         val restoredItem = restored.lists.first { it.id == "other" }.items.single()
         assertEquals("old", restoredItem.id)
         assertTrue(restoredItem.completed)
@@ -1227,6 +1265,7 @@ class TodoEngineTest {
             lists = listOf(
                 TodoChecklist(DefaultChecklistId, DefaultChecklistName, listOf(main), 1L),
                 TodoChecklist(TrashChecklistId, TrashChecklistName, listOf(trashed), 1L),
+                TodoChecklist(SettingsChecklistId, SettingsChecklistName, emptyList(), 1L),
             ),
             selectedListId = TrashChecklistId,
         )
@@ -1235,6 +1274,7 @@ class TodoEngineTest {
 
         assertEquals(listOf(main), updated.lists.first { it.id == DefaultChecklistId }.items)
         assertEquals(emptyList<TodoItem>(), trashTodos(updated))
+        assertEquals(emptyList<TodoItem>(), updated.lists.first { it.id == SettingsChecklistId }.items)
     }
 
     @Test
@@ -1270,6 +1310,12 @@ class TodoEngineTest {
                     ),
                     createdAtMillis = 3L,
                 ),
+                TodoChecklist(
+                    id = SettingsChecklistId,
+                    name = SettingsChecklistName,
+                    items = emptyList(),
+                    createdAtMillis = 4L,
+                ),
             ),
             selectedListId = "work",
         )
@@ -1280,6 +1326,39 @@ class TodoEngineTest {
         )
 
         assertEquals(state, decoded)
+    }
+
+    @Test
+    fun checklistJsonCodecInjectsSettingsListForOldSavedState() {
+        val oldState = TodoChecklistState(
+            lists = listOf(
+                TodoChecklist(
+                    id = DefaultChecklistId,
+                    name = DefaultChecklistName,
+                    items = emptyList(),
+                    createdAtMillis = 1L,
+                ),
+                TodoChecklist(
+                    id = TrashChecklistId,
+                    name = TrashChecklistName,
+                    items = emptyList(),
+                    createdAtMillis = 2L,
+                ),
+            ),
+            selectedListId = DefaultChecklistId,
+        )
+
+        val decoded = TodoJsonCodec.decodeState(
+            json = TodoJsonCodec.encodeState(oldState),
+            fallbackCreatedAtMillis = 99L,
+        )!!
+
+        assertEquals(
+            listOf(DefaultChecklistId, TrashChecklistId, SettingsChecklistId),
+            decoded.lists.map { it.id },
+        )
+        assertEquals(SettingsChecklistName, decoded.lists.first { it.id == SettingsChecklistId }.name)
+        assertEquals(emptyList<TodoItem>(), decoded.lists.first { it.id == SettingsChecklistId }.items)
     }
 
     @Test
