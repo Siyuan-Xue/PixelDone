@@ -35,7 +35,8 @@ Developer identity: CODEX & XUE.
 - Use restrained haptic feedback for core task and list-state actions.
 - Check GitHub Releases automatically on app start and show a quiet footer update state when a release is available.
 - Download only the exact latest formal release APK through Android DownloadManager.
-- Avoid repeating the same in-app update download for an already handled release version.
+- Open the system install confirmation after an in-app update APK finishes downloading.
+- Check quietly for the latest release on every app start without suppressing an available update.
 - Persist checklists and todos locally on the device with SharedPreferences JSON.
 - Keep dark system bar icons explicit against the light PixelDone surface.
 
@@ -63,13 +64,13 @@ Release signing is configured through the local, untracked `signing/release-sign
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.4.4-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.4.5-debug.apk
 ```
 
 The current signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.4.4-release.apk
+app/build/outputs/apk/release/PixelDone-2.4.5-release.apk
 ```
 
 ## Install
@@ -77,7 +78,7 @@ app/build/outputs/apk/release/PixelDone-2.4.4-release.apk
 Install the signed release build with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.4.4-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.4.5-release.apk
 ```
 
 The formal package name is:
@@ -88,4 +89,4 @@ com.milesxue.pixeldone
 
 ## Status
 
-2.4.4 private signed release.
+2.4.5 private signed release candidate.

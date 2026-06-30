@@ -113,6 +113,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.verticalScroll
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.milesxue.pixeldone.ui.theme.ClaudeCactus
 import com.milesxue.pixeldone.ui.theme.ClaudeClay
 import com.milesxue.pixeldone.ui.theme.ClaudeClayInteractive
@@ -165,6 +167,7 @@ private enum class UpdateUiStatus {
     Available,
     Offline,
     Downloading,
+    Installing,
 }
 
 private data class AppUpdateUiState(
@@ -180,13 +183,14 @@ private data class AppUpdateUiState(
             UpdateUiStatus.Available -> "GET UPDATE"
             UpdateUiStatus.Offline -> "UPDATE CHECK UNAVAILABLE"
             UpdateUiStatus.Downloading -> "DOWNLOADING UPDATE"
+            UpdateUiStatus.Installing -> "INSTALLING UPDATE"
         }
 
     val shouldAutoRestore: Boolean
         get() = status == UpdateUiStatus.Latest ||
             status == UpdateUiStatus.Available ||
             status == UpdateUiStatus.Offline ||
-            status == UpdateUiStatus.Downloading
+            status == UpdateUiStatus.Installing
 }
 
 private sealed interface DeleteConfirmation {
@@ -288,8 +292,8 @@ private fun PixelDoneApp() {
     var imagePreviewTodoId by remember { mutableStateOf<String?>(null) }
     var pendingImageTodoId by remember { mutableStateOf<String?>(null) }
     var updateUiState by remember { mutableStateOf(AppUpdateUiState()) }
-    var handledUpdateVersion by remember { mutableStateOf(storage.loadHandledUpdateVersion()) }
     var updateCheckInFlight by remember { mutableStateOf(false) }
+    var activeUpdateDownload by remember { mutableStateOf<AppUpdateDownload?>(null) }
     var scrollRequestSequence by remember { mutableStateOf(0) }
     var highlightRequestSequence by remember { mutableStateOf(0) }
     var todoListScrollRequest by remember {
@@ -765,30 +769,37 @@ private fun PixelDoneApp() {
     fun availableUpdateMessage(info: AppUpdateInfo): String =
         "get: ${versionLabel(BuildConfig.VERSION_NAME)} -> ${versionLabel(info.version)}"
 
-    fun markUpdateHandled(version: String) {
-        handledUpdateVersion = version
-        storage.saveHandledUpdateVersion(version)
-    }
-
     fun startUpdateDownload(info: AppUpdateInfo) {
-        when (val result = updateDownloader.enqueueOrReuse(info, storage.loadPendingUpdateDownload())) {
+        if (activeUpdateDownload?.version == info.version) return
+        when (val result = updateDownloader.enqueue(info)) {
             is AppUpdateDownloadResult.Started -> {
-                storage.savePendingUpdateDownload(result.download)
-                markUpdateHandled(info.version)
+                activeUpdateDownload = result.download
                 updateUiState = AppUpdateUiState(
                     status = UpdateUiStatus.Downloading,
                     info = info,
                     message = "download: ${versionLabel(info.version)}",
                 )
-            }
-            is AppUpdateDownloadResult.Reused -> {
-                storage.savePendingUpdateDownload(result.download)
-                markUpdateHandled(info.version)
-                updateUiState = AppUpdateUiState(
-                    status = UpdateUiStatus.Downloading,
-                    info = info,
-                    message = "download: ${versionLabel(info.version)}",
-                )
+                updateScope.launch {
+                    val completion = updateDownloader.awaitCompletion(result.download)
+                    if (activeUpdateDownload?.downloadId != result.download.downloadId) {
+                        return@launch
+                    }
+                    activeUpdateDownload = null
+                    if (
+                        completion == AppUpdateDownloadCompletion.Success &&
+                        updateDownloader.openInstallPrompt(result.download)
+                    ) {
+                        updateUiState = AppUpdateUiState(
+                            status = UpdateUiStatus.Installing,
+                            message = "install: ${versionLabel(info.version)}",
+                        )
+                    } else {
+                        updateUiState = AppUpdateUiState(
+                            status = UpdateUiStatus.Offline,
+                            message = "update failed",
+                        )
+                    }
+                }
             }
             AppUpdateDownloadResult.Failed -> {
                 updateUiState = AppUpdateUiState(
@@ -805,9 +816,6 @@ private fun PixelDoneApp() {
     ) {
         when (result) {
             is AppUpdateCheckResult.Available -> {
-                if (!showCurrentOrOfflineStatus && result.info.version == handledUpdateVersion) {
-                    return
-                }
                 updateUiState = AppUpdateUiState(
                     status = UpdateUiStatus.Available,
                     info = result.info,
@@ -833,17 +841,36 @@ private fun PixelDoneApp() {
         }
     }
 
-    LaunchedEffect(Unit) {
-        delay(InitialUpdateCheckDelayMillis)
-        if (updateCheckInFlight) return@LaunchedEffect
+    fun checkForUpdateSilently() {
+        if (updateCheckInFlight || activeUpdateDownload != null) return
         updateCheckInFlight = true
-        try {
-            applyUpdateCheckResult(
-                result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME),
-                showCurrentOrOfflineStatus = false,
-            )
-        } finally {
-            updateCheckInFlight = false
+        updateScope.launch {
+            delay(InitialUpdateCheckDelayMillis)
+            try {
+                applyUpdateCheckResult(
+                    result = checkPixelDoneUpdate(BuildConfig.VERSION_NAME),
+                    showCurrentOrOfflineStatus = false,
+                )
+            } finally {
+                updateCheckInFlight = false
+            }
+        }
+    }
+
+    DisposableEffect(context) {
+        val activity = context as? ComponentActivity
+        if (activity == null) {
+            onDispose { }
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_START) {
+                    checkForUpdateSilently()
+                }
+            }
+            activity.lifecycle.addObserver(observer)
+            onDispose {
+                activity.lifecycle.removeObserver(observer)
+            }
         }
     }
 
@@ -853,7 +880,7 @@ private fun PixelDoneApp() {
             startUpdateDownload(availableInfo)
             return
         }
-        if (updateCheckInFlight) return
+        if (updateCheckInFlight || activeUpdateDownload != null) return
 
         updateCheckInFlight = true
         updateUiState = AppUpdateUiState(
@@ -2128,6 +2155,7 @@ private fun Footer(
             UpdateUiStatus.Offline -> PixelError
             UpdateUiStatus.Available,
             UpdateUiStatus.Downloading,
+            UpdateUiStatus.Installing,
             -> ClaudeClay
             else -> ClaudeSlateDark
         }
@@ -2221,7 +2249,9 @@ private fun UpdateMark(
             modifier = Modifier
                 .size(24.dp)
                 .clickable(
-                    enabled = state.status != UpdateUiStatus.Checking,
+                    enabled = state.status != UpdateUiStatus.Checking &&
+                        state.status != UpdateUiStatus.Downloading &&
+                        state.status != UpdateUiStatus.Installing,
                     interactionSource = interactionSource,
                     indication = null,
                     onClick = onClick,

@@ -1,14 +1,12 @@
-PixelDone v2.4.4 refines todo list scroll feedback and highlight behavior.
+PixelDone v2.4.5 fixes in-app update download and install handling.
 
 Highlights:
-- Reveals and briefly highlights newly added, edited, reactivated, and image-updated todos.
-- Keeps completed todos from scrolling or highlighting while preserving the existing delayed sort behavior.
-- Handles multiple todo toggles in one debounce window, with the final state of each todo winning.
-- Prevents stale scroll requests from replaying after completed-task sorting.
-- Preserves the current viewport when the first visible todo is completed and then re-sorted.
-- Clears multi-row highlights reliably after the two-second feedback window.
-- Removes the redundant close button from image preview while keeping outside-tap dismissal.
+- Checks quietly for the latest GitHub Release on every app start without suppressing a previously handled version.
+- Starts a fresh in-app DownloadManager task each time the user taps GET for the latest release APK.
+- Opens the Android system install confirmation after the APK download completes.
+- Removes stale persisted update download reuse so old DownloadManager IDs cannot fake a new download state.
+- Keeps the footer update states restrained: get, download, install, latest, and update failed.
 
-Install note: use `PixelDone-2.4.4-release.apk` for private signed release installation. The attached APK is a signed release build for direct installation.
+Install note: use `PixelDone-2.4.5-release.apk` for private signed release installation. The attached APK is a signed release build for direct installation.
 
 CODEX & XUE
