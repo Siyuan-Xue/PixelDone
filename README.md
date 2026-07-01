@@ -47,10 +47,11 @@ Developer identity: CODEX & XUE.
 - Open the system install confirmation after an in-app update APK finishes downloading.
 - Open Android's install-unknown-apps settings first when update installation permission is missing.
 - Check quietly for the latest release on every app start without suppressing an available update.
-- Use the `SETTINGS` list to switch LIGHT/DARK display mode, control update prompts, reconfigure permissions, check for updates, and view the current version.
-- Use bottom `VIEW` and `BATCH` controls on normal checklists so sort, DDL, hide-done, completed-task cleanup, and batch movement stay near the `+` action.
-- Move selected tasks across normal checklists with explicit batch selection.
-- Keep `TRASH` and `SETTINGS` free of the new bottom side buttons.
+- Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
+- Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
+- Use four atomic dock functions for `PRI/TIME`, `DDL`, `HIDE/UNHIDE`, and `DELETE DONE`.
+- Keep the default dock centered as `PRI/TIME`, `+`, and `DDL`.
+- Keep `TRASH` and `SETTINGS` free of the normal-checklist dock.
 - Show settings permission state with clickable status glyphs instead of larger config buttons.
 - Keep clay primary controls readable in dark mode.
 - Consume todo row highlight events once so returning from `SETTINGS` does not replay an old highlight.
@@ -97,13 +98,13 @@ Release signing is configured through the local, untracked `signing/release-sign
 The signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.7.0-release.apk
+app/build/outputs/apk/release/PixelDone-2.7.0-rc.2-release.apk
 ```
 
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.7.0-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.7.0-rc.2-debug.apk
 ```
 
 ## Install
@@ -111,7 +112,7 @@ app/build/outputs/apk/debug/PixelDone-2.7.0-debug.apk
 Install this debug build with:
 
 ```powershell
-adb install -r app/build/outputs/apk/debug/PixelDone-2.7.0-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.7.0-rc.2-debug.apk
 ```
 
 The formal package name is:
@@ -128,4 +129,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.7.0 debug prerelease for bottom actions, batch movement, settings permission simplification, dark-mode button contrast, and highlight replay cleanup.
+2.7.0-rc.2 debug prerelease for the customizable dock, atomic dock actions, and tighter Settings layout.

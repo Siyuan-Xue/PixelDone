@@ -249,12 +249,6 @@ private sealed interface DeleteConfirmation {
     data class TrashTodos(val count: Int) : DeleteConfirmation
 }
 
-private enum class BottomActionPanel {
-    NONE,
-    VIEW,
-    BATCH,
-}
-
 private enum class BatchMoveMode {
     IDLE,
     SELECTING,
@@ -347,6 +341,7 @@ internal fun PixelDoneApp() {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val checklistState = uiState.checklistState
     var darkTheme by remember { mutableStateOf(todoPreferences.loadDarkTheme()) }
+    var dockConfig by remember { mutableStateOf(todoPreferences.loadDockConfig()) }
     var titleInput by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TodoPriority.MEDIUM) }
     var selectedReminderRepeat by remember { mutableStateOf(ReminderRepeat.NONE) }
@@ -397,7 +392,6 @@ internal fun PixelDoneApp() {
             ),
         )
     }
-    var bottomActionPanel by remember { mutableStateOf(BottomActionPanel.NONE) }
     var batchMoveMode by remember { mutableStateOf(BatchMoveMode.IDLE) }
     var batchMoveSelectedTodoIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val selectedChecklist = selectedChecklistOf(checklistState)
@@ -511,7 +505,6 @@ internal fun PixelDoneApp() {
     }
 
     fun closeTransientControls() {
-        bottomActionPanel = BottomActionPanel.NONE
         clearBatchMoveState()
     }
 
@@ -520,25 +513,6 @@ internal fun PixelDoneApp() {
             request = todoListHighlightRequest,
             consumedSequence = sequence,
         )
-    }
-
-    fun toggleBottomActionPanel(panel: BottomActionPanel) {
-        if (!isNormalChecklistSelected) return
-        if (panel == BottomActionPanel.VIEW && batchMoveMode != BatchMoveMode.IDLE) {
-            clearBatchMoveState()
-        }
-        bottomActionPanel = if (bottomActionPanel == panel) {
-            BottomActionPanel.NONE
-        } else {
-            panel
-        }
-    }
-
-    fun startBatchMoveSelection() {
-        if (!isNormalChecklistSelected) return
-        bottomActionPanel = BottomActionPanel.NONE
-        batchMoveSelectedTodoIds = emptySet()
-        batchMoveMode = BatchMoveMode.SELECTING
     }
 
     fun toggleBatchMoveSelection(todoId: String) {
@@ -573,7 +547,6 @@ internal fun PixelDoneApp() {
         ) ?: return
         updateChecklistState(updatedState)
         clearBatchMoveState()
-        bottomActionPanel = BottomActionPanel.NONE
         keepDisplayOrderDuringSortDelay = false
         pendingTodoToggleFeedback = PendingTodoToggleFeedback()
         displayOrderIds = emptyList()
@@ -581,11 +554,11 @@ internal fun PixelDoneApp() {
         requestTodoListHighlight(selectedIdSet)
     }
 
-    BackHandler(enabled = bottomActionPanel != BottomActionPanel.NONE || batchMoveMode != BatchMoveMode.IDLE) {
+    BackHandler(enabled = batchMoveMode != BatchMoveMode.IDLE) {
         when (batchMoveMode) {
             BatchMoveMode.TARGET_PICKER -> closeBatchMoveTargetPicker()
             BatchMoveMode.SELECTING -> clearBatchMoveState()
-            BatchMoveMode.IDLE -> bottomActionPanel = BottomActionPanel.NONE
+            BatchMoveMode.IDLE -> Unit
         }
     }
 
@@ -1061,6 +1034,12 @@ internal fun PixelDoneApp() {
         todoPreferences.saveDarkTheme(enabled)
     }
 
+    fun setDockConfigPreference(config: DockConfig) {
+        val normalizedConfig = config.normalized()
+        dockConfig = normalizedConfig
+        todoPreferences.saveDockConfig(normalizedConfig)
+    }
+
     fun dismissUpdatePromptDialog() {
         showUpdatePromptDialog = false
         updatePromptInfo = null
@@ -1396,7 +1375,6 @@ internal fun PixelDoneApp() {
                 if (isNormalChecklistSelected) {
                     val completedCount = todos.count { it.completed }
                     if (completedCount > 0) {
-                        bottomActionPanel = BottomActionPanel.NONE
                         deleteConfirmation = DeleteConfirmation.CompletedTodos(completedCount)
                     }
                 }
@@ -1411,13 +1389,10 @@ internal fun PixelDoneApp() {
             targetMoveChecklists = checklistState.lists.filter {
                 isNormalChecklist(it) && it.id != selectedChecklist.id
             },
-            viewPanelVisible = bottomActionPanel == BottomActionPanel.VIEW,
-            batchPanelVisible = bottomActionPanel == BottomActionPanel.BATCH,
+            dockConfig = dockConfig,
+            onDockConfigChange = ::setDockConfigPreference,
             batchMoveMode = batchMoveMode,
             batchMoveSelectedTodoIds = batchMoveSelectedTodoIds,
-            onToggleViewPanel = { toggleBottomActionPanel(BottomActionPanel.VIEW) },
-            onToggleBatchPanel = { toggleBottomActionPanel(BottomActionPanel.BATCH) },
-            onStartBatchMoveSelection = ::startBatchMoveSelection,
             onToggleBatchMoveSelection = ::toggleBatchMoveSelection,
             onOpenBatchMoveTargetPicker = ::openBatchMoveTargetPicker,
             onCloseBatchMoveTargetPicker = ::closeBatchMoveTargetPicker,
@@ -1532,13 +1507,10 @@ private fun PixelDoneScreen(
     onRestoreTodo: (String) -> Unit,
     onDeleteAllTrash: () -> Unit,
     targetMoveChecklists: List<TodoChecklist>,
-    viewPanelVisible: Boolean,
-    batchPanelVisible: Boolean,
+    dockConfig: DockConfig,
+    onDockConfigChange: (DockConfig) -> Unit,
     batchMoveMode: BatchMoveMode,
     batchMoveSelectedTodoIds: Set<String>,
-    onToggleViewPanel: () -> Unit,
-    onToggleBatchPanel: () -> Unit,
-    onStartBatchMoveSelection: () -> Unit,
     onToggleBatchMoveSelection: (String) -> Unit,
     onOpenBatchMoveTargetPicker: () -> Unit,
     onCloseBatchMoveTargetPicker: () -> Unit,
@@ -1610,13 +1582,10 @@ private fun PixelDoneScreen(
                 onRestoreTodo = onRestoreTodo,
                 onDeleteAllTrash = onDeleteAllTrash,
                 targetMoveChecklists = targetMoveChecklists,
-                viewPanelVisible = viewPanelVisible,
-                batchPanelVisible = batchPanelVisible,
+                dockConfig = dockConfig,
+                onDockConfigChange = onDockConfigChange,
                 batchMoveMode = batchMoveMode,
                 batchMoveSelectedTodoIds = batchMoveSelectedTodoIds,
-                onToggleViewPanel = onToggleViewPanel,
-                onToggleBatchPanel = onToggleBatchPanel,
-                onStartBatchMoveSelection = onStartBatchMoveSelection,
                 onToggleBatchMoveSelection = onToggleBatchMoveSelection,
                 onOpenBatchMoveTargetPicker = onOpenBatchMoveTargetPicker,
                 onCloseBatchMoveTargetPicker = onCloseBatchMoveTargetPicker,
@@ -1836,13 +1805,10 @@ private fun TaskWorkspacePanel(
     onRestoreTodo: (String) -> Unit,
     onDeleteAllTrash: () -> Unit,
     targetMoveChecklists: List<TodoChecklist>,
-    viewPanelVisible: Boolean,
-    batchPanelVisible: Boolean,
+    dockConfig: DockConfig,
+    onDockConfigChange: (DockConfig) -> Unit,
     batchMoveMode: BatchMoveMode,
     batchMoveSelectedTodoIds: Set<String>,
-    onToggleViewPanel: () -> Unit,
-    onToggleBatchPanel: () -> Unit,
-    onStartBatchMoveSelection: () -> Unit,
     onToggleBatchMoveSelection: (String) -> Unit,
     onOpenBatchMoveTargetPicker: () -> Unit,
     onCloseBatchMoveTargetPicker: () -> Unit,
@@ -1907,6 +1873,8 @@ private fun TaskWorkspacePanel(
                 currentVersion = currentVersion,
                 updateUiState = updateUiState,
                 onUpdateClick = onUpdateClick,
+                dockConfig = dockConfig,
+                onDockConfigChange = onDockConfigChange,
                 permissionState = permissionSettingsState,
                 onRequestNotificationPermission = onRequestNotificationPermission,
                 onRequestExactAlarmPermission = onRequestExactAlarmPermission,
@@ -1932,13 +1900,9 @@ private fun TaskWorkspacePanel(
                 onRestoreTodo = onRestoreTodo,
                 onDeleteAllTrash = onDeleteAllTrash,
                 targetMoveChecklists = targetMoveChecklists,
-                viewPanelVisible = viewPanelVisible,
-                batchPanelVisible = batchPanelVisible,
+                dockConfig = dockConfig,
                 batchMoveMode = batchMoveMode,
                 batchMoveSelectedTodoIds = batchMoveSelectedTodoIds,
-                onToggleViewPanel = onToggleViewPanel,
-                onToggleBatchPanel = onToggleBatchPanel,
-                onStartBatchMoveSelection = onStartBatchMoveSelection,
                 onToggleBatchMoveSelection = onToggleBatchMoveSelection,
                 onOpenBatchMoveTargetPicker = onOpenBatchMoveTargetPicker,
                 onCloseBatchMoveTargetPicker = onCloseBatchMoveTargetPicker,
@@ -2000,6 +1964,8 @@ private fun SettingsPanel(
     currentVersion: String,
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
+    dockConfig: DockConfig,
+    onDockConfigChange: (DockConfig) -> Unit,
     permissionState: PermissionSettingsState,
     onRequestNotificationPermission: () -> Unit,
     onRequestExactAlarmPermission: () -> Unit,
@@ -2025,71 +1991,338 @@ private fun SettingsPanel(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            SettingsSectionTitle("DISPLAY")
-            SettingsSegmentedRow(
-                title = "THEME",
-                value = darkTheme,
-                options = listOf(false, true),
-                label = { if (it) "DARK" else "LIGHT" },
-                onSelected = onDarkThemeChange,
-            )
+            SettingsSection(title = "DISPLAY") {
+                SettingsSegmentedRow(
+                    title = "THEME",
+                    value = darkTheme,
+                    options = listOf(false, true),
+                    label = { if (it) "DARK" else "LIGHT" },
+                    onSelected = onDarkThemeChange,
+                )
+            }
 
-            SettingsSectionTitle("UPDATES")
-            SettingsSegmentedRow(
-                title = "UPDATE POPUP",
-                value = showUpdateDialogs,
-                options = listOf(true, false),
-                label = { if (it) "ON" else "OFF" },
-                onSelected = onShowUpdateDialogsChange,
-            )
-            SettingsActionRow(
-                title = "CHECK UPDATE",
-                value = updateUiState.message ?: "current: v$currentVersion",
-                actionText = updateActionText,
-                onAction = onUpdateClick,
-                enabled = updateActionEnabled,
-            )
+            SettingsSection(title = "DOCK") {
+                DockSettingsPreview(dockConfig = dockConfig)
+                SettingsSegmentedRow(
+                    title = "PLUS",
+                    value = dockConfig.plusPlacement,
+                    options = listOf(
+                        DockPlusPlacement.CENTER,
+                        DockPlusPlacement.LEFT_EDGE,
+                        DockPlusPlacement.RIGHT_EDGE,
+                    ),
+                    label = { it.settingsLabel() },
+                    onSelected = { placement ->
+                        onDockConfigChange(dockConfig.copy(plusPlacement = placement))
+                    },
+                )
+                DockActionSettingsList(
+                    dockConfig = dockConfig,
+                    onDockConfigChange = onDockConfigChange,
+                )
+            }
 
-            SettingsSectionTitle("PERMISSIONS")
-            SettingsPermissionRow(
-                title = "NOTIFICATIONS",
-                granted = permissionState.notificationsGranted,
-                onAction = onRequestNotificationPermission,
-            )
-            SettingsPermissionRow(
-                title = "EXACT ALARM",
-                granted = permissionState.exactAlarmGranted,
-                onAction = onRequestExactAlarmPermission,
-            )
-            SettingsPermissionRow(
-                title = "FULL SCREEN",
-                granted = permissionState.fullScreenIntentGranted,
-                onAction = onRequestFullScreenIntentPermission,
-            )
-            SettingsPermissionRow(
-                title = "INSTALL UPDATES",
-                granted = permissionState.installUpdatesGranted,
-                onAction = onRequestInstallUpdatesPermission,
-            )
+            SettingsSection(title = "UPDATES") {
+                SettingsSegmentedRow(
+                    title = "UPDATE POPUP",
+                    value = showUpdateDialogs,
+                    options = listOf(true, false),
+                    label = { if (it) "ON" else "OFF" },
+                    onSelected = onShowUpdateDialogsChange,
+                )
+                SettingsActionRow(
+                    title = "CHECK UPDATE",
+                    value = updateUiState.message ?: "current: v$currentVersion",
+                    actionText = updateActionText,
+                    onAction = onUpdateClick,
+                    enabled = updateActionEnabled,
+                )
+            }
 
-            SettingsSectionTitle("ABOUT")
-            SettingsAboutTextRow(
-                title = "APP",
-                value = "PixelDone",
-            )
-            SettingsAboutTextRow(
-                title = "MAKER",
-                value = "CODEX x XUE",
-                valueColor = colors.primary,
-            )
-            SettingsAboutTextRow(
-                title = "UPDATE PERMISSIONS",
-                value = "same package + signature",
+            SettingsSection(title = "PERMISSIONS") {
+                SettingsPermissionRow(
+                    title = "NOTIFICATIONS",
+                    granted = permissionState.notificationsGranted,
+                    onAction = onRequestNotificationPermission,
+                )
+                SettingsPermissionRow(
+                    title = "EXACT ALARM",
+                    granted = permissionState.exactAlarmGranted,
+                    onAction = onRequestExactAlarmPermission,
+                )
+                SettingsPermissionRow(
+                    title = "FULL SCREEN",
+                    granted = permissionState.fullScreenIntentGranted,
+                    onAction = onRequestFullScreenIntentPermission,
+                )
+                SettingsPermissionRow(
+                    title = "INSTALL UPDATES",
+                    granted = permissionState.installUpdatesGranted,
+                    onAction = onRequestInstallUpdatesPermission,
+                )
+            }
+
+            SettingsSection(title = "ABOUT") {
+                SettingsAboutTextRow(
+                    title = "APP",
+                    value = "PixelDone",
+                )
+                SettingsAboutTextRow(
+                    title = "MAKER",
+                    value = "CODEX x XUE",
+                    valueColor = colors.primary,
+                )
+                SettingsAboutTextRow(
+                    title = "UPDATE PERMISSIONS",
+                    value = "same package + signature",
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingsSectionTitle(title)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun DockSettingsPreview(
+    dockConfig: DockConfig,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surfaceSoft)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SettingsRowText(
+            title = "PREVIEW",
+            value = dockConfig.previewLabel(),
+        )
+        BottomActionDock(
+            config = dockConfig,
+            actionState = previewDockActionState(),
+            onActionClick = {},
+            onAddClick = {},
+            onAddLongClick = {},
+        )
+    }
+}
+
+@Composable
+private fun DockActionSettingsList(
+    dockConfig: DockConfig,
+    onDockConfigChange: (DockConfig) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val normalizedConfig = dockConfig.normalized()
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surfaceSoft)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        SettingsRowText(
+            title = "FUNCTIONS",
+            value = "${normalizedConfig.actions.size}/${AllDockActions.size} SELECTED",
+        )
+        AllDockActions.forEach { action ->
+            DockActionSettingsRow(
+                action = action,
+                selectedIndex = normalizedConfig.actions.indexOf(action),
+                selectedCount = normalizedConfig.actions.size,
+                onToggle = {
+                    onDockConfigChange(
+                        normalizedConfig.copy(
+                            actions = toggledDockActions(normalizedConfig.actions, action),
+                        ),
+                    )
+                },
+                onMove = { offset ->
+                    onDockConfigChange(
+                        normalizedConfig.copy(
+                            actions = movedDockActions(normalizedConfig.actions, action, offset),
+                        ),
+                    )
+                },
             )
         }
     }
+}
+
+@Composable
+private fun DockActionSettingsRow(
+    action: DockAction,
+    selectedIndex: Int,
+    selectedCount: Int,
+    onToggle: () -> Unit,
+    onMove: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val selected = selectedIndex >= 0
+    val borderColor = if (selected) colors.primaryInteractive else colors.borderWeak
+    val backgroundColor = if (selected) colors.selectedSurface else colors.surfaceRaised
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(if (selected) 2.dp else 1.dp, borderColor, RectangleShape)
+            .background(backgroundColor)
+            .clickable(onClick = onToggle)
+            .padding(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (selected) String.format(Locale.US, "%02d", selectedIndex + 1) else "--",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) colors.primaryInteractive else colors.textSecondary,
+            modifier = Modifier.width(28.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .border(1.dp, colors.borderWeak, RectangleShape)
+                .background(colors.surfaceSoft),
+            contentAlignment = Alignment.Center,
+        ) {
+            DockActionIcon(
+                action = action,
+                color = if (selected) colors.textPrimary else colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        SettingsRowText(
+            title = action.settingsTitle(),
+            value = action.settingsValue(),
+            modifier = Modifier.weight(1f),
+        )
+        if (selected) {
+            SettingsOrderButton(
+                direction = -1,
+                enabled = selectedIndex > 0,
+                onClick = { onMove(-1) },
+            )
+            SettingsOrderButton(
+                direction = 1,
+                enabled = selectedIndex < selectedCount - 1,
+                onClick = { onMove(1) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsOrderButton(
+    direction: Int,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val iconColor = if (enabled) colors.textSecondary else colors.disabledText
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(if (pressed && enabled) colors.selectedSurface else colors.surfaceSoft)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(14.dp)) {
+            val strokeWidth = 2.dp.toPx()
+            if (direction < 0) {
+                drawLine(iconColor, Offset(7.dp.toPx(), 2.dp.toPx()), Offset(2.dp.toPx(), 7.dp.toPx()), strokeWidth)
+                drawLine(iconColor, Offset(7.dp.toPx(), 2.dp.toPx()), Offset(12.dp.toPx(), 7.dp.toPx()), strokeWidth)
+                drawLine(iconColor, Offset(7.dp.toPx(), 3.dp.toPx()), Offset(7.dp.toPx(), 12.dp.toPx()), strokeWidth)
+            } else {
+                drawLine(iconColor, Offset(7.dp.toPx(), 12.dp.toPx()), Offset(2.dp.toPx(), 7.dp.toPx()), strokeWidth)
+                drawLine(iconColor, Offset(7.dp.toPx(), 12.dp.toPx()), Offset(12.dp.toPx(), 7.dp.toPx()), strokeWidth)
+                drawLine(iconColor, Offset(7.dp.toPx(), 11.dp.toPx()), Offset(7.dp.toPx(), 2.dp.toPx()), strokeWidth)
+            }
+        }
+    }
+}
+
+private fun toggledDockActions(actions: List<DockAction>, action: DockAction): List<DockAction> {
+    val normalizedActions = normalizeDockActions(actions)
+    return if (action in normalizedActions) {
+        normalizedActions - action
+    } else {
+        normalizedActions + action
+    }
+}
+
+private fun movedDockActions(
+    actions: List<DockAction>,
+    action: DockAction,
+    offset: Int,
+): List<DockAction> {
+    val normalizedActions = normalizeDockActions(actions).toMutableList()
+    val fromIndex = normalizedActions.indexOf(action)
+    if (fromIndex < 0) return normalizedActions
+    val toIndex = (fromIndex + offset).coerceIn(0, normalizedActions.lastIndex)
+    if (fromIndex == toIndex) return normalizedActions
+    normalizedActions.removeAt(fromIndex)
+    normalizedActions.add(toIndex, action)
+    return normalizedActions
+}
+
+private fun DockConfig.previewLabel(): String =
+    "${plusPlacement.settingsLabel()}  ${actions.size}/${AllDockActions.size}"
+
+private fun DockPlusPlacement.settingsLabel(): String = when (this) {
+    DockPlusPlacement.CENTER -> "CENTER"
+    DockPlusPlacement.LEFT_EDGE -> "LEFT"
+    DockPlusPlacement.RIGHT_EDGE -> "RIGHT"
+}
+
+private fun DockAction.settingsTitle(): String = when (this) {
+    DockAction.SORT -> "PRI/TIME"
+    DockAction.DEADLINE -> "DDL"
+    DockAction.HIDE_DONE -> "HIDE/UNHIDE"
+    DockAction.DELETE_DONE -> "DELETE DONE"
+}
+
+private fun DockAction.settingsValue(): String = when (this) {
+    DockAction.SORT -> "sort mode"
+    DockAction.DEADLINE -> "deadline countdown"
+    DockAction.HIDE_DONE -> "done visibility"
+    DockAction.DELETE_DONE -> "completed cleanup"
+}
+
+private fun DockAction.contentDescription(): String = when (this) {
+    DockAction.SORT -> "TOGGLE SORT"
+    DockAction.DEADLINE -> "TOGGLE DEADLINE"
+    DockAction.HIDE_DONE -> "TOGGLE DONE VISIBILITY"
+    DockAction.DELETE_DONE -> "DELETE COMPLETED TASKS"
 }
 
 @Composable
@@ -2650,13 +2883,9 @@ private fun TodoListPanel(
     onRestoreTodo: (String) -> Unit,
     onDeleteAllTrash: () -> Unit,
     targetMoveChecklists: List<TodoChecklist>,
-    viewPanelVisible: Boolean,
-    batchPanelVisible: Boolean,
+    dockConfig: DockConfig,
     batchMoveMode: BatchMoveMode,
     batchMoveSelectedTodoIds: Set<String>,
-    onToggleViewPanel: () -> Unit,
-    onToggleBatchPanel: () -> Unit,
-    onStartBatchMoveSelection: () -> Unit,
     onToggleBatchMoveSelection: (String) -> Unit,
     onOpenBatchMoveTargetPicker: () -> Unit,
     onCloseBatchMoveTargetPicker: () -> Unit,
@@ -2711,7 +2940,6 @@ private fun TodoListPanel(
     val listBottomPadding = when {
         !showBottomActions -> 4.dp
         batchMoveActive -> 96.dp
-        viewPanelVisible || batchPanelVisible -> 176.dp
         else -> 84.dp
     }
 
@@ -2881,32 +3109,7 @@ private fun TodoListPanel(
                             onCancel = onCloseBatchMoveTargetPicker,
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(bottom = 72.dp),
-                        )
-                    }
-                    viewPanelVisible -> {
-                        ViewOptionsPanel(
-                            sortMode = sortMode,
-                            onSortModeChange = onSortModeChange,
-                            hideCompleted = hideCompleted,
-                            onHideCompletedChange = onHideCompletedChange,
-                            showDeadlineCountdown = showDeadlineCountdown,
-                            onDeadlineCountdownChange = onDeadlineCountdownChange,
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 72.dp),
-                        )
-                    }
-                    batchPanelVisible -> {
-                        BatchActionsPanel(
-                            completedCount = completedCount,
-                            totalCount = todos.size,
-                            onDeleteCompleted = onDeleteCompleted,
-                            onStartBatchMove = onStartBatchMoveSelection,
-                            onCancel = onToggleBatchPanel,
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 72.dp),
+                            .padding(bottom = 72.dp),
                         )
                     }
                 }
@@ -2921,15 +3124,31 @@ private fun TodoListPanel(
                     )
                 } else {
                     BottomActionDock(
-                        viewActive = viewPanelVisible ||
-                            sortMode == SortMode.TIME ||
-                            hideCompleted ||
-                            showDeadlineCountdown,
-                        batchActive = batchPanelVisible || completedCount > 0,
-                        onViewClick = onToggleViewPanel,
+                        config = dockConfig,
+                        actionState = dockActionState(
+                            sortMode = sortMode,
+                            hideCompleted = hideCompleted,
+                            showDeadlineCountdown = showDeadlineCountdown,
+                            completedCount = completedCount,
+                        ),
+                        onActionClick = { action ->
+                            when (action) {
+                                DockAction.SORT -> {
+                                    onSortModeChange(
+                                        if (sortMode == SortMode.PRIORITY) {
+                                            SortMode.TIME
+                                        } else {
+                                            SortMode.PRIORITY
+                                        },
+                                    )
+                                }
+                                DockAction.DEADLINE -> onDeadlineCountdownChange(!showDeadlineCountdown)
+                                DockAction.HIDE_DONE -> onHideCompletedChange(!hideCompleted)
+                                DockAction.DELETE_DONE -> onDeleteCompleted()
+                            }
+                        },
                         onAddClick = onOpenTaskEditor,
                         onAddLongClick = onOpenChecklistEditor,
-                        onBatchClick = onToggleBatchPanel,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .padding(bottom = 8.dp),
@@ -3023,59 +3242,165 @@ internal fun PendingTodoToggleFeedback.recordTodoToggle(
     )
 }
 
-private enum class DockButtonKind {
-    VIEW,
-    BATCH,
-}
+private data class DockActionUiState(
+    val active: Boolean,
+    val enabled: Boolean = true,
+)
+
+private fun dockActionState(
+    sortMode: SortMode,
+    hideCompleted: Boolean,
+    showDeadlineCountdown: Boolean,
+    completedCount: Int,
+): Map<DockAction, DockActionUiState> = mapOf(
+    DockAction.SORT to DockActionUiState(active = sortMode == SortMode.TIME),
+    DockAction.DEADLINE to DockActionUiState(active = showDeadlineCountdown),
+    DockAction.HIDE_DONE to DockActionUiState(active = hideCompleted),
+    DockAction.DELETE_DONE to DockActionUiState(
+        active = false,
+        enabled = completedCount > 0,
+    ),
+)
+
+private fun previewDockActionState(): Map<DockAction, DockActionUiState> = mapOf(
+    DockAction.SORT to DockActionUiState(active = false),
+    DockAction.DEADLINE to DockActionUiState(active = true),
+    DockAction.HIDE_DONE to DockActionUiState(active = false),
+    DockAction.DELETE_DONE to DockActionUiState(active = false),
+)
 
 @Composable
 private fun BottomActionDock(
-    viewActive: Boolean,
-    batchActive: Boolean,
-    onViewClick: () -> Unit,
+    config: DockConfig,
+    actionState: Map<DockAction, DockActionUiState>,
+    onActionClick: (DockAction) -> Unit,
     onAddClick: () -> Unit,
     onAddLongClick: () -> Unit,
-    onBatchClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val normalizedConfig = config.normalized()
+    when (normalizedConfig.plusPlacement) {
+        DockPlusPlacement.CENTER -> {
+            val sides = centerDockActionSides(normalizedConfig.actions)
+            Row(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.BottomEnd,
+                ) {
+                    DockActionGroup(
+                        actions = sides.left,
+                        actionState = actionState,
+                        onActionClick = onActionClick,
+                        modifier = Modifier.padding(end = 18.dp),
+                    )
+                }
+                FloatingNewTaskButton(
+                    onClick = onAddClick,
+                    onLongClick = onAddLongClick,
+                    modifier = Modifier.width(56.dp),
+                )
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.BottomStart,
+                ) {
+                    DockActionGroup(
+                        actions = sides.right,
+                        actionState = actionState,
+                        onActionClick = onActionClick,
+                        modifier = Modifier.padding(start = 18.dp),
+                    )
+                }
+            }
+        }
+        DockPlusPlacement.LEFT_EDGE -> {
+            Row(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.Start),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                FloatingNewTaskButton(onClick = onAddClick, onLongClick = onAddLongClick)
+                DockActionGroup(
+                    actions = normalizedConfig.actions,
+                    actionState = actionState,
+                    onActionClick = onActionClick,
+                )
+            }
+        }
+        DockPlusPlacement.RIGHT_EDGE -> {
+            Row(
+                modifier = modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.End),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                DockActionGroup(
+                    actions = normalizedConfig.actions,
+                    actionState = actionState,
+                    onActionClick = onActionClick,
+                )
+                FloatingNewTaskButton(onClick = onAddClick, onLongClick = onAddLongClick)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DockActionGroup(
+    actions: List<DockAction>,
+    actionState: Map<DockAction, DockActionUiState>,
+    onActionClick: (DockAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.height(64.dp),
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        DockIconButton(
-            kind = DockButtonKind.VIEW,
-            active = viewActive,
-            onClick = onViewClick,
-        )
-        FloatingNewTaskButton(
-            onClick = onAddClick,
-            onLongClick = onAddLongClick,
-        )
-        DockIconButton(
-            kind = DockButtonKind.BATCH,
-            active = batchActive,
-            onClick = onBatchClick,
-        )
+        actions.forEach { action ->
+            val state = actionState[action] ?: DockActionUiState(active = false)
+            DockIconButton(
+                action = action,
+                active = state.active,
+                enabled = state.enabled,
+                onClick = { onActionClick(action) },
+            )
+        }
     }
 }
 
 @Composable
 private fun DockIconButton(
-    kind: DockButtonKind,
+    action: DockAction,
     active: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val iconColor = if (active || pressed) colors.textPrimary else colors.textSecondary
-    val borderColor = if (active) colors.primaryInteractive else colors.borderWeak
-    val backgroundColor = if (pressed || active) colors.selectedSurface else colors.surfaceRaised
-    val contentDescription = when (kind) {
-        DockButtonKind.VIEW -> "VIEW OPTIONS"
-        DockButtonKind.BATCH -> "BATCH ACTIONS"
+    val iconColor = when {
+        !enabled -> colors.disabledText
+        active || pressed -> colors.textPrimary
+        else -> colors.textSecondary
+    }
+    val borderColor = when {
+        !enabled -> colors.borderWeak
+        active -> colors.primaryInteractive
+        else -> colors.borderWeak
+    }
+    val backgroundColor = when {
+        !enabled -> colors.disabledSurface
+        pressed || active -> colors.selectedSurface
+        else -> colors.surfaceRaised
     }
 
     Box(
@@ -3084,30 +3409,15 @@ private fun DockIconButton(
             .background(backgroundColor, RectangleShape)
             .border(if (active) 2.dp else 1.dp, borderColor, RectangleShape)
             .clickable(
+                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
             )
-            .semantics { this.contentDescription = contentDescription },
+            .semantics { contentDescription = action.contentDescription() },
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(22.dp)) {
-            val strokeWidth = 2.dp.toPx()
-            when (kind) {
-                DockButtonKind.VIEW -> {
-                    drawLine(iconColor, Offset(2.dp.toPx(), 5.dp.toPx()), Offset(20.dp.toPx(), 5.dp.toPx()), strokeWidth)
-                    drawLine(iconColor, Offset(5.dp.toPx(), 11.dp.toPx()), Offset(17.dp.toPx(), 11.dp.toPx()), strokeWidth)
-                    drawLine(iconColor, Offset(8.dp.toPx(), 17.dp.toPx()), Offset(14.dp.toPx(), 17.dp.toPx()), strokeWidth)
-                }
-                DockButtonKind.BATCH -> {
-                    val boxSize = 6.dp.toPx()
-                    drawRect(iconColor, Offset(3.dp.toPx(), 3.dp.toPx()), Size(boxSize, boxSize), style = Stroke(strokeWidth))
-                    drawRect(iconColor, Offset(13.dp.toPx(), 3.dp.toPx()), Size(boxSize, boxSize), style = Stroke(strokeWidth))
-                    drawRect(iconColor, Offset(3.dp.toPx(), 13.dp.toPx()), Size(boxSize, boxSize), style = Stroke(strokeWidth))
-                    drawLine(iconColor, Offset(13.dp.toPx(), 16.dp.toPx()), Offset(20.dp.toPx(), 16.dp.toPx()), strokeWidth)
-                }
-            }
-        }
+        DockActionIcon(action = action, color = iconColor)
         if (active) {
             Canvas(
                 modifier = Modifier
@@ -3122,78 +3432,64 @@ private fun DockIconButton(
 }
 
 @Composable
-private fun ViewOptionsPanel(
-    sortMode: SortMode,
-    onSortModeChange: (SortMode) -> Unit,
-    hideCompleted: Boolean,
-    onHideCompletedChange: (Boolean) -> Unit,
-    showDeadlineCountdown: Boolean,
-    onDeadlineCountdownChange: (Boolean) -> Unit,
+private fun DockActionIcon(
+    action: DockAction,
+    color: Color,
     modifier: Modifier = Modifier,
 ) {
-    PixelPanel(
-        modifier = modifier,
-        borderWidth = 1.dp,
-        contentPadding = PaddingValues(8.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            PanelLabel("VIEW")
-            PixelSegmentedControl(
-                options = listOf(SortMode.PRIORITY, SortMode.TIME),
-                selected = sortMode,
-                label = { if (it == SortMode.PRIORITY) "PRI" else "TIME" },
-                onSelected = onSortModeChange,
-            )
-            PixelSegmentedControl(
-                options = listOf(false, true),
-                selected = showDeadlineCountdown,
-                label = { if (it) "DDL ON" else "DDL OFF" },
-                onSelected = onDeadlineCountdownChange,
-            )
-            PixelSegmentedControl(
-                options = listOf(false, true),
-                selected = hideCompleted,
-                label = { if (it) "HIDE DONE" else "SHOW DONE" },
-                onSelected = onHideCompletedChange,
-            )
-        }
-    }
-}
-
-@Composable
-private fun BatchActionsPanel(
-    completedCount: Int,
-    totalCount: Int,
-    onDeleteCompleted: () -> Unit,
-    onStartBatchMove: () -> Unit,
-    onCancel: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    PixelPanel(
-        modifier = modifier,
-        borderWidth = 1.dp,
-        contentPadding = PaddingValues(8.dp),
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            PanelLabel(if (totalCount == 0) "NO TASKS" else "BATCH")
-            PixelButton(
-                text = "DONE -> TRASH",
-                onClick = onDeleteCompleted,
-                enabled = completedCount > 0,
-                destructive = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            PixelButton(
-                text = "MOVE TASKS",
-                onClick = onStartBatchMove,
-                enabled = totalCount > 0,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            PixelButton(
-                text = "CANCEL",
-                onClick = onCancel,
-                modifier = Modifier.fillMaxWidth(),
-            )
+    Canvas(modifier = modifier.size(22.dp)) {
+        val strokeWidth = 2.dp.toPx()
+        val thinStrokeWidth = 1.5.dp.toPx()
+        when (action) {
+            DockAction.SORT -> {
+                drawLine(color, Offset(2.dp.toPx(), 5.dp.toPx()), Offset(14.dp.toPx(), 5.dp.toPx()), strokeWidth)
+                drawLine(color, Offset(2.dp.toPx(), 11.dp.toPx()), Offset(11.dp.toPx(), 11.dp.toPx()), strokeWidth)
+                drawLine(color, Offset(2.dp.toPx(), 17.dp.toPx()), Offset(8.dp.toPx(), 17.dp.toPx()), strokeWidth)
+                drawCircle(
+                    color = color,
+                    radius = 4.dp.toPx(),
+                    center = Offset(17.dp.toPx(), 14.dp.toPx()),
+                    style = Stroke(width = thinStrokeWidth),
+                )
+                drawLine(color, Offset(17.dp.toPx(), 14.dp.toPx()), Offset(17.dp.toPx(), 11.5.dp.toPx()), thinStrokeWidth)
+                drawLine(color, Offset(17.dp.toPx(), 14.dp.toPx()), Offset(19.dp.toPx(), 15.5.dp.toPx()), thinStrokeWidth)
+            }
+            DockAction.DEADLINE -> {
+                drawRect(
+                    color = color,
+                    topLeft = Offset(4.dp.toPx(), 5.dp.toPx()),
+                    size = Size(14.dp.toPx(), 13.dp.toPx()),
+                    style = Stroke(width = strokeWidth),
+                )
+                drawLine(color, Offset(4.dp.toPx(), 9.dp.toPx()), Offset(18.dp.toPx(), 9.dp.toPx()), thinStrokeWidth)
+                drawLine(color, Offset(8.dp.toPx(), 3.dp.toPx()), Offset(8.dp.toPx(), 7.dp.toPx()), strokeWidth)
+                drawLine(color, Offset(14.dp.toPx(), 3.dp.toPx()), Offset(14.dp.toPx(), 7.dp.toPx()), strokeWidth)
+                drawLine(color, Offset(11.dp.toPx(), 12.dp.toPx()), Offset(11.dp.toPx(), 15.dp.toPx()), thinStrokeWidth)
+                drawLine(color, Offset(11.dp.toPx(), 15.dp.toPx()), Offset(14.dp.toPx(), 15.dp.toPx()), thinStrokeWidth)
+            }
+            DockAction.HIDE_DONE -> {
+                drawRect(
+                    color = color,
+                    topLeft = Offset(3.dp.toPx(), 5.dp.toPx()),
+                    size = Size(12.dp.toPx(), 12.dp.toPx()),
+                    style = Stroke(width = strokeWidth),
+                )
+                drawLine(color, Offset(5.dp.toPx(), 11.dp.toPx()), Offset(8.dp.toPx(), 14.dp.toPx()), thinStrokeWidth)
+                drawLine(color, Offset(8.dp.toPx(), 14.dp.toPx()), Offset(13.dp.toPx(), 8.dp.toPx()), thinStrokeWidth)
+                drawLine(color, Offset(18.dp.toPx(), 4.dp.toPx()), Offset(4.dp.toPx(), 18.dp.toPx()), strokeWidth)
+            }
+            DockAction.DELETE_DONE -> {
+                drawLine(color, Offset(7.dp.toPx(), 6.dp.toPx()), Offset(17.dp.toPx(), 6.dp.toPx()), strokeWidth)
+                drawLine(color, Offset(10.dp.toPx(), 3.dp.toPx()), Offset(14.dp.toPx(), 3.dp.toPx()), strokeWidth)
+                drawRect(
+                    color = color,
+                    topLeft = Offset(8.dp.toPx(), 8.dp.toPx()),
+                    size = Size(8.dp.toPx(), 10.dp.toPx()),
+                    style = Stroke(width = strokeWidth),
+                )
+                drawLine(color, Offset(3.dp.toPx(), 13.dp.toPx()), Offset(6.dp.toPx(), 16.dp.toPx()), thinStrokeWidth)
+                drawLine(color, Offset(6.dp.toPx(), 16.dp.toPx()), Offset(11.dp.toPx(), 10.dp.toPx()), thinStrokeWidth)
+            }
         }
     }
 }
@@ -4332,13 +4628,10 @@ private fun PhonePreview() {
             targetMoveChecklists = checklists.filter {
                 isNormalChecklist(it) && it.id != checklists.first().id
             },
-            viewPanelVisible = false,
-            batchPanelVisible = false,
+            dockConfig = DockConfig(),
+            onDockConfigChange = {},
             batchMoveMode = BatchMoveMode.IDLE,
             batchMoveSelectedTodoIds = emptySet(),
-            onToggleViewPanel = {},
-            onToggleBatchPanel = {},
-            onStartBatchMoveSelection = {},
             onToggleBatchMoveSelection = { _ -> },
             onOpenBatchMoveTargetPicker = {},
             onCloseBatchMoveTargetPicker = {},
@@ -4423,13 +4716,10 @@ private fun TabletPreview() {
             targetMoveChecklists = checklists.filter {
                 isNormalChecklist(it) && it.id != checklists.first().id
             },
-            viewPanelVisible = false,
-            batchPanelVisible = false,
+            dockConfig = DockConfig(),
+            onDockConfigChange = {},
             batchMoveMode = BatchMoveMode.IDLE,
             batchMoveSelectedTodoIds = emptySet(),
-            onToggleViewPanel = {},
-            onToggleBatchPanel = {},
-            onStartBatchMoveSelection = {},
             onToggleBatchMoveSelection = { _ -> },
             onOpenBatchMoveTargetPicker = {},
             onCloseBatchMoveTargetPicker = {},
