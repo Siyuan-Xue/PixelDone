@@ -4,7 +4,9 @@ import com.milesxue.pixeldone.data.todo.TodoJsonCodec
 import com.milesxue.pixeldone.domain.todo.*
 import com.milesxue.pixeldone.ui.todo.CompletionSortDelayMillis
 import com.milesxue.pixeldone.ui.todo.PendingTodoToggleFeedback
+import com.milesxue.pixeldone.ui.todo.TodoListHighlightRequest
 import com.milesxue.pixeldone.ui.todo.TodoRowClickAction
+import com.milesxue.pixeldone.ui.todo.consumeTodoListHighlightRequest
 import com.milesxue.pixeldone.ui.todo.defaultDueAtMillis
 import com.milesxue.pixeldone.ui.todo.firstRevealTargetIndex
 import com.milesxue.pixeldone.ui.todo.formatDeadlineCountdown
@@ -1124,6 +1126,89 @@ class TodoEngineTest {
     }
 
     @Test
+    fun moveTodoItemsToChecklistMovesSelectedTodosInRequestedOrder() {
+        val initial = createInitialChecklistState(
+            items = listOf(
+                item("one", TodoPriority.HIGH, due = 1L),
+                item("two", TodoPriority.LOW, due = 2L, completed = true),
+                item("three", TodoPriority.MEDIUM, due = 3L),
+            ),
+            createdAtMillis = 1L,
+        )
+        val withWork = createTodoChecklist(initial, "work", "Work", createdAtMillis = 2L)!!
+        val withWorkTodos = updateChecklistItems(
+            state = withWork,
+            checklistId = "work",
+            items = listOf(item("existing", TodoPriority.XHIGH, due = 4L)),
+        )!!
+
+        val moved = moveTodoItemsToChecklist(
+            state = withWorkTodos,
+            sourceChecklistId = DefaultChecklistId,
+            targetChecklistId = "work",
+            todoIds = listOf("three", "missing", "two"),
+        )!!
+
+        assertEquals("work", moved.selectedListId)
+        assertEquals(listOf("one"), moved.lists.first { it.id == DefaultChecklistId }.items.map { it.id })
+        assertEquals(
+            listOf("existing", "three", "two"),
+            moved.lists.first { it.id == "work" }.items.map { it.id },
+        )
+        assertTrue(moved.lists.first { it.id == "work" }.items.first { it.id == "two" }.completed)
+    }
+
+    @Test
+    fun moveTodoItemsToChecklistRejectsInvalidTargetsAndSelections() {
+        val initial = createInitialChecklistState(
+            items = listOf(item("one", TodoPriority.HIGH, due = 1L)),
+            createdAtMillis = 1L,
+        )
+        val withWork = createTodoChecklist(initial, "work", "Work", createdAtMillis = 2L)!!
+
+        assertNull(
+            moveTodoItemsToChecklist(
+                state = withWork,
+                sourceChecklistId = DefaultChecklistId,
+                targetChecklistId = "work",
+                todoIds = emptySet(),
+            ),
+        )
+        assertNull(
+            moveTodoItemsToChecklist(
+                state = withWork,
+                sourceChecklistId = DefaultChecklistId,
+                targetChecklistId = DefaultChecklistId,
+                todoIds = setOf("one"),
+            ),
+        )
+        assertNull(
+            moveTodoItemsToChecklist(
+                state = withWork,
+                sourceChecklistId = TrashChecklistId,
+                targetChecklistId = "work",
+                todoIds = setOf("one"),
+            ),
+        )
+        assertNull(
+            moveTodoItemsToChecklist(
+                state = withWork,
+                sourceChecklistId = DefaultChecklistId,
+                targetChecklistId = SettingsChecklistId,
+                todoIds = setOf("one"),
+            ),
+        )
+        assertNull(
+            moveTodoItemsToChecklist(
+                state = withWork,
+                sourceChecklistId = DefaultChecklistId,
+                targetChecklistId = "work",
+                todoIds = setOf("missing"),
+            ),
+        )
+    }
+
+    @Test
     fun restoreTrashTodoReturnsToOriginalListAndKeepsCompletedState() {
         val work = createTodoChecklist(
             state = createInitialChecklistState(emptyList(), createdAtMillis = 1L),
@@ -1485,6 +1570,14 @@ class TodoEngineTest {
 
         assertNull(firstRevealTargetIndex(visibleIds, setOf("missing", "other")))
         assertNull(firstRevealTargetIndex(visibleIds, emptySet()))
+    }
+
+    @Test
+    fun consumeTodoListHighlightRequestClearsOnlyMatchingSequence() {
+        val request = TodoListHighlightRequest(sequence = 3, ids = setOf("one"))
+
+        assertEquals(emptySet<String>(), consumeTodoListHighlightRequest(request, 3).ids)
+        assertEquals(setOf("one"), consumeTodoListHighlightRequest(request, 2).ids)
     }
 
     @Test

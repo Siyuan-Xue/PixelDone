@@ -48,6 +48,12 @@ Developer identity: CODEX & XUE.
 - Open Android's install-unknown-apps settings first when update installation permission is missing.
 - Check quietly for the latest release on every app start without suppressing an available update.
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, control update prompts, reconfigure permissions, check for updates, and view the current version.
+- Use bottom `VIEW` and `BATCH` controls on normal checklists so sort, DDL, hide-done, completed-task cleanup, and batch movement stay near the `+` action.
+- Move selected tasks across normal checklists with explicit batch selection.
+- Keep `TRASH` and `SETTINGS` free of the new bottom side buttons.
+- Show settings permission state with clickable status glyphs instead of larger config buttons.
+- Keep clay primary controls readable in dark mode.
+- Consume todo row highlight events once so returning from `SETTINGS` does not replay an old highlight.
 - Persist checklists and todos locally on the device with SharedPreferences JSON.
 - Keep system bars aligned with the selected light or dark PixelDone theme.
 
@@ -88,24 +94,24 @@ From the project root:
 
 Release signing is configured through the local, untracked `signing/release-signing.properties` file for formal releases.
 
-The current signed release APK is copied to:
+The signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.6.0-release.apk
+app/build/outputs/apk/release/PixelDone-2.7.0-release.apk
 ```
 
-The local debug APK is copied to:
+The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.6.0-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.7.0-debug.apk
 ```
 
 ## Install
 
-Install this formal release with:
+Install this debug build with:
 
 ```powershell
-adb install -r app/build/outputs/apk/release/PixelDone-2.6.0-release.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.7.0-debug.apk
 ```
 
 The formal package name is:
@@ -122,4 +128,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.6.0 formal signed feature release for Settings, dark mode, permission reconfiguration, and compact completed rows.
+2.7.0 debug prerelease for bottom actions, batch movement, settings permission simplification, dark-mode button contrast, and highlight replay cleanup.

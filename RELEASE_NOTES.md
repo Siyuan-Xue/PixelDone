@@ -1,12 +1,14 @@
-PixelDone v2.6.0 is a formal signed feature release for settings, theme control, and completed-task polish.
+PixelDone v2.7.0-debug is a debug prerelease for the bottom action UI/UX refactor.
 
 Highlights:
-- Adds a fixed `SETTINGS` checklist that opens PixelDone settings instead of a todo container.
-- Adds LIGHT/DARK display control, update prompt visibility, app version, and update checking from Settings.
-- Adds permission status and reconfiguration actions for notifications, exact alarms, full-screen alarms, and update installs.
-- Makes completed todo rows more compact by hiding subtitles and image actions while keeping the title centered.
-- Requests Android's install-unknown-apps setting before opening a downloaded update APK when needed.
+- Moves normal-checklist view controls into a new bottom-left `VIEW` button beside the `+` action.
+- Moves completed-task cleanup and new cross-list batch movement into a bottom-right `BATCH` button.
+- Keeps `TRASH` and `SETTINGS` free of the new bottom side buttons.
+- Adds explicit multi-select before moving tasks to another normal checklist.
+- Simplifies Settings permission rows with clickable status glyphs instead of `CONFIG` buttons.
+- Fixes dark-mode clay button foreground color so primary symbols remain readable.
+- Consumes todo highlight events once so returning from Settings no longer replays an old row border highlight.
 
-Install note: use the attached signed release APK, `PixelDone-2.6.0-release.apk`, for direct installation or in-app update. Formal updates keep `com.milesxue.pixeldone` and the same release signing key so existing permissions survive normal overwrite installs.
+Install note: use the attached debug APK, `PixelDone-2.7.0-debug.apk`, for local validation. This debug build installs as `com.milesxue.pixeldone.debug` and remains separate from the formal signed `com.milesxue.pixeldone` app and its in-app update channel.
 
 CODEX & XUE

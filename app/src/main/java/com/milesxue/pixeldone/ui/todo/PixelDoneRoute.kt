@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -77,6 +78,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -109,7 +111,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
 import com.milesxue.pixeldone.ui.todo.components.FloatingNewTaskButton
 import com.milesxue.pixeldone.ui.todo.components.PixelAlarmIcon
-import com.milesxue.pixeldone.ui.todo.components.PixelBatchDeleteDoneButton
 import com.milesxue.pixeldone.ui.todo.components.PixelButton
 import com.milesxue.pixeldone.ui.todo.components.PixelItemImageButton
 import com.milesxue.pixeldone.ui.todo.components.PixelPanel
@@ -248,6 +249,18 @@ private sealed interface DeleteConfirmation {
     data class TrashTodos(val count: Int) : DeleteConfirmation
 }
 
+private enum class BottomActionPanel {
+    NONE,
+    VIEW,
+    BATCH,
+}
+
+private enum class BatchMoveMode {
+    IDLE,
+    SELECTING,
+    TARGET_PICKER,
+}
+
 private sealed interface TodoImagePreviewLoadState {
     data object Loading : TodoImagePreviewLoadState
     data class Ready(val bitmap: ImageBitmap) : TodoImagePreviewLoadState
@@ -266,10 +279,21 @@ private data class TodoListScrollRequest(
     val intent: TodoListScrollIntent,
 )
 
-private data class TodoListHighlightRequest(
+internal data class TodoListHighlightRequest(
     val sequence: Int,
     val ids: Set<String>,
 )
+
+internal fun consumeTodoListHighlightRequest(
+    request: TodoListHighlightRequest,
+    consumedSequence: Int,
+): TodoListHighlightRequest {
+    return if (request.sequence == consumedSequence) {
+        request.copy(ids = emptySet())
+    } else {
+        request
+    }
+}
 
 internal data class PendingTodoToggleFeedback(
     val initialCompletedById: Map<String, Boolean> = emptyMap(),
@@ -373,6 +397,9 @@ internal fun PixelDoneApp() {
             ),
         )
     }
+    var bottomActionPanel by remember { mutableStateOf(BottomActionPanel.NONE) }
+    var batchMoveMode by remember { mutableStateOf(BatchMoveMode.IDLE) }
+    var batchMoveSelectedTodoIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val selectedChecklist = selectedChecklistOf(checklistState)
     val currentChecklistState by rememberUpdatedState(checklistState)
     val isTrashSelected = isTrashChecklist(selectedChecklist)
@@ -476,6 +503,90 @@ internal fun PixelDoneApp() {
         if (ids.isEmpty()) return
         requestTodoListScroll(TodoListScrollIntent.RevealTodos(ids))
         requestTodoListHighlight(ids)
+    }
+
+    fun clearBatchMoveState() {
+        batchMoveMode = BatchMoveMode.IDLE
+        batchMoveSelectedTodoIds = emptySet()
+    }
+
+    fun closeTransientControls() {
+        bottomActionPanel = BottomActionPanel.NONE
+        clearBatchMoveState()
+    }
+
+    fun consumeTodoListHighlight(sequence: Int) {
+        todoListHighlightRequest = consumeTodoListHighlightRequest(
+            request = todoListHighlightRequest,
+            consumedSequence = sequence,
+        )
+    }
+
+    fun toggleBottomActionPanel(panel: BottomActionPanel) {
+        if (!isNormalChecklistSelected) return
+        if (panel == BottomActionPanel.VIEW && batchMoveMode != BatchMoveMode.IDLE) {
+            clearBatchMoveState()
+        }
+        bottomActionPanel = if (bottomActionPanel == panel) {
+            BottomActionPanel.NONE
+        } else {
+            panel
+        }
+    }
+
+    fun startBatchMoveSelection() {
+        if (!isNormalChecklistSelected) return
+        bottomActionPanel = BottomActionPanel.NONE
+        batchMoveSelectedTodoIds = emptySet()
+        batchMoveMode = BatchMoveMode.SELECTING
+    }
+
+    fun toggleBatchMoveSelection(todoId: String) {
+        if (batchMoveMode == BatchMoveMode.IDLE) return
+        batchMoveSelectedTodoIds = if (todoId in batchMoveSelectedTodoIds) {
+            batchMoveSelectedTodoIds - todoId
+        } else {
+            batchMoveSelectedTodoIds + todoId
+        }
+    }
+
+    fun openBatchMoveTargetPicker() {
+        if (batchMoveMode == BatchMoveMode.SELECTING && batchMoveSelectedTodoIds.isNotEmpty()) {
+            batchMoveMode = BatchMoveMode.TARGET_PICKER
+        }
+    }
+
+    fun closeBatchMoveTargetPicker() {
+        if (batchMoveMode == BatchMoveMode.TARGET_PICKER) {
+            batchMoveMode = BatchMoveMode.SELECTING
+        }
+    }
+
+    fun moveSelectedTodosToChecklist(targetChecklistId: String, orderedSelectedIds: List<String>) {
+        val selectedIds = orderedSelectedIds.ifEmpty { batchMoveSelectedTodoIds.toList() }
+        val selectedIdSet = selectedIds.toSet()
+        val updatedState = moveTodoItemsToChecklist(
+            state = checklistState,
+            sourceChecklistId = selectedChecklist.id,
+            targetChecklistId = targetChecklistId,
+            todoIds = selectedIds,
+        ) ?: return
+        updateChecklistState(updatedState)
+        clearBatchMoveState()
+        bottomActionPanel = BottomActionPanel.NONE
+        keepDisplayOrderDuringSortDelay = false
+        pendingTodoToggleFeedback = PendingTodoToggleFeedback()
+        displayOrderIds = emptyList()
+        requestTodoListScroll(TodoListScrollIntent.RevealTodos(selectedIdSet))
+        requestTodoListHighlight(selectedIdSet)
+    }
+
+    BackHandler(enabled = bottomActionPanel != BottomActionPanel.NONE || batchMoveMode != BatchMoveMode.IDLE) {
+        when (batchMoveMode) {
+            BatchMoveMode.TARGET_PICKER -> closeBatchMoveTargetPicker()
+            BatchMoveMode.SELECTING -> clearBatchMoveState()
+            BatchMoveMode.IDLE -> bottomActionPanel = BottomActionPanel.NONE
+        }
     }
 
     fun hasNotificationPermission(): Boolean {
@@ -671,12 +782,14 @@ internal fun PixelDoneApp() {
 
     fun openNewTaskEditor() {
         if (!isNormalChecklistSelected) return
+        closeTransientControls()
         clearEditor()
         dueAtMillis = defaultDueAtMillis()
         editorMode = EditorMode.NewTask
     }
 
     fun openNewChecklistEditor() {
+        closeTransientControls()
         clearEditor()
         headerExpanded = true
         editorMode = EditorMode.NewChecklist
@@ -773,6 +886,7 @@ internal fun PixelDoneApp() {
 
     fun startEditing(item: TodoItem) {
         if (!isNormalChecklistSelected) return
+        closeTransientControls()
         editorMode = EditorMode.EditTask(item.id)
         titleInput = item.title
         selectedPriority = item.priority
@@ -782,6 +896,7 @@ internal fun PixelDoneApp() {
 
     fun startEditingChecklist(checklist: TodoChecklist) {
         if (!isNormalChecklist(checklist)) return
+        closeTransientControls()
         headerExpanded = true
         editorMode = EditorMode.EditChecklist(checklist.id)
         checklistNameInput = checklist.name
@@ -838,6 +953,7 @@ internal fun PixelDoneApp() {
     fun selectChecklist(id: String) {
         val updatedState = selectTodoChecklist(checklistState, id) ?: return
         updateChecklistState(updatedState)
+        closeTransientControls()
         clearEditor()
         editorMode = EditorMode.None
         keepDisplayOrderDuringSortDelay = false
@@ -1280,6 +1396,7 @@ internal fun PixelDoneApp() {
                 if (isNormalChecklistSelected) {
                     val completedCount = todos.count { it.completed }
                     if (completedCount > 0) {
+                        bottomActionPanel = BottomActionPanel.NONE
                         deleteConfirmation = DeleteConfirmation.CompletedTodos(completedCount)
                     }
                 }
@@ -1291,10 +1408,26 @@ internal fun PixelDoneApp() {
                     deleteConfirmation = DeleteConfirmation.TrashTodos(trashCount)
                 }
             },
+            targetMoveChecklists = checklistState.lists.filter {
+                isNormalChecklist(it) && it.id != selectedChecklist.id
+            },
+            viewPanelVisible = bottomActionPanel == BottomActionPanel.VIEW,
+            batchPanelVisible = bottomActionPanel == BottomActionPanel.BATCH,
+            batchMoveMode = batchMoveMode,
+            batchMoveSelectedTodoIds = batchMoveSelectedTodoIds,
+            onToggleViewPanel = { toggleBottomActionPanel(BottomActionPanel.VIEW) },
+            onToggleBatchPanel = { toggleBottomActionPanel(BottomActionPanel.BATCH) },
+            onStartBatchMoveSelection = ::startBatchMoveSelection,
+            onToggleBatchMoveSelection = ::toggleBatchMoveSelection,
+            onOpenBatchMoveTargetPicker = ::openBatchMoveTargetPicker,
+            onCloseBatchMoveTargetPicker = ::closeBatchMoveTargetPicker,
+            onCancelBatchMove = ::clearBatchMoveState,
+            onMoveSelectedTodosToChecklist = ::moveSelectedTodosToChecklist,
             displayOrderIds = displayOrderIds,
             keepDisplayOrder = keepDisplayOrderDuringSortDelay,
             todoListScrollRequest = todoListScrollRequest,
             todoListHighlightRequest = todoListHighlightRequest,
+            onTodoListHighlightConsumed = ::consumeTodoListHighlight,
             updateUiState = updateUiState,
             onUpdateClick = ::handleUpdateClick,
             darkTheme = darkTheme,
@@ -1398,10 +1531,24 @@ private fun PixelDoneScreen(
     onDeleteCompleted: () -> Unit,
     onRestoreTodo: (String) -> Unit,
     onDeleteAllTrash: () -> Unit,
+    targetMoveChecklists: List<TodoChecklist>,
+    viewPanelVisible: Boolean,
+    batchPanelVisible: Boolean,
+    batchMoveMode: BatchMoveMode,
+    batchMoveSelectedTodoIds: Set<String>,
+    onToggleViewPanel: () -> Unit,
+    onToggleBatchPanel: () -> Unit,
+    onStartBatchMoveSelection: () -> Unit,
+    onToggleBatchMoveSelection: (String) -> Unit,
+    onOpenBatchMoveTargetPicker: () -> Unit,
+    onCloseBatchMoveTargetPicker: () -> Unit,
+    onCancelBatchMove: () -> Unit,
+    onMoveSelectedTodosToChecklist: (String, List<String>) -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
     todoListHighlightRequest: TodoListHighlightRequest,
+    onTodoListHighlightConsumed: (Int) -> Unit,
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
     darkTheme: Boolean,
@@ -1462,10 +1609,24 @@ private fun PixelDoneScreen(
                 onDeleteCompleted = onDeleteCompleted,
                 onRestoreTodo = onRestoreTodo,
                 onDeleteAllTrash = onDeleteAllTrash,
+                targetMoveChecklists = targetMoveChecklists,
+                viewPanelVisible = viewPanelVisible,
+                batchPanelVisible = batchPanelVisible,
+                batchMoveMode = batchMoveMode,
+                batchMoveSelectedTodoIds = batchMoveSelectedTodoIds,
+                onToggleViewPanel = onToggleViewPanel,
+                onToggleBatchPanel = onToggleBatchPanel,
+                onStartBatchMoveSelection = onStartBatchMoveSelection,
+                onToggleBatchMoveSelection = onToggleBatchMoveSelection,
+                onOpenBatchMoveTargetPicker = onOpenBatchMoveTargetPicker,
+                onCloseBatchMoveTargetPicker = onCloseBatchMoveTargetPicker,
+                onCancelBatchMove = onCancelBatchMove,
+                onMoveSelectedTodosToChecklist = onMoveSelectedTodosToChecklist,
                 displayOrderIds = displayOrderIds,
                 keepDisplayOrder = keepDisplayOrder,
                 todoListScrollRequest = todoListScrollRequest,
                 todoListHighlightRequest = todoListHighlightRequest,
+                onTodoListHighlightConsumed = onTodoListHighlightConsumed,
                 taskEditorVisible = taskEditorVisible,
                 editingTaskId = editingTaskId,
                 isEditingTask = isEditingTask,
@@ -1674,10 +1835,24 @@ private fun TaskWorkspacePanel(
     onDeleteCompleted: () -> Unit,
     onRestoreTodo: (String) -> Unit,
     onDeleteAllTrash: () -> Unit,
+    targetMoveChecklists: List<TodoChecklist>,
+    viewPanelVisible: Boolean,
+    batchPanelVisible: Boolean,
+    batchMoveMode: BatchMoveMode,
+    batchMoveSelectedTodoIds: Set<String>,
+    onToggleViewPanel: () -> Unit,
+    onToggleBatchPanel: () -> Unit,
+    onStartBatchMoveSelection: () -> Unit,
+    onToggleBatchMoveSelection: (String) -> Unit,
+    onOpenBatchMoveTargetPicker: () -> Unit,
+    onCloseBatchMoveTargetPicker: () -> Unit,
+    onCancelBatchMove: () -> Unit,
+    onMoveSelectedTodosToChecklist: (String, List<String>) -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
     todoListHighlightRequest: TodoListHighlightRequest,
+    onTodoListHighlightConsumed: (Int) -> Unit,
     taskEditorVisible: Boolean,
     editingTaskId: String?,
     isEditingTask: Boolean,
@@ -1756,10 +1931,24 @@ private fun TaskWorkspacePanel(
                 onDeleteCompleted = onDeleteCompleted,
                 onRestoreTodo = onRestoreTodo,
                 onDeleteAllTrash = onDeleteAllTrash,
+                targetMoveChecklists = targetMoveChecklists,
+                viewPanelVisible = viewPanelVisible,
+                batchPanelVisible = batchPanelVisible,
+                batchMoveMode = batchMoveMode,
+                batchMoveSelectedTodoIds = batchMoveSelectedTodoIds,
+                onToggleViewPanel = onToggleViewPanel,
+                onToggleBatchPanel = onToggleBatchPanel,
+                onStartBatchMoveSelection = onStartBatchMoveSelection,
+                onToggleBatchMoveSelection = onToggleBatchMoveSelection,
+                onOpenBatchMoveTargetPicker = onOpenBatchMoveTargetPicker,
+                onCloseBatchMoveTargetPicker = onCloseBatchMoveTargetPicker,
+                onCancelBatchMove = onCancelBatchMove,
+                onMoveSelectedTodosToChecklist = onMoveSelectedTodosToChecklist,
                 displayOrderIds = displayOrderIds,
                 keepDisplayOrder = keepDisplayOrder,
                 todoListScrollRequest = todoListScrollRequest,
                 todoListHighlightRequest = todoListHighlightRequest,
+                onTodoListHighlightConsumed = onTodoListHighlightConsumed,
                 showNewTaskButton = isNormalChecklistSelected && !taskEditorVisible && !checklistEditorVisible,
                 onOpenTaskEditor = onOpenTaskEditor,
                 onOpenChecklistEditor = onOpenChecklistEditor,
@@ -1864,28 +2053,24 @@ private fun SettingsPanel(
             )
 
             SettingsSectionTitle("PERMISSIONS")
-            SettingsActionRow(
+            SettingsPermissionRow(
                 title = "NOTIFICATIONS",
-                value = permissionState.notificationsGranted.permissionLabel(),
-                actionText = "CONFIG",
+                granted = permissionState.notificationsGranted,
                 onAction = onRequestNotificationPermission,
             )
-            SettingsActionRow(
+            SettingsPermissionRow(
                 title = "EXACT ALARM",
-                value = permissionState.exactAlarmGranted.permissionLabel(),
-                actionText = "CONFIG",
+                granted = permissionState.exactAlarmGranted,
                 onAction = onRequestExactAlarmPermission,
             )
-            SettingsActionRow(
+            SettingsPermissionRow(
                 title = "FULL SCREEN",
-                value = permissionState.fullScreenIntentGranted.permissionLabel(),
-                actionText = "CONFIG",
+                granted = permissionState.fullScreenIntentGranted,
                 onAction = onRequestFullScreenIntentPermission,
             )
-            SettingsActionRow(
+            SettingsPermissionRow(
                 title = "INSTALL UPDATES",
-                value = permissionState.installUpdatesGranted.permissionLabel(),
-                actionText = "CONFIG",
+                granted = permissionState.installUpdatesGranted,
                 onAction = onRequestInstallUpdatesPermission,
             )
 
@@ -1951,6 +2136,88 @@ private fun SettingsActionRow(
             primary = false,
             selected = value == "NEEDS SETUP",
         )
+    }
+}
+
+@Composable
+private fun SettingsPermissionRow(
+    title: String,
+    granted: Boolean,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SettingsRowText(
+            title = title,
+            value = granted.permissionLabel(),
+            modifier = Modifier.weight(1f),
+        )
+        PermissionStatusButton(
+            granted = granted,
+            onClick = onAction,
+        )
+    }
+}
+
+@Composable
+private fun PermissionStatusButton(
+    granted: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val glyphColor = if (granted) colors.success else colors.error
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .background(if (pressed) colors.selectedSurface else Color.Transparent, RectangleShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .semantics {
+                contentDescription = if (granted) "PERMISSION GRANTED" else "PERMISSION NEEDS SETUP"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(18.dp)) {
+            val strokeWidth = 2.2.dp.toPx()
+            if (granted) {
+                drawLine(
+                    color = glyphColor,
+                    start = Offset(2.dp.toPx(), 9.dp.toPx()),
+                    end = Offset(7.dp.toPx(), 14.dp.toPx()),
+                    strokeWidth = strokeWidth,
+                )
+                drawLine(
+                    color = glyphColor,
+                    start = Offset(7.dp.toPx(), 14.dp.toPx()),
+                    end = Offset(16.dp.toPx(), 3.dp.toPx()),
+                    strokeWidth = strokeWidth,
+                )
+            } else {
+                drawLine(
+                    color = glyphColor,
+                    start = Offset(9.dp.toPx(), 2.dp.toPx()),
+                    end = Offset(9.dp.toPx(), 12.dp.toPx()),
+                    strokeWidth = strokeWidth,
+                )
+                drawCircle(
+                    color = glyphColor,
+                    radius = 1.6.dp.toPx(),
+                    center = Offset(9.dp.toPx(), 16.dp.toPx()),
+                )
+            }
+        }
     }
 }
 
@@ -2382,10 +2649,24 @@ private fun TodoListPanel(
     onDeleteCompleted: () -> Unit,
     onRestoreTodo: (String) -> Unit,
     onDeleteAllTrash: () -> Unit,
+    targetMoveChecklists: List<TodoChecklist>,
+    viewPanelVisible: Boolean,
+    batchPanelVisible: Boolean,
+    batchMoveMode: BatchMoveMode,
+    batchMoveSelectedTodoIds: Set<String>,
+    onToggleViewPanel: () -> Unit,
+    onToggleBatchPanel: () -> Unit,
+    onStartBatchMoveSelection: () -> Unit,
+    onToggleBatchMoveSelection: (String) -> Unit,
+    onOpenBatchMoveTargetPicker: () -> Unit,
+    onCloseBatchMoveTargetPicker: () -> Unit,
+    onCancelBatchMove: () -> Unit,
+    onMoveSelectedTodosToChecklist: (String, List<String>) -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
     todoListHighlightRequest: TodoListHighlightRequest,
+    onTodoListHighlightConsumed: (Int) -> Unit,
     showNewTaskButton: Boolean,
     onOpenTaskEditor: () -> Unit,
     onOpenChecklistEditor: () -> Unit,
@@ -2408,6 +2689,7 @@ private fun TodoListPanel(
         sortedVisibleItems
     }
     val visibleItemIds = visibleItems.map { it.id }
+    val orderedBatchMoveSelectedIds = visibleItemIds.filter { it in batchMoveSelectedTodoIds }
     val listState = rememberLazyListState()
     val hapticFeedback = LocalHapticFeedback.current
     val context = LocalContext.current
@@ -2424,6 +2706,14 @@ private fun TodoListPanel(
         todoListScrollRequest.intent is TodoListScrollIntent.PreserveViewport &&
             todoListScrollRequest.sequence != handledPreserveViewportSequence &&
             visibleItems.isNotEmpty()
+    val batchMoveActive = batchMoveMode != BatchMoveMode.IDLE
+    val showBottomActions = !isTrashSelected && showNewTaskButton
+    val listBottomPadding = when {
+        !showBottomActions -> 4.dp
+        batchMoveActive -> 96.dp
+        viewPanelVisible || batchPanelVisible -> 176.dp
+        else -> 84.dp
+    }
 
     DisposableEffect(context) {
         val lifecycle = (context as? ComponentActivity)?.lifecycle
@@ -2473,6 +2763,9 @@ private fun TodoListPanel(
             todoListHighlightRequest.ids
         } else {
             emptySet()
+        }
+        if (todoListHighlightRequest.sequence > 0) {
+            onTodoListHighlightConsumed(todoListHighlightRequest.sequence)
         }
         if (activeHighlightedTodoIds.isNotEmpty()) {
             delay(CompletionSortDelayMillis)
@@ -2524,48 +2817,8 @@ private fun TodoListPanel(
                 modifier = Modifier.fillMaxWidth(),
                 destructive = true,
             )
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PixelButton(
-                    text = if (sortMode == SortMode.PRIORITY) "PRI" else "TIME",
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        onSortModeChange(
-                            if (sortMode == SortMode.PRIORITY) SortMode.TIME else SortMode.PRIORITY,
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                    selected = sortMode == SortMode.TIME,
-                )
-                PixelButton(
-                    text = if (hideCompleted) "UNHIDE" else "HIDE",
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        onHideCompletedChange(!hideCompleted)
-                    },
-                    modifier = Modifier.weight(1f),
-                    selected = hideCompleted,
-                )
-                PixelButton(
-                    text = "DDL",
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        onDeadlineCountdownChange(!showDeadlineCountdown)
-                    },
-                    modifier = Modifier.weight(1f),
-                    selected = showDeadlineCountdown,
-                )
-                PixelBatchDeleteDoneButton(
-                    onClick = onDeleteCompleted,
-                    enabled = completedCount > 0,
-                )
-            }
+            Spacer(modifier = Modifier.height(12.dp))
         }
-        Spacer(modifier = Modifier.height(12.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2587,7 +2840,7 @@ private fun TodoListPanel(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 4.dp),
+                    contentPadding = PaddingValues(bottom = listBottomPadding),
                 ) {
                     items(visibleItems, key = { it.id }) { item ->
                         if (isTrashSelected) {
@@ -2606,19 +2859,82 @@ private fun TodoListPanel(
                                 nowMillis = listNowMillis,
                                 showDeadlineCountdown = showDeadlineCountdown,
                                 highlighted = item.id in activeHighlightedTodoIds,
+                                batchMoveActive = batchMoveActive,
+                                selectedForBatch = item.id in batchMoveSelectedTodoIds,
+                                onToggleBatchSelection = onToggleBatchMoveSelection,
                             )
                         }
                     }
                 }
             }
-            if (!isTrashSelected && showNewTaskButton) {
-                FloatingNewTaskButton(
-                    onClick = onOpenTaskEditor,
-                    onLongClick = onOpenChecklistEditor,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 8.dp),
-                )
+            if (showBottomActions) {
+                when {
+                    batchMoveMode == BatchMoveMode.TARGET_PICKER -> {
+                        BatchMoveTargetPanel(
+                            targetChecklists = targetMoveChecklists,
+                            onTargetSelected = { targetChecklistId ->
+                                onMoveSelectedTodosToChecklist(
+                                    targetChecklistId,
+                                    orderedBatchMoveSelectedIds,
+                                )
+                            },
+                            onCancel = onCloseBatchMoveTargetPicker,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 72.dp),
+                        )
+                    }
+                    viewPanelVisible -> {
+                        ViewOptionsPanel(
+                            sortMode = sortMode,
+                            onSortModeChange = onSortModeChange,
+                            hideCompleted = hideCompleted,
+                            onHideCompletedChange = onHideCompletedChange,
+                            showDeadlineCountdown = showDeadlineCountdown,
+                            onDeadlineCountdownChange = onDeadlineCountdownChange,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 72.dp),
+                        )
+                    }
+                    batchPanelVisible -> {
+                        BatchActionsPanel(
+                            completedCount = completedCount,
+                            totalCount = todos.size,
+                            onDeleteCompleted = onDeleteCompleted,
+                            onStartBatchMove = onStartBatchMoveSelection,
+                            onCancel = onToggleBatchPanel,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 72.dp),
+                        )
+                    }
+                }
+                if (batchMoveActive) {
+                    BatchMoveBar(
+                        selectedCount = batchMoveSelectedTodoIds.size,
+                        onMove = onOpenBatchMoveTargetPicker,
+                        onCancel = onCancelBatchMove,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 8.dp),
+                    )
+                } else {
+                    BottomActionDock(
+                        viewActive = viewPanelVisible ||
+                            sortMode == SortMode.TIME ||
+                            hideCompleted ||
+                            showDeadlineCountdown,
+                        batchActive = batchPanelVisible || completedCount > 0,
+                        onViewClick = onToggleViewPanel,
+                        onAddClick = onOpenTaskEditor,
+                        onAddLongClick = onOpenChecklistEditor,
+                        onBatchClick = onToggleBatchPanel,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 8.dp),
+                    )
+                }
             }
         }
     }
@@ -2707,6 +3023,318 @@ internal fun PendingTodoToggleFeedback.recordTodoToggle(
     )
 }
 
+private enum class DockButtonKind {
+    VIEW,
+    BATCH,
+}
+
+@Composable
+private fun BottomActionDock(
+    viewActive: Boolean,
+    batchActive: Boolean,
+    onViewClick: () -> Unit,
+    onAddClick: () -> Unit,
+    onAddLongClick: () -> Unit,
+    onBatchClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.height(64.dp),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        DockIconButton(
+            kind = DockButtonKind.VIEW,
+            active = viewActive,
+            onClick = onViewClick,
+        )
+        FloatingNewTaskButton(
+            onClick = onAddClick,
+            onLongClick = onAddLongClick,
+        )
+        DockIconButton(
+            kind = DockButtonKind.BATCH,
+            active = batchActive,
+            onClick = onBatchClick,
+        )
+    }
+}
+
+@Composable
+private fun DockIconButton(
+    kind: DockButtonKind,
+    active: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val iconColor = if (active || pressed) colors.textPrimary else colors.textSecondary
+    val borderColor = if (active) colors.primaryInteractive else colors.borderWeak
+    val backgroundColor = if (pressed || active) colors.selectedSurface else colors.surfaceRaised
+    val contentDescription = when (kind) {
+        DockButtonKind.VIEW -> "VIEW OPTIONS"
+        DockButtonKind.BATCH -> "BATCH ACTIONS"
+    }
+
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .background(backgroundColor, RectangleShape)
+            .border(if (active) 2.dp else 1.dp, borderColor, RectangleShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(22.dp)) {
+            val strokeWidth = 2.dp.toPx()
+            when (kind) {
+                DockButtonKind.VIEW -> {
+                    drawLine(iconColor, Offset(2.dp.toPx(), 5.dp.toPx()), Offset(20.dp.toPx(), 5.dp.toPx()), strokeWidth)
+                    drawLine(iconColor, Offset(5.dp.toPx(), 11.dp.toPx()), Offset(17.dp.toPx(), 11.dp.toPx()), strokeWidth)
+                    drawLine(iconColor, Offset(8.dp.toPx(), 17.dp.toPx()), Offset(14.dp.toPx(), 17.dp.toPx()), strokeWidth)
+                }
+                DockButtonKind.BATCH -> {
+                    val boxSize = 6.dp.toPx()
+                    drawRect(iconColor, Offset(3.dp.toPx(), 3.dp.toPx()), Size(boxSize, boxSize), style = Stroke(strokeWidth))
+                    drawRect(iconColor, Offset(13.dp.toPx(), 3.dp.toPx()), Size(boxSize, boxSize), style = Stroke(strokeWidth))
+                    drawRect(iconColor, Offset(3.dp.toPx(), 13.dp.toPx()), Size(boxSize, boxSize), style = Stroke(strokeWidth))
+                    drawLine(iconColor, Offset(13.dp.toPx(), 16.dp.toPx()), Offset(20.dp.toPx(), 16.dp.toPx()), strokeWidth)
+                }
+            }
+        }
+        if (active) {
+            Canvas(
+                modifier = Modifier
+                    .size(6.dp)
+                    .align(Alignment.TopEnd)
+                    .padding(1.dp),
+            ) {
+                drawCircle(color = colors.primaryInteractive, radius = size.minDimension / 2f)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ViewOptionsPanel(
+    sortMode: SortMode,
+    onSortModeChange: (SortMode) -> Unit,
+    hideCompleted: Boolean,
+    onHideCompletedChange: (Boolean) -> Unit,
+    showDeadlineCountdown: Boolean,
+    onDeadlineCountdownChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PixelPanel(
+        modifier = modifier,
+        borderWidth = 1.dp,
+        contentPadding = PaddingValues(8.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PanelLabel("VIEW")
+            PixelSegmentedControl(
+                options = listOf(SortMode.PRIORITY, SortMode.TIME),
+                selected = sortMode,
+                label = { if (it == SortMode.PRIORITY) "PRI" else "TIME" },
+                onSelected = onSortModeChange,
+            )
+            PixelSegmentedControl(
+                options = listOf(false, true),
+                selected = showDeadlineCountdown,
+                label = { if (it) "DDL ON" else "DDL OFF" },
+                onSelected = onDeadlineCountdownChange,
+            )
+            PixelSegmentedControl(
+                options = listOf(false, true),
+                selected = hideCompleted,
+                label = { if (it) "HIDE DONE" else "SHOW DONE" },
+                onSelected = onHideCompletedChange,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BatchActionsPanel(
+    completedCount: Int,
+    totalCount: Int,
+    onDeleteCompleted: () -> Unit,
+    onStartBatchMove: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PixelPanel(
+        modifier = modifier,
+        borderWidth = 1.dp,
+        contentPadding = PaddingValues(8.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PanelLabel(if (totalCount == 0) "NO TASKS" else "BATCH")
+            PixelButton(
+                text = "DONE -> TRASH",
+                onClick = onDeleteCompleted,
+                enabled = completedCount > 0,
+                destructive = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            PixelButton(
+                text = "MOVE TASKS",
+                onClick = onStartBatchMove,
+                enabled = totalCount > 0,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            PixelButton(
+                text = "CANCEL",
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BatchMoveBar(
+    selectedCount: Int,
+    onMove: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    PixelPanel(
+        modifier = modifier,
+        borderWidth = 1.dp,
+        contentPadding = PaddingValues(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "$selectedCount SELECTED",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            PixelButton(
+                text = "MOVE",
+                onClick = onMove,
+                enabled = selectedCount > 0,
+                primary = selectedCount > 0,
+                modifier = Modifier.width(96.dp),
+            )
+            PixelButton(
+                text = "CANCEL",
+                onClick = onCancel,
+                modifier = Modifier.width(104.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BatchMoveTargetPanel(
+    targetChecklists: List<TodoChecklist>,
+    onTargetSelected: (String) -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val scrollState = rememberScrollState()
+    PixelPanel(
+        modifier = modifier,
+        borderWidth = 1.dp,
+        contentPadding = PaddingValues(8.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PanelLabel("TARGET LIST")
+            if (targetChecklists.isEmpty()) {
+                Text(
+                    text = "NO TARGET LIST",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textSecondary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 160.dp)
+                        .verticalScroll(scrollState),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    targetChecklists.forEach { checklist ->
+                        PixelButton(
+                            text = checklist.name.uppercase(Locale.US),
+                            onClick = { onTargetSelected(checklist.id) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+            PixelButton(
+                text = "CANCEL",
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PanelLabel(text: String) {
+    val colors = PixelDoneColors.current
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = colors.textSecondary,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun BatchSelectionMarker(
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    Box(
+        modifier = modifier
+            .size(16.dp)
+            .border(1.dp, if (selected) colors.primaryInteractive else colors.borderWeak, RectangleShape)
+            .background(if (selected) colors.selectedSurface else colors.surfaceRaised),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Canvas(modifier = Modifier.size(10.dp)) {
+                val strokeWidth = 1.8.dp.toPx()
+                drawLine(
+                    color = colors.textPrimary,
+                    start = Offset(1.dp.toPx(), 5.dp.toPx()),
+                    end = Offset(4.dp.toPx(), 8.dp.toPx()),
+                    strokeWidth = strokeWidth,
+                )
+                drawLine(
+                    color = colors.textPrimary,
+                    start = Offset(4.dp.toPx(), 8.dp.toPx()),
+                    end = Offset(9.dp.toPx(), 2.dp.toPx()),
+                    strokeWidth = strokeWidth,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun TodoRow(
     item: TodoItem,
@@ -2718,16 +3346,23 @@ private fun TodoRow(
     nowMillis: Long,
     showDeadlineCountdown: Boolean,
     highlighted: Boolean,
+    batchMoveActive: Boolean,
+    selectedForBatch: Boolean,
+    onToggleBatchSelection: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val colors = PixelDoneColors.current
-    val itemBackground = if (item.completed) colors.completedSurface else colors.surfaceSoft
+    val itemBackground = when {
+        selectedForBatch -> colors.selectedSurface
+        item.completed -> colors.completedSurface
+        else -> colors.surfaceSoft
+    }
     val borderColor by animateColorAsState(
-        targetValue = if (highlighted) colors.primaryInteractive else colors.borderWeak,
+        targetValue = if (highlighted || selectedForBatch) colors.primaryInteractive else colors.borderWeak,
         animationSpec = tween(durationMillis = TodoHighlightFadeMillis),
         label = "todoRowHighlightBorder",
     )
-    val borderWidth = if (highlighted) 2.dp else 1.dp
+    val borderWidth = if (highlighted || selectedForBatch) 2.dp else 1.dp
     val dueDateTime = item.dueAtMillis.formatDateTime()
     val dueDateTimeColor = if (item.dueAtMillis.isExpired(nowMillis)) colors.error else colors.textSecondary
     val repeatText = if (item.reminderRepeat != ReminderRepeat.NONE) {
@@ -2748,9 +3383,13 @@ private fun TodoRow(
             .border(borderWidth, borderColor, RectangleShape)
             .background(itemBackground)
             .clickable {
-                when (todoRowClickAction(item.id, editingTaskId)) {
-                    TodoRowClickAction.Edit -> onEditTodo(item)
-                    TodoRowClickAction.CancelEdit -> onCancelEdit()
+                if (batchMoveActive) {
+                    onToggleBatchSelection(item.id)
+                } else {
+                    when (todoRowClickAction(item.id, editingTaskId)) {
+                        TodoRowClickAction.Edit -> onEditTodo(item)
+                        TodoRowClickAction.CancelEdit -> onCancelEdit()
+                    }
                 }
             }
             .padding(rowPadding),
@@ -2763,6 +3402,9 @@ private fun TodoRow(
                 .height(if (item.completed) 32.dp else 48.dp)
                 .background(item.priority.priorityColor()),
         )
+        if (batchMoveActive) {
+            BatchSelectionMarker(selected = selectedForBatch)
+        }
         Checkbox(
             checked = item.completed,
             onCheckedChange = { checked ->
@@ -2816,7 +3458,7 @@ private fun TodoRow(
                 }
             }
         }
-        if (!item.completed) {
+        if (!item.completed && !batchMoveActive) {
             PixelItemImageButton(
                 hasImage = item.imageFileName != null,
                 onClick = { onOpenTodoImage(item) },
@@ -3687,17 +4329,33 @@ private fun PhonePreview() {
             onDeleteCompleted = {},
             onRestoreTodo = {},
             onDeleteAllTrash = {},
+            targetMoveChecklists = checklists.filter {
+                isNormalChecklist(it) && it.id != checklists.first().id
+            },
+            viewPanelVisible = false,
+            batchPanelVisible = false,
+            batchMoveMode = BatchMoveMode.IDLE,
+            batchMoveSelectedTodoIds = emptySet(),
+            onToggleViewPanel = {},
+            onToggleBatchPanel = {},
+            onStartBatchMoveSelection = {},
+            onToggleBatchMoveSelection = { _ -> },
+            onOpenBatchMoveTargetPicker = {},
+            onCloseBatchMoveTargetPicker = {},
+            onCancelBatchMove = {},
+            onMoveSelectedTodosToChecklist = { _, _ -> },
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),
             todoListHighlightRequest = previewHighlightRequest(),
+            onTodoListHighlightConsumed = {},
             updateUiState = AppUpdateUiState(),
             onUpdateClick = {},
             darkTheme = false,
             onDarkThemeChange = {},
             showUpdateDialogs = true,
             onShowUpdateDialogsChange = {},
-            currentVersion = "2.6.0",
+            currentVersion = "2.7.0",
             permissionSettingsState = previewPermissionSettingsState(),
             onRequestNotificationPermission = {},
             onRequestExactAlarmPermission = {},
@@ -3762,17 +4420,33 @@ private fun TabletPreview() {
             onDeleteCompleted = {},
             onRestoreTodo = {},
             onDeleteAllTrash = {},
+            targetMoveChecklists = checklists.filter {
+                isNormalChecklist(it) && it.id != checklists.first().id
+            },
+            viewPanelVisible = false,
+            batchPanelVisible = false,
+            batchMoveMode = BatchMoveMode.IDLE,
+            batchMoveSelectedTodoIds = emptySet(),
+            onToggleViewPanel = {},
+            onToggleBatchPanel = {},
+            onStartBatchMoveSelection = {},
+            onToggleBatchMoveSelection = { _ -> },
+            onOpenBatchMoveTargetPicker = {},
+            onCloseBatchMoveTargetPicker = {},
+            onCancelBatchMove = {},
+            onMoveSelectedTodosToChecklist = { _, _ -> },
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),
             todoListHighlightRequest = previewHighlightRequest(),
+            onTodoListHighlightConsumed = {},
             updateUiState = AppUpdateUiState(status = UpdateUiStatus.Available),
             onUpdateClick = {},
             darkTheme = false,
             onDarkThemeChange = {},
             showUpdateDialogs = true,
             onShowUpdateDialogsChange = {},
-            currentVersion = "2.6.0",
+            currentVersion = "2.7.0",
             permissionSettingsState = previewPermissionSettingsState(),
             onRequestNotificationPermission = {},
             onRequestExactAlarmPermission = {},

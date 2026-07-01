@@ -241,6 +241,42 @@ fun moveCompletedTodosToTrash(
     )
 }
 
+fun moveTodoItemsToChecklist(
+    state: TodoChecklistState,
+    sourceChecklistId: String,
+    targetChecklistId: String,
+    todoIds: Collection<String>,
+): TodoChecklistState? {
+    if (todoIds.isEmpty()) return null
+    if (sourceChecklistId == targetChecklistId) return null
+    if (isSpecialChecklistId(sourceChecklistId) || isSpecialChecklistId(targetChecklistId)) return null
+
+    val sourceChecklist = state.lists.firstOrNull {
+        it.id == sourceChecklistId && isNormalChecklist(it)
+    } ?: return null
+    val targetChecklist = state.lists.firstOrNull {
+        it.id == targetChecklistId && isNormalChecklist(it)
+    } ?: return null
+
+    val sourceItemsById = sourceChecklist.items.associateBy { it.id }
+    val movedItems = todoIds.distinct().mapNotNull { sourceItemsById[it] }
+    if (movedItems.isEmpty()) return null
+
+    val movedIds = movedItems.mapTo(mutableSetOf()) { it.id }
+    val updatedLists = state.lists.map { checklist ->
+        when (checklist.id) {
+            sourceChecklist.id -> checklist.copy(items = checklist.items.filterNot { it.id in movedIds })
+            targetChecklist.id -> checklist.copy(items = checklist.items + movedItems)
+            else -> checklist
+        }
+    }
+
+    return state.copy(
+        lists = updatedLists,
+        selectedListId = targetChecklistId,
+    )
+}
+
 fun restoreTodoFromTrash(
     state: TodoChecklistState,
     todoId: String,

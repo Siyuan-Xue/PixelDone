@@ -69,7 +69,7 @@ private val DarkPixelDonePalette = PixelDonePalette(
     error = PixelError,
     disabledSurface = ClaudeGray800,
     disabledText = ClaudeGray600,
-    onPrimary = ClaudeSlateDark,
+    onPrimary = ClaudeGray050,
 )
 
 private val LocalPixelDonePalette = staticCompositionLocalOf { LightPixelDonePalette }
