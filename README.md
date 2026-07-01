@@ -134,24 +134,24 @@ https://gitee.com/milesxue/PixelDone/releases
 
 Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
 
-The signed release APK is copied to:
+The signed release APK, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.7.2-release.apk
+app/build/outputs/apk/release/PixelDone-2.7.3-rc.1-release.apk
 ```
 
-A local debug build, if assembled, is copied to:
+The beta RC debug build is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.7.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.7.3-rc.1-debug.apk
 ```
 
 ## Install
 
-Install the signed release build with:
+Install the beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-2.7.2-release.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.7.3-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -168,4 +168,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.7.2 formal signed release for lightweight update dialogs and GitHub-first update fallback queues.
+2.7.3 rc1 beta prerelease for dialog action alignment fixes.

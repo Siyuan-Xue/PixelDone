@@ -4125,17 +4125,20 @@ private fun UpdateAvailableDialog(
             }
         },
         confirmButton = {
-            PixelButton(
-                text = "UPDATE",
-                onClick = { onUpdate(info) },
-                primary = true,
-            )
-        },
-        dismissButton = {
-            DialogCloseTextButton(
-                text = "LATER",
-                onClick = onDismiss,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DialogCloseTextButton(
+                    text = "LATER",
+                    onClick = onDismiss,
+                )
+                PixelButton(
+                    text = "UPDATE",
+                    onClick = { onUpdate(info) },
+                    primary = true,
+                )
+            }
         },
         shape = RectangleShape,
         containerColor = colors.surface,
@@ -4500,20 +4503,23 @@ private fun DeleteConfirmationDialog(
             )
         },
         confirmButton = {
-            PixelButton(
-                text = "DELETE",
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onConfirm()
-                },
-                destructive = true,
-            )
-        },
-        dismissButton = {
-            DialogCloseTextButton(
-                text = "CANCEL",
-                onClick = onDismiss,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DialogCloseTextButton(
+                    text = "CLOSE",
+                    onClick = onDismiss,
+                )
+                PixelButton(
+                    text = "DELETE",
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onConfirm()
+                    },
+                    destructive = true,
+                )
+            }
         },
         shape = RectangleShape,
         containerColor = colors.surface,
