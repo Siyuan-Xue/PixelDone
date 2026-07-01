@@ -1,0 +1,4 @@
+interface:
+  display_name: "Android UI/UX Designer"
+  short_description: "Pixel Android UI and icon reviewer"
+  default_prompt: "Use $design-android-ui-ux to design or review a Pixel-style Android utility screen or launcher icon."

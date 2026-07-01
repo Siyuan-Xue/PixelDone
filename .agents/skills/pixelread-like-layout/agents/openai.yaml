@@ -1,0 +1,4 @@
+interface:
+  display_name: "PixelPark Page Shell"
+  short_description: "Align PixelDone to the PixelPark page shell"
+  default_prompt: "Use $pixelread-like-layout to align PixelDone screens to the standalone PixelPark page-shell standard."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Android Repo Doctor"
+  short_description: "Audit Android repo Git hygiene"
+  default_prompt: "Use $android-repo-doctor to audit the PixelDone repository for Git pollution and .gitignore drift."

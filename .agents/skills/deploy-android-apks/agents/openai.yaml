@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy Android APKs"
+  short_description: "Install or copy PixelDone APKs"
+  default_prompt: "Use $deploy-android-apks to install or copy the PixelDone debug APK onto an authorized Android device."

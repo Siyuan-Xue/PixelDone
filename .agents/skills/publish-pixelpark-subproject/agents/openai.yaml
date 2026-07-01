@@ -1,0 +1,4 @@
+interface:
+  display_name: "Publish PixelDone"
+  short_description: "Verify and publish PixelDone"
+  default_prompt: "Use $publish-pixelpark-subproject to verify and publish the standalone PixelDone repository."

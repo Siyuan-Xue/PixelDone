@@ -1,0 +1,4 @@
+interface:
+  display_name: "Launch PixelDone"
+  short_description: "Signed APK launch workflow for PixelDone"
+  default_prompt: "Use $launch-pixelpark-product to prepare a signed APK release for PixelDone."

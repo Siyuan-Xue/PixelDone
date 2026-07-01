@@ -4,6 +4,19 @@ PixelDone is a private Android todo planner for quickly managing local tasks acr
 
 Developer identity: CODEX & XUE.
 
+## Collaborator Start
+
+PixelDone is a standalone Android repository. A contributor should be able to clone this repository on Windows, macOS, or Linux and start work without the parent PixelPark workspace.
+
+Before editing, building, reviewing, or releasing, read:
+
+- `AGENTS.md`
+- `PROJECT_SPEC.md`
+- `PRODUCT_LINE_SPEC.md`
+- `DESIGN_SPEC.md`
+
+Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machine configuration out of Git: `local.properties`, signing files, Android Studio local state, Gradle build outputs, APKs, and user-specific paths must remain untracked.
+
 ## Current Features
 
 - Add todos with a name, four-step priority, and date/time.
@@ -87,10 +100,20 @@ Developer identity: CODEX & XUE.
 
 From the project root:
 
+Windows:
+
 ```powershell
 .\gradlew.bat testDebugUnitTest
 .\gradlew.bat assembleDebug
 .\gradlew.bat assembleRelease
+```
+
+macOS/Linux:
+
+```sh
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
+./gradlew assembleRelease
 ```
 
 Release signing is configured through the local, untracked `signing/release-signing.properties` file for formal releases.
@@ -111,7 +134,7 @@ app/build/outputs/apk/debug/PixelDone-2.7.0-debug.apk
 
 Install the signed release build with:
 
-```powershell
+```sh
 adb install -r app/build/outputs/apk/release/PixelDone-2.7.0-release.apk
 ```
 
