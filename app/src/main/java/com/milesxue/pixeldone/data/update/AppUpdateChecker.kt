@@ -6,24 +6,45 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal const val PixelDoneUpdateApiUrl = "https://api.github.com/repos/Siyuan-Xue/PixelDone/releases/latest"
+internal const val PixelDoneGiteeReleasesApiUrl =
+    "https://gitee.com/api/v5/repos/milesxue/PixelDone/releases"
+internal const val PixelDoneGiteeReleasePageUrl =
+    "https://gitee.com/milesxue/PixelDone/releases"
 internal const val PixelDoneProjectName = "PixelDone"
+private const val GiteeReleasePageSize = 100
+
+internal enum class AppUpdateChannel {
+    Formal,
+    Beta,
+    ;
+
+    companion object {
+        fun fromBuildConfigValue(value: String): AppUpdateChannel =
+            when (value.trim().lowercase()) {
+                "beta" -> Beta
+                else -> Formal
+            }
+    }
+}
 
 internal data class ReleaseAsset(
     val name: String,
     val downloadUrl: String,
 )
 
-internal data class GitHubRelease(
+internal data class GiteeRelease(
+    val id: Long,
     val tagName: String,
     val htmlUrl: String,
-    val assets: List<ReleaseAsset>,
+    val prerelease: Boolean,
+    val assets: List<ReleaseAsset> = emptyList(),
 )
 
 internal data class AppUpdateInfo(
     val version: String,
     val releasePageUrl: String,
     val apkDownloadUrl: String,
+    val fileName: String,
 )
 
 internal sealed interface AppUpdateCheckResult {
@@ -32,72 +53,261 @@ internal sealed interface AppUpdateCheckResult {
     data object Unavailable : AppUpdateCheckResult
 }
 
-internal suspend fun checkPixelDoneUpdate(currentVersion: String): AppUpdateCheckResult =
+private data class UpdateCandidate(
+    val release: GiteeRelease,
+    val version: AppVersion,
+    val fileName: String,
+)
+
+internal data class AppVersion(
+    val major: Int,
+    val minor: Int,
+    val patch: Int,
+    val rc: Int? = null,
+) : Comparable<AppVersion> {
+    val normalized: String
+        get() = buildString {
+            append(major)
+            append(".")
+            append(minor)
+            append(".")
+            append(patch)
+            rc?.let { releaseCandidate ->
+                append("-rc.")
+                append(releaseCandidate)
+            }
+        }
+
+    override fun compareTo(other: AppVersion): Int {
+        compareValuesBy(this, other, AppVersion::major, AppVersion::minor, AppVersion::patch)
+            .takeIf { it != 0 }
+            ?.let { return it }
+        return when {
+            rc == other.rc -> 0
+            rc == null -> 1
+            other.rc == null -> -1
+            else -> rc.compareTo(other.rc)
+        }
+    }
+}
+
+internal suspend fun checkPixelDoneUpdate(
+    currentVersion: String,
+    channel: AppUpdateChannel,
+): AppUpdateCheckResult =
     checkAppUpdate(
-        apiUrl = PixelDoneUpdateApiUrl,
+        releasesApiUrl = PixelDoneGiteeReleasesApiUrl,
         projectName = PixelDoneProjectName,
         currentVersion = currentVersion,
+        channel = channel,
     )
 
 internal suspend fun checkAppUpdate(
-    apiUrl: String,
+    releasesApiUrl: String,
     projectName: String,
     currentVersion: String,
-): AppUpdateCheckResult {
-    val release = fetchLatestRelease(apiUrl) ?: return AppUpdateCheckResult.Unavailable
-    return releaseToUpdateCheckResult(
-        release = release,
-        projectName = projectName,
-        currentVersion = currentVersion,
-    )
-}
-
-internal fun releaseToUpdateCheckResult(
-    release: GitHubRelease,
-    projectName: String,
-    currentVersion: String,
-): AppUpdateCheckResult {
-    val latestVersion = normalizedSemanticVersion(release.tagName)
-        ?: return AppUpdateCheckResult.Unavailable
-
-    if (!isNewerSemanticVersion(release.tagName, currentVersion)) {
-        return AppUpdateCheckResult.Current
-    }
-
-    val apkDownloadUrl = findReleaseApkUrl(
-        release = release,
-        projectName = projectName,
-        version = latestVersion,
-    ) ?: return AppUpdateCheckResult.Unavailable
-
-    return AppUpdateCheckResult.Available(
-        AppUpdateInfo(
-            version = latestVersion,
-            releasePageUrl = release.htmlUrl,
-            apkDownloadUrl = apkDownloadUrl,
-        ),
-    )
-}
-
-internal suspend fun fetchLatestRelease(
-    apiUrl: String,
+    channel: AppUpdateChannel,
     openConnection: (URL) -> HttpURLConnection = { url ->
         url.openConnection() as HttpURLConnection
     },
-): GitHubRelease? =
+): AppUpdateCheckResult {
+    val releases = fetchGiteeReleases(
+        releasesApiUrl = releasesApiUrl,
+        openConnection = openConnection,
+    ) ?: return AppUpdateCheckResult.Unavailable
+    val candidates = sortedUpdateCandidates(
+        releases = releases,
+        projectName = projectName,
+        currentVersion = currentVersion,
+        channel = channel,
+    )
+    if (candidates.isEmpty()) return AppUpdateCheckResult.Current
+
+    for (candidate in candidates) {
+        val assets = if (candidate.release.assets.isNotEmpty()) {
+            candidate.release.assets
+        } else {
+            fetchGiteeReleaseAssets(
+                releasesApiUrl = releasesApiUrl,
+                releaseId = candidate.release.id,
+                openConnection = openConnection,
+            ) ?: return AppUpdateCheckResult.Unavailable
+        }
+        val asset = findReleaseApkAsset(assets, candidate.fileName) ?: continue
+        return AppUpdateCheckResult.Available(
+            AppUpdateInfo(
+                version = candidate.version.normalized,
+                releasePageUrl = candidate.release.htmlUrl,
+                apkDownloadUrl = asset.downloadUrl,
+                fileName = candidate.fileName,
+            ),
+        )
+    }
+    return AppUpdateCheckResult.Unavailable
+}
+
+internal fun releasesToUpdateCheckResult(
+    releases: List<GiteeRelease>,
+    projectName: String,
+    currentVersion: String,
+    channel: AppUpdateChannel,
+): AppUpdateCheckResult {
+    val candidates = sortedUpdateCandidates(
+        releases = releases,
+        projectName = projectName,
+        currentVersion = currentVersion,
+        channel = channel,
+    )
+    if (candidates.isEmpty()) return AppUpdateCheckResult.Current
+
+    candidates.forEach { candidate ->
+        val asset = findReleaseApkAsset(candidate.release.assets, candidate.fileName)
+        if (asset != null) {
+            return AppUpdateCheckResult.Available(
+                AppUpdateInfo(
+                    version = candidate.version.normalized,
+                    releasePageUrl = candidate.release.htmlUrl,
+                    apkDownloadUrl = asset.downloadUrl,
+                    fileName = candidate.fileName,
+                ),
+            )
+        }
+    }
+    return AppUpdateCheckResult.Unavailable
+}
+
+internal suspend fun fetchGiteeReleases(
+    releasesApiUrl: String,
+    openConnection: (URL) -> HttpURLConnection = { url ->
+        url.openConnection() as HttpURLConnection
+    },
+): List<GiteeRelease>? {
+    val releases = mutableListOf<GiteeRelease>()
+    var page = 1
+    while (true) {
+        val body = fetchJson(
+            url = pagedGiteeUrl(releasesApiUrl, page),
+            openConnection = openConnection,
+        ) ?: return null
+        val pageReleases = parseGiteeReleases(body) ?: return null
+        if (pageReleases.isEmpty()) break
+        releases += pageReleases
+        if (pageReleases.size < GiteeReleasePageSize) break
+        page += 1
+    }
+    return releases
+}
+
+internal suspend fun fetchGiteeReleaseAssets(
+    releasesApiUrl: String,
+    releaseId: Long,
+    openConnection: (URL) -> HttpURLConnection = { url ->
+        url.openConnection() as HttpURLConnection
+    },
+): List<ReleaseAsset>? {
+    val assets = mutableListOf<ReleaseAsset>()
+    val assetsApiUrl = giteeReleaseAssetsApiUrl(releasesApiUrl, releaseId)
+    var page = 1
+    while (true) {
+        val body = fetchJson(
+            url = pagedGiteeUrl(assetsApiUrl, page),
+            openConnection = openConnection,
+        ) ?: return null
+        val pageAssets = parseGiteeReleaseAssets(body) ?: return null
+        if (pageAssets.isEmpty()) break
+        assets += pageAssets
+        if (pageAssets.size < GiteeReleasePageSize) break
+        page += 1
+    }
+    return assets
+}
+
+internal fun findReleaseApkAsset(
+    assets: List<ReleaseAsset>,
+    fileName: String,
+): ReleaseAsset? =
+    assets.firstOrNull { asset -> asset.name.equals(fileName, ignoreCase = true) }
+
+internal fun updateApkFileName(
+    projectName: String,
+    version: String,
+    channel: AppUpdateChannel,
+): String =
+    when (channel) {
+        AppUpdateChannel.Formal -> "$projectName-$version-release.apk"
+        AppUpdateChannel.Beta -> "$projectName-$version-debug.apk"
+    }
+
+internal fun isNewerSemanticVersion(latestVersion: String, currentVersion: String): Boolean {
+    val latest = parseAppVersion(latestVersion) ?: return false
+    val current = parseAppVersion(currentVersion) ?: return false
+    return latest > current
+}
+
+internal fun normalizedSemanticVersion(version: String): String? =
+    parseAppVersion(version)?.normalized
+
+internal fun parseGiteeReleases(json: String): List<GiteeRelease>? =
+    extractTopLevelArrayObjects(json)?.map { releaseJson ->
+        parseGiteeRelease(releaseJson) ?: return null
+    }
+
+internal fun parseGiteeReleaseAssets(json: String): List<ReleaseAsset>? =
+    extractTopLevelArrayObjects(json)?.map { assetJson ->
+        parseReleaseAsset(assetJson) ?: return null
+    }
+
+private fun sortedUpdateCandidates(
+    releases: List<GiteeRelease>,
+    projectName: String,
+    currentVersion: String,
+    channel: AppUpdateChannel,
+): List<UpdateCandidate> {
+    val current = parseAppVersion(currentVersion) ?: return emptyList()
+    return releases.mapNotNull { release ->
+        val version = releaseVersionForChannel(release, channel) ?: return@mapNotNull null
+        if (version <= current) return@mapNotNull null
+        UpdateCandidate(
+            release = release,
+            version = version,
+            fileName = updateApkFileName(
+                projectName = projectName,
+                version = version.normalized,
+                channel = channel,
+            ),
+        )
+    }.sortedByDescending { candidate -> candidate.version }
+}
+
+private fun releaseVersionForChannel(
+    release: GiteeRelease,
+    channel: AppUpdateChannel,
+): AppVersion? =
+    when (channel) {
+        AppUpdateChannel.Formal -> {
+            if (release.prerelease) null else parseStableReleaseTag(release.tagName)
+        }
+        AppUpdateChannel.Beta -> {
+            if (!release.prerelease) null else parseRcReleaseTag(release.tagName)
+        }
+    }
+
+private suspend fun fetchJson(
+    url: String,
+    openConnection: (URL) -> HttpURLConnection,
+): String? =
     withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
         try {
-            connection = openConnection(URL(apiUrl)).apply {
+            connection = openConnection(URL(url)).apply {
                 requestMethod = "GET"
                 connectTimeout = 8_000
                 readTimeout = 8_000
-                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("Accept", "application/json")
                 setRequestProperty("User-Agent", PixelDoneProjectName)
             }
             if (connection.responseCode !in 200..299) return@withContext null
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            parseGitHubRelease(body)
+            connection.inputStream.bufferedReader().use { it.readText() }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
@@ -107,94 +317,110 @@ internal suspend fun fetchLatestRelease(
         }
     }
 
-internal fun findReleaseApkUrl(
-    release: GitHubRelease,
-    projectName: String,
-    version: String,
-): String? {
-    val expectedName = "$projectName-${normalizedSemanticVersion(version) ?: version}-release.apk"
-    return release.assets.firstOrNull { asset ->
-        asset.name.equals(expectedName, ignoreCase = true)
-    }?.downloadUrl
+private fun pagedGiteeUrl(baseUrl: String, page: Int): String {
+    val separator = if (baseUrl.contains("?")) "&" else "?"
+    return "$baseUrl${separator}direction=desc&per_page=$GiteeReleasePageSize&page=$page"
 }
 
-internal fun isNewerSemanticVersion(latestVersion: String, currentVersion: String): Boolean {
-    val latestParts = semanticVersionParts(latestVersion) ?: return false
-    val currentParts = semanticVersionParts(currentVersion) ?: return false
-    return latestParts.zip(currentParts)
-        .firstOrNull { (latest, current) -> latest != current }
-        ?.let { (latest, current) -> latest > current }
-        ?: false
+private fun giteeReleaseAssetsApiUrl(releasesApiUrl: String, releaseId: Long): String {
+    val repoApiUrl = releasesApiUrl.substringBeforeLast("/releases")
+    return "$repoApiUrl/releases/$releaseId/attach_files"
 }
 
-internal fun normalizedSemanticVersion(version: String): String? {
-    val parts = semanticVersionParts(version) ?: return null
-    return parts.joinToString(".")
+private val AppVersionRegex =
+    Regex("^v?(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?(?:-rc\\.(\\d+))?$", RegexOption.IGNORE_CASE)
+private val StableReleaseTagRegex =
+    Regex("^v?(\\d+)\\.(\\d+)\\.(\\d+)$", RegexOption.IGNORE_CASE)
+private val RcReleaseTagRegex =
+    Regex("^v?(\\d+)\\.(\\d+)\\.(\\d+)-rc\\.(\\d+)$", RegexOption.IGNORE_CASE)
+
+private fun parseAppVersion(version: String): AppVersion? {
+    val values = AppVersionRegex.matchEntire(version.trim())?.groupValues ?: return null
+    return AppVersion(
+        major = values[1].toIntOrNull() ?: return null,
+        minor = values.getOrNull(2)?.takeIf { it.isNotEmpty() }?.toIntOrNull() ?: 0,
+        patch = values.getOrNull(3)?.takeIf { it.isNotEmpty() }?.toIntOrNull() ?: 0,
+        rc = values.getOrNull(4)?.takeIf { it.isNotEmpty() }?.toIntOrNull(),
+    )
 }
 
-private fun semanticVersionParts(version: String): List<Int>? {
-    val cleaned = version.trim()
-        .removePrefix("v")
-        .removePrefix("V")
-        .substringBefore("-")
-    val pieces = cleaned.split(".")
-    if (pieces.isEmpty() || pieces.size > 3) return null
-    val parsed = pieces.map { it.toIntOrNull() ?: return null }
-    return parsed + List(3 - parsed.size) { 0 }
+private fun parseStableReleaseTag(tagName: String): AppVersion? {
+    val values = StableReleaseTagRegex.matchEntire(tagName.trim())?.groupValues ?: return null
+    return AppVersion(
+        major = values[1].toIntOrNull() ?: return null,
+        minor = values[2].toIntOrNull() ?: return null,
+        patch = values[3].toIntOrNull() ?: return null,
+    )
 }
 
-internal fun parseGitHubRelease(json: String): GitHubRelease? {
-    val tagName = extractJsonString(json, "tag_name") ?: return null
-    val htmlUrl = extractJsonString(json, "html_url") ?: return null
-    val assets = extractJsonArray(json, "assets")
+private fun parseRcReleaseTag(tagName: String): AppVersion? {
+    val values = RcReleaseTagRegex.matchEntire(tagName.trim())?.groupValues ?: return null
+    return AppVersion(
+        major = values[1].toIntOrNull() ?: return null,
+        minor = values[2].toIntOrNull() ?: return null,
+        patch = values[3].toIntOrNull() ?: return null,
+        rc = values[4].toIntOrNull() ?: return null,
+    )
+}
+
+private fun parseGiteeRelease(json: String): GiteeRelease? {
+    val id = extractTopLevelJsonLong(json, "id") ?: return null
+    val tagName = extractTopLevelJsonString(json, "tag_name") ?: return null
+    val htmlUrl = extractTopLevelJsonString(json, "html_url")
+        ?: "$PixelDoneGiteeReleasePageUrl/tag/$tagName"
+    val prerelease = extractTopLevelJsonBoolean(json, "prerelease") ?: false
+    val assets = extractTopLevelJsonArray(json, "assets")
         ?.let(::extractJsonObjects)
-        ?.mapNotNull { assetJson ->
-            val name = extractJsonString(assetJson, "name") ?: return@mapNotNull null
-            val url = extractJsonString(assetJson, "browser_download_url") ?: return@mapNotNull null
-            ReleaseAsset(name = name, downloadUrl = url)
-        }
+        ?.mapNotNull(::parseReleaseAsset)
         ?: emptyList()
 
-    return GitHubRelease(
+    return GiteeRelease(
+        id = id,
         tagName = tagName,
         htmlUrl = htmlUrl,
+        prerelease = prerelease,
         assets = assets,
     )
 }
 
-private fun extractJsonString(json: String, key: String): String? {
-    val keyIndex = json.indexOf("\"$key\"")
-    if (keyIndex < 0) return null
-    val colonIndex = json.indexOf(':', keyIndex)
-    if (colonIndex < 0) return null
-    val startQuote = json.indexOf('"', colonIndex + 1)
-    if (startQuote < 0) return null
-
-    val raw = StringBuilder()
-    var index = startQuote + 1
-    var escaped = false
-    while (index < json.length) {
-        val char = json[index]
-        when {
-            escaped -> {
-                raw.append('\\')
-                raw.append(char)
-                escaped = false
-            }
-            char == '\\' -> escaped = true
-            char == '"' -> return unescapeJsonString(raw.toString())
-            else -> raw.append(char)
-        }
-        index += 1
-    }
-    return null
+private fun parseReleaseAsset(json: String): ReleaseAsset? {
+    val name = extractTopLevelJsonString(json, "name") ?: return null
+    val url = extractTopLevelJsonString(json, "browser_download_url") ?: return null
+    return ReleaseAsset(name = name, downloadUrl = url)
 }
 
-private fun extractJsonArray(json: String, key: String): String? {
-    val keyIndex = json.indexOf("\"$key\"")
-    if (keyIndex < 0) return null
-    val startIndex = json.indexOf('[', keyIndex)
-    if (startIndex < 0) return null
+private fun extractTopLevelArrayObjects(json: String): List<String>? {
+    val trimmed = json.trim()
+    if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null
+    return extractJsonObjects(trimmed.substring(1, trimmed.lastIndex))
+}
+
+private fun extractTopLevelJsonString(json: String, key: String): String? {
+    val valueStart = findTopLevelJsonValueStart(json, key) ?: return null
+    if (json.getOrNull(valueStart) != '"') return null
+    return readJsonStringToken(json, valueStart)?.value
+}
+
+private fun extractTopLevelJsonLong(json: String, key: String): Long? {
+    val valueStart = findTopLevelJsonValueStart(json, key) ?: return null
+    val valueEnd = json.indexOfFirstFrom(valueStart) { char ->
+        char == ',' || char == '}' || char.isWhitespace()
+    }.takeIf { it >= 0 } ?: json.length
+    return json.substring(valueStart, valueEnd).trim().toLongOrNull()
+}
+
+private fun extractTopLevelJsonBoolean(json: String, key: String): Boolean? {
+    val valueStart = findTopLevelJsonValueStart(json, key) ?: return null
+    return when {
+        json.startsWith("true", valueStart) -> true
+        json.startsWith("false", valueStart) -> false
+        else -> null
+    }
+}
+
+private fun extractTopLevelJsonArray(json: String, key: String): String? {
+    val startIndex = findTopLevelJsonValueStart(json, key) ?: return null
+    if (json.getOrNull(startIndex) != '[') return null
 
     var depth = 0
     var inString = false
@@ -217,6 +443,78 @@ private fun extractJsonArray(json: String, key: String): String? {
                 if (depth == 0) return json.substring(startIndex + 1, index)
             }
         }
+    }
+    return null
+}
+
+private fun findTopLevelJsonValueStart(json: String, key: String): Int? {
+    var depth = 0
+    var inString = false
+    var escaped = false
+    var index = 0
+    while (index < json.length) {
+        val char = json[index]
+        if (inString) {
+            when {
+                escaped -> escaped = false
+                char == '\\' -> escaped = true
+                char == '"' -> inString = false
+            }
+            index += 1
+            continue
+        }
+
+        when (char) {
+            '"' -> {
+                if (depth == 1) {
+                    val token = readJsonStringToken(json, index)
+                    if (token != null) {
+                        val colonIndex = json.skipWhitespace(token.endIndex)
+                        if (json.getOrNull(colonIndex) == ':' && token.value == key) {
+                            return json.skipWhitespace(colonIndex + 1)
+                        }
+                        index = token.endIndex
+                        continue
+                    }
+                }
+                inString = true
+            }
+            '{', '[' -> depth += 1
+            '}', ']' -> depth -= 1
+        }
+        index += 1
+    }
+    return null
+}
+
+private data class JsonStringToken(
+    val value: String,
+    val endIndex: Int,
+)
+
+private fun readJsonStringToken(json: String, startQuote: Int): JsonStringToken? {
+    if (json.getOrNull(startQuote) != '"') return null
+    val raw = StringBuilder()
+    var index = startQuote + 1
+    var escaped = false
+    while (index < json.length) {
+        val char = json[index]
+        when {
+            escaped -> {
+                raw.append('\\')
+                raw.append(char)
+                escaped = false
+            }
+            char == '\\' -> escaped = true
+            char == '"' -> {
+                return JsonStringToken(
+                    value = unescapeJsonString(raw.toString()),
+                    endIndex = index + 1,
+                )
+            }
+            else -> raw.append(char)
+        }
+        index += 1
     }
     return null
 }
@@ -288,6 +586,24 @@ private fun unescapeJsonString(value: String): String {
         index += 2
     }
     return builder.toString()
+}
+
+private inline fun String.indexOfFirstFrom(
+    startIndex: Int,
+    predicate: (Char) -> Boolean,
+): Int {
+    for (index in startIndex until length) {
+        if (predicate(this[index])) return index
+    }
+    return -1
+}
+
+private fun String.skipWhitespace(startIndex: Int): Int {
+    var index = startIndex
+    while (index < length && this[index].isWhitespace()) {
+        index += 1
+    }
+    return index
 }
 
 private fun String.substringOrNull(startIndex: Int, endIndex: Int): String? =

@@ -33,8 +33,8 @@ android {
         applicationId = "com.milesxue.pixeldone"
         minSdk = 26
         targetSdk = 37
-        versionCode = 43
-        versionName = "2.7.0"
+        versionCode = 44
+        versionName = "2.7.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -53,9 +53,11 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+            buildConfigField("String", "UPDATE_CHANNEL", "\"beta\"")
         }
         release {
             isDebuggable = false
+            buildConfigField("String", "UPDATE_CHANNEL", "\"formal\"")
             if (releaseSigningPropertiesFile.isFile) {
                 signingConfig = signingConfigs.getByName("release")
             }

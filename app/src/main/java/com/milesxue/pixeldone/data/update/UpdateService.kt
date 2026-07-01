@@ -3,12 +3,18 @@ package com.milesxue.pixeldone.data.update
 /**
  * 应用更新边界。
  *
- * 教学说明：检查 GitHub Release、启动 DownloadManager、打开安装界面都是“外部系统动作”。
+ * 教学说明：检查 Gitee Release、启动 DownloadManager、打开安装界面都是“外部系统动作”。
  * UI 通过这个服务表达意图，而不是直接操作网络和下载组件。
  */
-internal class UpdateService(private val downloader: AppUpdateDownloader) {
+internal class UpdateService(
+    private val downloader: AppUpdateDownloader,
+    private val channel: AppUpdateChannel,
+) {
     suspend fun check(currentVersion: String): AppUpdateCheckResult =
-        checkPixelDoneUpdate(currentVersion)
+        checkPixelDoneUpdate(
+            currentVersion = currentVersion,
+            channel = channel,
+        )
 
     fun enqueue(info: AppUpdateInfo): AppUpdateDownloadResult =
         downloader.enqueue(info)

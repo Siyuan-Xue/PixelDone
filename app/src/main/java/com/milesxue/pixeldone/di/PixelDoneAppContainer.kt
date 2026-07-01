@@ -1,11 +1,13 @@
 package com.milesxue.pixeldone.di
 
 import android.content.Context
+import com.milesxue.pixeldone.BuildConfig
 import com.milesxue.pixeldone.PixelDoneApplication
 import com.milesxue.pixeldone.data.image.TodoImageStore
 import com.milesxue.pixeldone.data.todo.TodoPreferences
 import com.milesxue.pixeldone.data.todo.TodoRepository
 import com.milesxue.pixeldone.data.update.AppUpdateDownloader
+import com.milesxue.pixeldone.data.update.AppUpdateChannel
 import com.milesxue.pixeldone.data.update.UpdateService
 import com.milesxue.pixeldone.domain.todo.ClockProvider
 import com.milesxue.pixeldone.domain.todo.SystemClockProvider
@@ -26,7 +28,10 @@ internal class PixelDoneAppContainer(context: Context) {
     val todoRepository: TodoRepository = TodoRepository(todoPreferences)
     val todoImageStore: TodoImageStore = TodoImageStore(appContext)
     val appUpdateDownloader: AppUpdateDownloader = AppUpdateDownloader(appContext)
-    val updateService: UpdateService = UpdateService(appUpdateDownloader)
+    val updateService: UpdateService = UpdateService(
+        downloader = appUpdateDownloader,
+        channel = AppUpdateChannel.fromBuildConfigValue(BuildConfig.UPDATE_CHANNEL),
+    )
     val reminderScheduler: ReminderScheduler = AndroidReminderScheduler(appContext)
 }
 

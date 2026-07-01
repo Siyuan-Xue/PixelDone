@@ -9,7 +9,9 @@ description: Launch PixelDone as a formal private signed release APK for direct 
 
 Use this skill for formal PixelPark launches that distribute signed release APKs directly through GitHub releases. Keep it separate from debug-only shipping, daily Git cleanup, and local APK deployment.
 
-If the task is only a debug GitHub release, use `$publish-pixelpark-subproject`. If it is only end-of-day Git wrap-up, use `$pixel-daily-ship`. If it is only device installation or file transfer, use `$deploy-android-apks`.
+GitHub is the canonical publishing surface for code pushes, tags, and release assets. PixelDone's in-app updater reads the user's synced Gitee release mirror, so create the release on GitHub first and verify the Gitee mirror only after the external sync has run. Do not create Gitee releases directly unless the user explicitly requests a one-off manual operation.
+
+If the task is only a beta RC GitHub prerelease, use `$publish-pixelpark-subproject`. If it is only end-of-day Git wrap-up, use `$pixel-daily-ship`. If it is only device installation or file transfer, use `$deploy-android-apks`.
 
 ## Required Reading
 
@@ -35,7 +37,7 @@ Confirm or infer these launch decisions before changing files:
 - Target app: PixelDone.
 - Release kind: first formal release, feature release, patch release, or package/signing migration.
 - Target `versionName` and `versionCode` policy. Increment `versionCode`; keep `versionName` semantic and in release order.
-- Distribution target: private signed release APK through GitHub release. Do not produce Google Play AAB unless explicitly requested.
+- Distribution target: private signed release APK through GitHub release. Do not produce Google Play AAB unless explicitly requested. App-internal update availability is confirmed through the synced Gitee mirror after GitHub release publication.
 - Package migration stance. Formal PixelPark package names should use `com.milesxue.<product>`.
 - Data migration stance. If package name or signing certificate changes, default to no local data migration unless the user explicitly asks for it.
 - Deploy stance. Do not install to devices unless the user explicitly asks for deployment after the release build.
@@ -124,6 +126,8 @@ gh release view v{versionName} --repo Siyuan-Xue/PixelDone --json tagName,url,as
 
 Treat the release as incomplete if the versioned release APK asset is missing.
 
+After the user's configured Gitee synchronization runs, verify that the synced Gitee release also contains the same versioned release APK asset before marking in-app update availability complete.
+
 ## Parent PixelPark Sync
 
 After the app release asset is verified, update an external parent PixelPark checkout only if the user explicitly requested parent synchronization and provided or already has that checkout available.
@@ -164,5 +168,5 @@ Report blocked device installs plainly, including device name, connection state,
 - Do not commit `signing/`, keystores, passwords, `local.properties`, build outputs, or IDE local state.
 - Do not publish source archives alone; every formal release must include the versioned signed release APK.
 - Do not deploy after a no-deploy update-check release; leave the installed older version available to test in-app update detection.
-- Keep debug release wording out of formal release notes unless the task is explicitly a debug release.
-- Keep a final audit: app commit, parent commit if any, release URL, uploaded APK name, signing verification status, tests/builds run, deployment status, and any unrelated dirty files left untouched.
+- Keep beta/debug release wording out of formal release notes unless the task is explicitly a beta prerelease.
+- Keep a final audit: app commit, parent commit if any, GitHub release URL, uploaded APK name, Gitee mirror status, signing verification status, tests/builds run, deployment status, and any unrelated dirty files left untouched.

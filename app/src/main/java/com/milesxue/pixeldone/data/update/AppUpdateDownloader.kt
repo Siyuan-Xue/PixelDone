@@ -21,24 +21,45 @@ private const val UpdatePreferencesName = "pixel_done_update_downloads"
 private const val ActiveDownloadVersionKey = "active_download_version"
 private const val ActiveDownloadIdKey = "active_download_id"
 private const val ActiveDownloadFileNameKey = "active_download_file_name"
-private val PixelDoneReleaseApkRegex =
-    Regex("^${Regex.escape(PixelDoneProjectName)}-(\\d+(?:\\.\\d+){0,2})-release\\.apk$")
+private val PixelDoneUpdateApkRegex =
+    Regex(
+        "^${Regex.escape(PixelDoneProjectName)}-" +
+            "(?:(\\d+(?:\\.\\d+){0,2})-release|" +
+            "(\\d+(?:\\.\\d+){0,2}(?:-rc\\.\\d+)?)-debug)\\.apk$",
+        RegexOption.IGNORE_CASE,
+    )
 
 internal fun updateReleaseApkFileName(version: String): String =
-    "$PixelDoneProjectName-$version-release.apk"
+    updateApkFileName(PixelDoneProjectName, version, AppUpdateChannel.Formal)
 
 internal fun updateReleaseApkVersion(fileName: String): String? =
-    PixelDoneReleaseApkRegex.matchEntire(fileName)?.groupValues?.getOrNull(1)
+    updateApkVersion(fileName)
 
 internal fun isPixelDoneReleaseApkFileName(fileName: String): Boolean =
-    updateReleaseApkVersion(fileName) != null
+    isPixelDoneUpdateApkFileName(fileName)
+
+internal fun updateApkVersion(fileName: String): String? =
+    PixelDoneUpdateApkRegex.matchEntire(fileName)?.groupValues
+        ?.let { values ->
+            values.getOrNull(1)?.takeIf { it.isNotEmpty() }
+                ?: values.getOrNull(2)?.takeIf { it.isNotEmpty() }
+        }
+
+internal fun isPixelDoneUpdateApkFileName(fileName: String): Boolean =
+    updateApkVersion(fileName) != null
 
 internal fun staleUpdateReleaseApkFileNames(
     fileNames: Iterable<String>,
     latestFileName: String?,
+): List<String> =
+    staleUpdateApkFileNames(fileNames, latestFileName)
+
+internal fun staleUpdateApkFileNames(
+    fileNames: Iterable<String>,
+    latestFileName: String?,
 ): List<String> {
     return fileNames.filter { fileName ->
-        isPixelDoneReleaseApkFileName(fileName) &&
+        isPixelDoneUpdateApkFileName(fileName) &&
             !fileName.equals(latestFileName, ignoreCase = true)
     }
 }
@@ -104,7 +125,7 @@ internal class AppUpdateDownloader(context: Context) {
 
     fun enqueue(info: AppUpdateInfo): AppUpdateDownloadResult {
         return try {
-            val fileName = updateReleaseApkFileName(info.version)
+            val fileName = info.fileName
             cleanupStaleUpdateApkFiles(latestFileName = fileName)
             reusableActiveDownload(info.version, fileName)?.let { return AppUpdateDownloadResult.Started(it) }
             downloadedApkFile(fileName).delete()
@@ -325,7 +346,7 @@ internal class AppUpdateDownloader(context: Context) {
         val files = updateDownloadDir().listFiles()
             ?.filter { file -> file.isFile }
             ?: return false
-        val staleFileNames = staleUpdateReleaseApkFileNames(
+        val staleFileNames = staleUpdateApkFileNames(
             fileNames = files.map { file -> file.name },
             latestFileName = latestFileName,
         ).toSet()
@@ -339,7 +360,7 @@ internal class AppUpdateDownloader(context: Context) {
             .listFiles()
             ?.filter { file -> file.isFile }
             ?.filter { file ->
-                val version = updateReleaseApkVersion(file.name) ?: return@filter false
+                val version = updateApkVersion(file.name) ?: return@filter false
                 shouldCleanInstalledUpdate(
                     currentVersion = currentVersion,
                     downloadedVersion = version,

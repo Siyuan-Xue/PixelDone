@@ -3,10 +3,10 @@ package com.milesxue.pixeldone
 import com.milesxue.pixeldone.data.update.AppUpdateDownload
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadProgress
 import com.milesxue.pixeldone.data.update.activeUpdateDownloadMatchesLatest
-import com.milesxue.pixeldone.data.update.isPixelDoneReleaseApkFileName
+import com.milesxue.pixeldone.data.update.isPixelDoneUpdateApkFileName
 import com.milesxue.pixeldone.data.update.shouldCleanInstalledUpdate
-import com.milesxue.pixeldone.data.update.staleUpdateReleaseApkFileNames
-import com.milesxue.pixeldone.data.update.updateReleaseApkVersion
+import com.milesxue.pixeldone.data.update.staleUpdateApkFileNames
+import com.milesxue.pixeldone.data.update.updateApkVersion
 import com.milesxue.pixeldone.data.update.updateReleaseApkFileName
 import com.milesxue.pixeldone.ui.todo.formatDownloadedMegabytes
 import com.milesxue.pixeldone.ui.todo.formatUpdateDownloadMessage
@@ -30,30 +30,31 @@ class AppUpdateDownloaderTest {
     }
 
     @Test
-    fun updateReleaseApkVersion_acceptsOnlyFormalPixelDoneReleaseApkNames() {
-        assertTrue(isPixelDoneReleaseApkFileName("PixelDone-2.5.6-release.apk"))
-        assertEquals("2.5.6", updateReleaseApkVersion("PixelDone-2.5.6-release.apk"))
-        assertFalse(isPixelDoneReleaseApkFileName("PixelDone-2.5.6-debug.apk"))
-        assertFalse(isPixelDoneReleaseApkFileName("PixelRead-2.5.6-release.apk"))
-        assertFalse(isPixelDoneReleaseApkFileName("PixelDone-release.apk"))
+    fun updateApkVersion_acceptsFormalAndRcDebugPixelDoneApkNames() {
+        assertTrue(isPixelDoneUpdateApkFileName("PixelDone-2.5.6-release.apk"))
+        assertEquals("2.5.6", updateApkVersion("PixelDone-2.5.6-release.apk"))
+        assertTrue(isPixelDoneUpdateApkFileName("PixelDone-2.8.0-rc.1-debug.apk"))
+        assertEquals("2.8.0-rc.1", updateApkVersion("PixelDone-2.8.0-rc.1-debug.apk"))
+        assertFalse(isPixelDoneUpdateApkFileName("PixelDone-2.8.0-rc.1-release.apk"))
+        assertFalse(isPixelDoneUpdateApkFileName("PixelRead-2.5.6-release.apk"))
+        assertFalse(isPixelDoneUpdateApkFileName("PixelDone-release.apk"))
     }
 
     @Test
-    fun staleUpdateReleaseApkFileNames_keepsOnlyTheLatestTargetApk() {
+    fun staleUpdateApkFileNames_keepsOnlyTheLatestTargetApk() {
         assertEquals(
             listOf(
                 "PixelDone-2.5.4-release.apk",
-                "PixelDone-2.5.5-release.apk",
+                "PixelDone-2.8.0-rc.1-debug.apk",
             ),
-            staleUpdateReleaseApkFileNames(
+            staleUpdateApkFileNames(
                 fileNames = listOf(
                     "PixelDone-2.5.4-release.apk",
-                    "PixelDone-2.5.5-release.apk",
-                    "PixelDone-2.5.6-release.apk",
-                    "PixelDone-2.5.6-debug.apk",
+                    "PixelDone-2.8.0-rc.1-debug.apk",
+                    "PixelDone-2.8.0-rc.2-debug.apk",
                     "PixelRead-2.5.5-release.apk",
                 ),
-                latestFileName = "PixelDone-2.5.6-release.apk",
+                latestFileName = "PixelDone-2.8.0-rc.2-debug.apk",
             ),
         )
     }
@@ -63,6 +64,9 @@ class AppUpdateDownloaderTest {
         assertFalse(shouldCleanInstalledUpdate(currentVersion = "2.5.5", downloadedVersion = "2.5.6"))
         assertTrue(shouldCleanInstalledUpdate(currentVersion = "2.5.6", downloadedVersion = "2.5.6"))
         assertTrue(shouldCleanInstalledUpdate(currentVersion = "2.6.0", downloadedVersion = "2.5.7"))
+        assertFalse(shouldCleanInstalledUpdate(currentVersion = "2.8.0-rc.1", downloadedVersion = "2.8.0-rc.2"))
+        assertTrue(shouldCleanInstalledUpdate(currentVersion = "2.8.0-rc.2", downloadedVersion = "2.8.0-rc.1"))
+        assertTrue(shouldCleanInstalledUpdate(currentVersion = "2.8.0", downloadedVersion = "2.8.0-rc.9"))
         assertFalse(shouldCleanInstalledUpdate(currentVersion = "bad", downloadedVersion = "2.5.6"))
         assertFalse(shouldCleanInstalledUpdate(currentVersion = "2.5.6", downloadedVersion = "bad"))
     }
@@ -70,16 +74,16 @@ class AppUpdateDownloaderTest {
     @Test
     fun activeUpdateDownloadMatchesLatest_requiresSameVersionAndFileName() {
         val active = AppUpdateDownload(
-            version = "2.5.6",
+            version = "2.8.0-rc.2",
             downloadId = 42L,
-            fileName = "PixelDone-2.5.6-release.apk",
+            fileName = "PixelDone-2.8.0-rc.2-debug.apk",
         )
 
         assertTrue(
             activeUpdateDownloadMatchesLatest(
                 download = active,
-                latestVersion = "2.5.6",
-                latestFileName = "PixelDone-2.5.6-release.apk",
+                latestVersion = "2.8.0-rc.2",
+                latestFileName = "PixelDone-2.8.0-rc.2-debug.apk",
             ),
         )
         assertFalse(

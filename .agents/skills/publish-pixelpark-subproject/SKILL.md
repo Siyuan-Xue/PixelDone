@@ -7,7 +7,9 @@ description: Verify and publish the already-standalone PixelDone repository to G
 
 ## Overview
 
-PixelDone is already a standalone Git repository. Use this skill to verify the repository remote, run debug release checks, push `main`, and optionally create an explicit debug GitHub release.
+PixelDone is already a standalone Git repository. Use this skill to verify the repository remote, run debug release checks, push `main`, and optionally create an explicit beta RC GitHub prerelease.
+
+GitHub is the canonical publishing surface for code pushes, tags, and release assets. PixelDone's in-app updater reads the user's synced Gitee release mirror, so create beta RC prereleases on GitHub first and verify the Gitee mirror only after the external sync has run.
 
 Do not treat a PixelDone-only clone as a parent PixelPark workspace. Parent synchronization is optional and requires an external parent checkout.
 
@@ -76,29 +78,33 @@ app-debug.apk
 PixelDone-{versionName}-debug.apk
 ```
 
-## GitHub Debug Release Workflow
+## GitHub Beta RC Prerelease Workflow
 
-Create debug GitHub releases only when explicitly requested. Formal user updates should use signed release APKs through `$launch-pixelpark-product`.
+Create beta RC GitHub prereleases only when explicitly requested. Formal user updates should use signed release APKs through `$launch-pixelpark-product`.
+
+The beta `versionName` should use the RC form, such as `2.8.0-rc.1`. The GitHub prerelease tag is `v{versionName}`, and the attached debug APK asset is `PixelDone-{versionName}-debug.apk`.
 
 1. Check the target tag first:
 
 ```sh
-gh release view v{versionName}-debug --repo Siyuan-Xue/PixelDone
+gh release view v{versionName} --repo Siyuan-Xue/PixelDone
 ```
 
 2. If it does not exist, create it with the versioned debug APK:
 
 ```sh
-gh release create v{versionName}-debug app/build/outputs/apk/debug/PixelDone-{versionName}-debug.apk --repo Siyuan-Xue/PixelDone --title "PixelDone v{versionName} Debug" --notes-file RELEASE_NOTES.md --prerelease
+gh release create v{versionName} app/build/outputs/apk/debug/PixelDone-{versionName}-debug.apk --repo Siyuan-Xue/PixelDone --title "PixelDone v{versionName}" --notes-file RELEASE_NOTES.md --prerelease
 ```
 
 3. Verify the release asset is uploaded:
 
 ```sh
-gh release view v{versionName}-debug --repo Siyuan-Xue/PixelDone --json tagName,url,assets
+gh release view v{versionName} --repo Siyuan-Xue/PixelDone --json tagName,url,assets
 ```
 
 Treat the release as incomplete if the versioned debug APK asset is missing.
+
+After the user's configured Gitee synchronization runs, verify that the synced Gitee prerelease also contains the same versioned debug APK asset before marking beta in-app update availability complete.
 
 ## Optional External Parent Sync
 
@@ -111,4 +117,4 @@ Keep parent changes separate from PixelDone changes. Stage only the parent `.git
 - Keep unrelated changes unstaged.
 - Do not commit generated build outputs, APKs, signing secrets, `local.properties`, IDE local state, or OS-specific cache files.
 - Use `require_escalated` for commands that push, create releases, write Git refs/indexes, or need network access.
-- After finishing, report the PixelDone commit, release URL if any, uploaded APK name if any, parent sync status if requested, and any remaining unrelated dirty files.
+- After finishing, report the PixelDone commit, GitHub release URL if any, uploaded APK name if any, Gitee mirror status if checked, parent sync status if requested, and any remaining unrelated dirty files.

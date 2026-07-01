@@ -281,42 +281,55 @@ After each implementation, confirm at least:
 
 ## 13. Git Wrap-Up And Release Flow
 
-This section owns PixelDone Git wrap-up, local debug APK preparation, beta distribution policy, formal signed APK releases, tagging, and GitHub release behavior. If release rules continue to grow beyond this workflow, split them into a dedicated `RELEASE_SPEC.md` and keep this section as the engineering entry point.
+This section owns PixelDone Git wrap-up, local debug APK preparation, beta distribution policy, formal signed APK releases, tagging, GitHub release publishing, and Gitee app-update behavior. If release rules continue to grow beyond this workflow, split them into a dedicated `RELEASE_SPEC.md` and keep this section as the engineering entry point.
 
 ### 13.1 Release Ownership
 
 PixelDone is released from this independent Git repository. Do not release PixelDone from a parent workspace checkout. Enter the PixelDone repository root before Git wrap-up, tagging, pushing, or creating releases.
 
-### 13.2 Remote Repository
+### 13.2 Release Repository, Update Source, And Local Git Remote
 
-The remote repository URL is fixed as:
+The canonical code repository, Git push target, tag target, and release publishing surface is GitHub:
 
 ```text
-https://github.com/Siyuan-Xue/PixelDone.git
+https://github.com/Siyuan-Xue/PixelDone
 ```
 
-If `origin` already exists, do not add it again. First use `git remote -v` to confirm whether the URL matches the rule.
+All code pushes, tags, formal releases, and beta RC prereleases are created on GitHub unless the user explicitly requests a different one-off operation.
+
+The app-internal release and update source is the synced Gitee mirror:
+
+```text
+https://gitee.com/milesxue/PixelDone/releases
+```
+
+The user maintains Gitee synchronization from GitHub. Agents should publish to GitHub, then let the configured Gitee sync expose the same releases and APK assets for in-app update checks.
+
+Do not change the local Git `origin` URL as part of release-source or update-channel work unless the user explicitly requests it. The expected local `origin` remains the GitHub repository. Use `git remote -v` only to report the current local remote state.
 
 ### 13.3 Release Channels
 
 PixelPark uses three separate release channels:
 
 - **Local debug**: build `{ProjectName}-{versionName}-debug.apk` and deploy it directly to an authorized Android device or emulator with `adb`. This channel is for local validation only and is not the default app-internal update target.
-- **Internal beta**: use only when explicitly needed. Prefer Google Play internal/closed testing or Firebase App Distribution for tester allowlists. GitHub prereleases are acceptable for lightweight distribution, but they are not access control because anyone with the link may download the asset.
-- **Formal release**: build a signed `{ProjectName}-{versionName}-release.apk`, publish it as a normal GitHub Release, and let app-internal update checks consume only the signed release APK asset.
+- **Internal beta**: publish a GitHub prerelease only when explicitly needed. Use RC tags such as `v2.8.0-rc.1` and attach the matching debug APK asset, such as `PixelDone-2.8.0-rc.1-debug.apk`. After Gitee sync, beta app-internal update checks consume the synced Gitee prerelease asset. Prereleases are lightweight distribution, not access control, because anyone with the link may download the asset.
+- **Formal release**: build a signed `{ProjectName}-{versionName}-release.apk`, publish it as a normal GitHub Release, and let formal app-internal update checks consume only the signed release APK asset after Gitee sync.
 
-Debug GitHub releases are allowed only when explicitly requested. They are not the default release path for user updates.
+Debug prereleases are allowed only for the beta channel. They are not the formal release path for user updates.
 
 ### 13.4 Version Ordering And Update Rules
 
 Version rules:
 
-- Tags use `v{major}.{minor}.{patch}`, for example `v1.2.0`.
-- Release title: `{ProjectName} v{major}.{minor}.{patch}`.
+- Formal release tags use `v{major}.{minor}.{patch}`, for example `v1.2.0`.
+- Beta RC prerelease tags use `v{major}.{minor}.{patch}-rc.{number}`, for example `v2.8.0-rc.1`.
+- Release title: `{ProjectName} v{major}.{minor}.{patch}` for formal releases, or `{ProjectName} v{major}.{minor}.{patch}-rc.{number}` for beta RC prereleases.
 - In `0.x.y` versions, increment `x` only for iterative new features and `y` only for bug fixes. Version numbers must be released in semantic order.
 - Users do not need forced sequential upgrades. A formal APK can update older formal versions when `applicationId` and signing certificate match and `versionCode` increases.
 - Every app module release or deploy build must increase `versionCode` when it needs to update an already installed build through Android package management.
 - Beta and debug `versionCode` values must leave a clean path to the next formal release. Do not publish a beta or debug build whose `versionCode` would block a later formal signed update.
+- The release build type owns the `formal` app-internal update channel. The debug build type owns the `beta` app-internal update channel. Agents must not manually edit this channel mapping before each build.
+- Formal update checks accept only normal releases mirrored to Gitee with `vX.Y.Z` tags and `PixelDone-X.Y.Z-release.apk` assets. Beta update checks accept only prereleases mirrored to Gitee with `vX.Y.Z-rc.N` tags and `PixelDone-X.Y.Z-rc.N-debug.apk` assets.
 - Before advancing `versionName` or `versionCode` for an app iteration, commit the source state of the previous numbered version if that version was built, installed, distributed, tagged, documented, or otherwise referenced. Every numbered debug, beta, or formal version that leaves the working tree must be reproducible from a reachable commit.
 - Advance `versionName` only for a clear semantic unit, such as a completed feature, a distinct bug fix, a beta milestone, or a formal release candidate. Repeated refinements of the same bug fix, or different presentations of the same feature gate, must keep the same `versionName`.
 - If Android package-management testing truly requires a new `versionCode` during the same semantic fix cycle, first commit the current numbered state or use a same-version reinstall workflow when acceptable. Never create skipped public versions solely because intermediate numbered debug states were left uncommitted.
@@ -336,12 +349,12 @@ Debug APK rules:
 When a debug build must coexist with the installed formal app:
 
 - Add `applicationIdSuffix = ".debug"` to the debug build type.
-- Give the debug app a visible launcher label such as `{ProjectName} Debug`.
+- Give the debug app the visible launcher label `PixelDone-beta`.
 - Treat debug and formal builds as separate apps. They have separate local data, notification channels, alarms, permissions, and update behavior.
 
 ### 13.6 Formal Signed Release APK Rule
 
-Private signed release APKs are the default channel for direct app-internal updates through GitHub Releases.
+Private signed release APKs are the default channel for direct app-internal updates through the synced Gitee release mirror.
 
 Release APK rules:
 
@@ -351,7 +364,7 @@ Release APK rules:
 - `{versionName}` must come directly from the current app module's `android.defaultConfig.versionName`.
 - The versioned release APK must be copied to `app/build/outputs/apk/release/`, in the same directory as the default `app-release.apk`.
 - After `assembleRelease`, the same directory should contain both `app-release.apk` and `{ProjectName}-{versionName}-release.apk`.
-- The app-internal updater should target normal GitHub Releases and locate the versioned signed release APK asset. It should not use local debug APKs as update assets.
+- The formal app-internal updater should target normal releases from the synced Gitee mirror and locate the versioned signed release APK asset. It should not use local debug APKs as formal update assets.
 - Direct APK distribution notes must tell users to uninstall incompatible debug/prototype builds when the package name or signing certificate changes.
 
 ### 13.7 Pre-Wrap-Up Checks
@@ -373,21 +386,23 @@ Commit rules:
 - Stage only files related to the current PixelDone change. Do not mix parent workspace files, build outputs, signing secrets, local IDE files, or generated cache files into a PixelDone commit.
 - Before committing a version-number change, confirm the immediately previous numbered app version is already traceable to a commit whenever that version was built, installed, distributed, tagged, documented, or otherwise referenced.
 
-### 13.9 GitHub Release Commands
+### 13.9 GitHub Release Publishing And Gitee Update Mirror Notes
 
-Formal signed release command:
+Formal signed release asset:
 
-```sh
-gh release create v1.2.0 app/build/outputs/apk/release/PixelDone-{versionName}-release.apk --repo Siyuan-Xue/PixelDone --title "PixelDone v1.2.0" --notes-file RELEASE_NOTES.md
+```text
+app/build/outputs/apk/release/PixelDone-{versionName}-release.apk
 ```
 
-Explicit-only debug GitHub release command:
+Beta RC prerelease asset:
 
-```sh
-gh release create v1.2.0-debug app/build/outputs/apk/debug/PixelDone-{versionName}-debug.apk --repo Siyuan-Xue/PixelDone --title "PixelDone v1.2.0 Debug" --notes-file RELEASE_NOTES.md --prerelease
+```text
+app/build/outputs/apk/debug/PixelDone-{versionName}-debug.apk
 ```
 
-After creating any GitHub Release, verify that the expected APK asset exists. Treat the release as incomplete if the APK asset is missing.
+Create the matching GitHub Release or prerelease at `https://github.com/Siyuan-Xue/PixelDone/releases`. After creating any GitHub Release, verify that the expected APK asset exists on GitHub.
+
+The app update checker does not read GitHub directly. It reads the synced Gitee mirror at `https://gitee.com/milesxue/PixelDone/releases`. After the user's configured Gitee sync runs, verify that the expected APK asset also exists on Gitee. Treat app-internal update availability as incomplete until the Gitee mirror has the expected release or prerelease asset.
 
 ## 14. Sources
 
