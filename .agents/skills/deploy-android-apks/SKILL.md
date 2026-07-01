@@ -40,21 +40,37 @@ Use these methods in order, falling back only when the earlier method is unavail
 
 ## Preferred Script
 
-Use `scripts/deploy_android_apks.ps1` on Windows or PowerShell Core when available. It checks the PixelDone versioned APK, optionally builds stale outputs, chooses the best deployment method, and emits structured result objects.
+Use `scripts/deploy_android_apks.ps1` on Windows or PowerShell Core when available. Use `scripts/deploy_android_apks.sh` on macOS/Linux. Both scripts check the PixelDone versioned APK, optionally build stale outputs, choose the best deployment method available on the host, and emit structured result objects. The `mtp-copy` fallback remains Windows-only; the macOS/Linux shell script uses adb install or adb push, otherwise it reports the local APK path.
 
 Common dry run:
+
+Windows:
 
 ```powershell
 .\.agents\skills\deploy-android-apks\scripts\deploy_android_apks.ps1 -DryRun
 ```
 
+macOS/Linux:
+
+```sh
+.agents/skills/deploy-android-apks/scripts/deploy_android_apks.sh --dry-run
+```
+
 Install PixelDone directly when adb is available, otherwise fall back to supported file transfer:
+
+Windows:
 
 ```powershell
 .\.agents\skills\deploy-android-apks\scripts\deploy_android_apks.ps1
 ```
 
-Use `-DeliveryMode Install` to require direct adb installation. Use `-DeliveryMode Copy` to skip installation and copy APK files to `Download`. Use `-BuildMode Never` when the user asks to use only existing APKs. Use `-BuildMode Always` when the user asks to rebuild first. Pass `-DeviceName` only when multiple authorized devices are connected.
+macOS/Linux:
+
+```sh
+.agents/skills/deploy-android-apks/scripts/deploy_android_apks.sh
+```
+
+Use `-DeliveryMode Install` or `--delivery-mode Install` to require direct adb installation. Use `-DeliveryMode Copy` or `--delivery-mode Copy` to skip installation and copy APK files to `Download`. Use `-BuildMode Never` or `--build-mode Never` when the user asks to use only existing APKs. Use `-BuildMode Always` or `--build-mode Always` when the user asks to rebuild first. Pass `-DeviceName` or `--device-name` only when multiple authorized devices are connected.
 
 ## Verification
 

@@ -13,14 +13,30 @@ Use this skill to run a read-only hygiene check on the standalone PixelDone Andr
 
 From the PixelDone repository root:
 
+Windows:
+
 ```powershell
 .\.agents\skills\android-repo-doctor\scripts\android_repo_doctor.ps1
 ```
 
+macOS/Linux:
+
+```sh
+.agents/skills/android-repo-doctor/scripts/android_repo_doctor.sh
+```
+
 For machine-readable output:
+
+Windows:
 
 ```powershell
 .\.agents\skills\android-repo-doctor\scripts\android_repo_doctor.ps1 -Format json
+```
+
+macOS/Linux:
+
+```sh
+.agents/skills/android-repo-doctor/scripts/android_repo_doctor.sh --format json
 ```
 
 Default coverage is the current PixelDone repository. Override `-Root` only when the user explicitly asks.
