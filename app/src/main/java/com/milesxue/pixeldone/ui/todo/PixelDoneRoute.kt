@@ -76,7 +76,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -127,6 +130,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
+import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1991,7 +1995,7 @@ private fun SettingsPanel(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(22.dp),
+            verticalArrangement = Arrangement.spacedBy(32.dp),
         ) {
             SettingsSection(title = "DISPLAY") {
                 SettingsSegmentedRow(
@@ -2088,7 +2092,7 @@ private fun SettingsSection(
     title: String,
     content: @Composable () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SettingsSectionTitle(title)
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             content()
@@ -2209,7 +2213,7 @@ private fun DockActionSettingsRow(
             DockActionIcon(
                 action = action,
                 color = if (selected) colors.textPrimary else colors.textSecondary,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(20.dp),
             )
         }
         SettingsRowText(
@@ -2330,8 +2334,11 @@ private fun SettingsSectionTitle(text: String) {
     val colors = PixelDoneColors.current
     Text(
         text = text,
-        style = MaterialTheme.typography.labelMedium,
-        color = colors.textSecondary,
+        color = colors.primary,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.sp,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
@@ -3389,13 +3396,13 @@ private fun DockIconButton(
     val pressed by interactionSource.collectIsPressedAsState()
     val iconColor = when {
         !enabled -> colors.disabledText
-        active || pressed -> colors.textPrimary
-        else -> colors.textSecondary
+        active -> colors.primary
+        else -> colors.textPrimary
     }
     val borderColor = when {
         !enabled -> colors.borderWeak
-        active -> colors.primaryInteractive
-        else -> colors.borderWeak
+        active -> colors.primary
+        else -> colors.textPrimary
     }
     val backgroundColor = when {
         !enabled -> colors.disabledSurface
@@ -3407,7 +3414,7 @@ private fun DockIconButton(
         modifier = modifier
             .size(44.dp)
             .background(backgroundColor, RectangleShape)
-            .border(if (active) 2.dp else 1.dp, borderColor, RectangleShape)
+            .border(2.dp, borderColor, RectangleShape)
             .clickable(
                 enabled = enabled,
                 interactionSource = interactionSource,
@@ -3418,16 +3425,6 @@ private fun DockIconButton(
         contentAlignment = Alignment.Center,
     ) {
         DockActionIcon(action = action, color = iconColor)
-        if (active) {
-            Canvas(
-                modifier = Modifier
-                    .size(6.dp)
-                    .align(Alignment.TopEnd)
-                    .padding(1.dp),
-            ) {
-                drawCircle(color = colors.primaryInteractive, radius = size.minDimension / 2f)
-            }
-        }
     }
 }
 
@@ -3435,60 +3432,99 @@ private fun DockIconButton(
 private fun DockActionIcon(
     action: DockAction,
     color: Color,
-    modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier.size(22.dp),
 ) {
-    Canvas(modifier = modifier.size(22.dp)) {
-        val strokeWidth = 2.dp.toPx()
-        val thinStrokeWidth = 1.5.dp.toPx()
+    Canvas(modifier = modifier) {
+        val iconSize = min(size.width, size.height)
+        val left = (size.width - iconSize) / 2f
+        val top = (size.height - iconSize) / 2f
+        fun x(value: Float): Float = left + iconSize * value / 22f
+        fun y(value: Float): Float = top + iconSize * value / 22f
+        fun offset(rawX: Float, rawY: Float): Offset = Offset(x(rawX), y(rawY))
+        val strokeWidth = iconSize * 2.2f / 22f
+        val thinStrokeWidth = iconSize * 1.6f / 22f
+        val heavyStrokeWidth = iconSize * 2.8f / 22f
+        val iconStroke = Stroke(
+            width = strokeWidth,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round,
+        )
+        fun line(
+            startX: Float,
+            startY: Float,
+            endX: Float,
+            endY: Float,
+            width: Float = strokeWidth,
+        ) {
+            drawLine(
+                color = color,
+                start = offset(startX, startY),
+                end = offset(endX, endY),
+                strokeWidth = width,
+                cap = StrokeCap.Round,
+            )
+        }
         when (action) {
             DockAction.SORT -> {
-                drawLine(color, Offset(2.dp.toPx(), 5.dp.toPx()), Offset(14.dp.toPx(), 5.dp.toPx()), strokeWidth)
-                drawLine(color, Offset(2.dp.toPx(), 11.dp.toPx()), Offset(11.dp.toPx(), 11.dp.toPx()), strokeWidth)
-                drawLine(color, Offset(2.dp.toPx(), 17.dp.toPx()), Offset(8.dp.toPx(), 17.dp.toPx()), strokeWidth)
-                drawCircle(
-                    color = color,
-                    radius = 4.dp.toPx(),
-                    center = Offset(17.dp.toPx(), 14.dp.toPx()),
-                    style = Stroke(width = thinStrokeWidth),
-                )
-                drawLine(color, Offset(17.dp.toPx(), 14.dp.toPx()), Offset(17.dp.toPx(), 11.5.dp.toPx()), thinStrokeWidth)
-                drawLine(color, Offset(17.dp.toPx(), 14.dp.toPx()), Offset(19.dp.toPx(), 15.5.dp.toPx()), thinStrokeWidth)
+                line(5f, 2.5f, 5f, 17.2f, heavyStrokeWidth)
+                line(1.8f, 13.8f, 5f, 17.2f, heavyStrokeWidth)
+                line(8.2f, 13.8f, 5f, 17.2f, heavyStrokeWidth)
+                line(11f, 4f, 20f, 4f, strokeWidth)
+                line(11f, 8.5f, 18f, 8.5f, strokeWidth)
+                line(11f, 13f, 16f, 13f, strokeWidth)
+                line(11f, 17.5f, 13f, 17.5f, strokeWidth)
             }
             DockAction.DEADLINE -> {
-                drawRect(
+                val flamePath = Path().apply {
+                    moveTo(x(5f), y(12.5f))
+                    cubicTo(x(2.8f), y(9.2f), x(5.2f), y(5.5f), x(7.4f), y(5.1f))
+                    cubicTo(x(7.3f), y(7.2f), x(9.6f), y(7.8f), x(10.3f), y(5.6f))
+                    cubicTo(x(11.2f), y(3.1f), x(13.7f), y(2.4f), x(15.5f), y(2.8f))
+                    cubicTo(x(14.3f), y(5.4f), x(14.9f), y(7.5f), x(16.8f), y(8.6f))
+                    cubicTo(x(18.8f), y(9.8f), x(18.4f), y(12.4f), x(16.7f), y(14.1f))
+                }
+                drawPath(color = color, path = flamePath, style = iconStroke)
+                drawCircle(
                     color = color,
-                    topLeft = Offset(4.dp.toPx(), 5.dp.toPx()),
-                    size = Size(14.dp.toPx(), 13.dp.toPx()),
-                    style = Stroke(width = strokeWidth),
+                    radius = iconSize * 5.6f / 22f,
+                    center = offset(11f, 13.7f),
+                    style = iconStroke,
                 )
-                drawLine(color, Offset(4.dp.toPx(), 9.dp.toPx()), Offset(18.dp.toPx(), 9.dp.toPx()), thinStrokeWidth)
-                drawLine(color, Offset(8.dp.toPx(), 3.dp.toPx()), Offset(8.dp.toPx(), 7.dp.toPx()), strokeWidth)
-                drawLine(color, Offset(14.dp.toPx(), 3.dp.toPx()), Offset(14.dp.toPx(), 7.dp.toPx()), strokeWidth)
-                drawLine(color, Offset(11.dp.toPx(), 12.dp.toPx()), Offset(11.dp.toPx(), 15.dp.toPx()), thinStrokeWidth)
-                drawLine(color, Offset(11.dp.toPx(), 15.dp.toPx()), Offset(14.dp.toPx(), 15.dp.toPx()), thinStrokeWidth)
+                line(11f, 13.7f, 11f, 9.9f, thinStrokeWidth)
+                line(11f, 13.7f, 14.2f, 16.1f, thinStrokeWidth)
             }
             DockAction.HIDE_DONE -> {
-                drawRect(
+                val eyePath = Path().apply {
+                    moveTo(x(3f), y(11f))
+                    quadraticTo(x(7.1f), y(5.8f), x(11f), y(5.8f))
+                    quadraticTo(x(15f), y(5.8f), x(19f), y(11f))
+                    quadraticTo(x(15f), y(16.2f), x(11f), y(16.2f))
+                    quadraticTo(x(7.1f), y(16.2f), x(3f), y(11f))
+                }
+                drawPath(color = color, path = eyePath, style = iconStroke)
+                drawCircle(
                     color = color,
-                    topLeft = Offset(3.dp.toPx(), 5.dp.toPx()),
-                    size = Size(12.dp.toPx(), 12.dp.toPx()),
-                    style = Stroke(width = strokeWidth),
+                    radius = iconSize * 2.7f / 22f,
+                    center = offset(11f, 11f),
+                    style = Stroke(
+                        width = thinStrokeWidth,
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round,
+                    ),
                 )
-                drawLine(color, Offset(5.dp.toPx(), 11.dp.toPx()), Offset(8.dp.toPx(), 14.dp.toPx()), thinStrokeWidth)
-                drawLine(color, Offset(8.dp.toPx(), 14.dp.toPx()), Offset(13.dp.toPx(), 8.dp.toPx()), thinStrokeWidth)
-                drawLine(color, Offset(18.dp.toPx(), 4.dp.toPx()), Offset(4.dp.toPx(), 18.dp.toPx()), strokeWidth)
+                line(5.2f, 3.8f, 16.8f, 18.2f, heavyStrokeWidth)
             }
             DockAction.DELETE_DONE -> {
-                drawLine(color, Offset(7.dp.toPx(), 6.dp.toPx()), Offset(17.dp.toPx(), 6.dp.toPx()), strokeWidth)
-                drawLine(color, Offset(10.dp.toPx(), 3.dp.toPx()), Offset(14.dp.toPx(), 3.dp.toPx()), strokeWidth)
+                line(7f, 6f, 17f, 6f)
+                line(10f, 3f, 14f, 3f)
                 drawRect(
                     color = color,
-                    topLeft = Offset(8.dp.toPx(), 8.dp.toPx()),
-                    size = Size(8.dp.toPx(), 10.dp.toPx()),
-                    style = Stroke(width = strokeWidth),
+                    topLeft = offset(8f, 8f),
+                    size = Size(iconSize * 8f / 22f, iconSize * 10f / 22f),
+                    style = iconStroke,
                 )
-                drawLine(color, Offset(3.dp.toPx(), 13.dp.toPx()), Offset(6.dp.toPx(), 16.dp.toPx()), thinStrokeWidth)
-                drawLine(color, Offset(6.dp.toPx(), 16.dp.toPx()), Offset(11.dp.toPx(), 10.dp.toPx()), thinStrokeWidth)
+                line(3f, 13f, 6f, 16f, thinStrokeWidth)
+                line(6f, 16f, 11f, 10f, thinStrokeWidth)
             }
         }
     }
