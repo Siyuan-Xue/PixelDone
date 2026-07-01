@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -160,6 +161,7 @@ private const val DeveloperCredit = "CODEX & XUE"
 private val PixelReadTopBarContentHeight = 36.dp
 private val PixelReadFrameInset = 8.dp
 private val PixelDoneFooterHeight = 24.dp
+private val DialogActionMinHeight = 44.dp
 private const val InitialUpdateCheckDelayMillis = 600L
 private const val UpdateStatusVisibleMillis = 3_000L
 private const val MinPreviewScale = 1f
@@ -4078,22 +4080,40 @@ private fun UpdateGlyph(
 }
 
 @Composable
-private fun DialogCloseTextButton(
+private fun DialogActionRow(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content,
+    )
+}
+
+@Composable
+private fun DialogTextActionButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
-    Text(
-        text = text,
+    Box(
         modifier = modifier
+            .heightIn(min = DialogActionMinHeight)
             .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 4.dp),
-        style = MaterialTheme.typography.labelLarge,
-        color = colors.primaryInteractive,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.primaryInteractive,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
@@ -4145,11 +4165,8 @@ private fun UpdateAvailableDialog(
             }
         },
         confirmButton = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DialogCloseTextButton(
+            DialogActionRow {
+                DialogTextActionButton(
                     text = "LATER",
                     onClick = onDismiss,
                 )
@@ -4205,7 +4222,7 @@ private fun UpdateDownloadProgressDialog(
             }
         },
         confirmButton = {
-            DialogCloseTextButton(
+            DialogTextActionButton(
                 text = "CLOSE",
                 onClick = onDismiss,
             )
@@ -4319,7 +4336,7 @@ private fun TodoImagePreviewDialog(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                DialogCloseTextButton(
+                DialogTextActionButton(
                     text = "CLOSE",
                     onClick = onDismiss,
                 )
@@ -4385,7 +4402,7 @@ private fun TodoImagePreviewDialog(
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DialogActionRow {
                 PixelButton(
                     text = "CHANGE",
                     onClick = { onChange(item) },
@@ -4523,11 +4540,8 @@ private fun DeleteConfirmationDialog(
             )
         },
         confirmButton = {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DialogCloseTextButton(
+            DialogActionRow {
+                DialogTextActionButton(
                     text = "CLOSE",
                     onClick = onDismiss,
                 )
