@@ -60,6 +60,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Open the system install confirmation after an in-app update APK finishes downloading.
 - Open Android's install-unknown-apps settings first when update installation permission is missing.
 - Check quietly for the latest release on every app start without suppressing an available update.
+- Keep Android 14+ full-screen intent permission checks tied to the system grant and reopen the correct grant page for XHigh reminders when needed.
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
 - Use four atomic dock functions for `PRI/TIME`, `DDL`, `HIDE/UNHIDE`, and `DELETE DONE`.
@@ -134,24 +135,24 @@ https://gitee.com/milesxue/PixelDone/releases
 
 Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
 
-The signed release APK is copied to:
+The signed release APK, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.7.3-release.apk
+app/build/outputs/apk/release/PixelDone-2.7.4-rc.1-release.apk
 ```
 
-A local debug build, if assembled, is copied to:
+The beta RC debug build is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.7.3-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.7.4-rc.1-debug.apk
 ```
 
 ## Install
 
-Install the signed release build with:
+Install the beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-2.7.3-release.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.7.4-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -168,4 +169,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.7.3 formal signed release for dialog action alignment fixes.
+2.7.4 rc1 beta prerelease for Android 14+ full-screen intent permission flow fixes.

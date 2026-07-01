@@ -243,6 +243,11 @@ internal fun updateInstallPermissionAction(hasInstallUpdatePermission: Boolean):
     }
 }
 
+internal fun hasFullScreenIntentAccessForSdk(
+    sdkInt: Int,
+    canUseFullScreenIntent: Boolean,
+): Boolean = sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || canUseFullScreenIntent
+
 private data class PermissionSettingsState(
     val notificationsGranted: Boolean,
     val exactAlarmGranted: Boolean,
@@ -577,8 +582,9 @@ internal fun PixelDoneApp() {
     }
 
     fun hasFullScreenIntentAccess(): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
-            context.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
+        val canUseFullScreenIntent =
+            context.getSystemService(NotificationManager::class.java)?.canUseFullScreenIntent() == true
+        return hasFullScreenIntentAccessForSdk(Build.VERSION.SDK_INT, canUseFullScreenIntent)
     }
 
     fun hasInstallUpdatePermission(): Boolean {
@@ -594,36 +600,46 @@ internal fun PixelDoneApp() {
         )
     }
 
-    fun openPackageSettingsAction(action: String) {
-        try {
-            context.startActivity(
-                Intent(action).apply {
-                    data = Uri.parse("package:${context.packageName}")
-                },
-            )
+    fun tryStartActivity(intent: Intent): Boolean {
+        return try {
+            context.startActivity(intent)
+            true
         } catch (_: ActivityNotFoundException) {
-            try {
-                context.startActivity(
-                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.parse("package:${context.packageName}")
-                    },
-                )
-            } catch (_: ActivityNotFoundException) {
-                Unit
-            }
+            false
+        } catch (_: SecurityException) {
+            false
         }
     }
 
-    fun openAppNotificationSettings() {
-        try {
-            context.startActivity(
-                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                },
-            )
-        } catch (_: ActivityNotFoundException) {
-            openPackageSettingsAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+    fun packageSettingsIntent(action: String): Intent {
+        return Intent(action).apply {
+            data = Uri.parse("package:${context.packageName}")
         }
+    }
+
+    fun openPackageSettingsAction(action: String) {
+        if (tryStartActivity(packageSettingsIntent(action))) return
+        tryStartActivity(packageSettingsIntent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS))
+    }
+
+    fun openAppNotificationSettings() {
+        val notificationSettingsIntent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        }
+        if (tryStartActivity(notificationSettingsIntent)) return
+        openPackageSettingsAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+    }
+
+    fun openFullScreenIntentSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            openAppNotificationSettings()
+            return
+        }
+
+        if (tryStartActivity(packageSettingsIntent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT))) {
+            return
+        }
+        openAppNotificationSettings()
     }
 
     fun openInstallUpdateSettings() {
@@ -650,8 +666,10 @@ internal fun PixelDoneApp() {
                 }
                 Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
             }
-            ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities ->
+            ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities -> {
+                pendingFullScreenPermissionTodoId = item.id
                 Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT
+            }
             else -> return
         }
         openPackageSettingsAction(action)
@@ -1232,7 +1250,11 @@ internal fun PixelDoneApp() {
                     pendingFullScreenPermissionTodoId?.let { id ->
                         val item = normalTodos(currentChecklistState).firstOrNull { it.id == id }
                         pendingFullScreenPermissionTodoId = null
-                        if (item != null && reminderScheduler.canScheduleExactAlarms()) {
+                        if (
+                            item != null &&
+                            reminderScheduler.canScheduleExactAlarms() &&
+                            !hasFullScreenIntentAccess()
+                        ) {
                             requestSystemReminderPermissionIfNeeded(item)
                         }
                     }
@@ -1423,9 +1445,7 @@ internal fun PixelDoneApp() {
             onRequestExactAlarmPermission = {
                 openPackageSettingsAction(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
             },
-            onRequestFullScreenIntentPermission = {
-                openPackageSettingsAction(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
-            },
+            onRequestFullScreenIntentPermission = ::openFullScreenIntentSettings,
             onRequestInstallUpdatesPermission = ::openInstallUpdateSettings,
         )
         UpdateAvailableDialog(

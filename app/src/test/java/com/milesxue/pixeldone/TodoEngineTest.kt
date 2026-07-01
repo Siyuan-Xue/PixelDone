@@ -10,6 +10,7 @@ import com.milesxue.pixeldone.ui.todo.consumeTodoListHighlightRequest
 import com.milesxue.pixeldone.ui.todo.defaultDueAtMillis
 import com.milesxue.pixeldone.ui.todo.firstRevealTargetIndex
 import com.milesxue.pixeldone.ui.todo.formatDeadlineCountdown
+import com.milesxue.pixeldone.ui.todo.hasFullScreenIntentAccessForSdk
 import com.milesxue.pixeldone.ui.todo.isDueExpired
 import com.milesxue.pixeldone.ui.todo.nextTodoListClockRefreshDelayMillis
 import com.milesxue.pixeldone.ui.todo.recordTodoToggle
@@ -365,6 +366,14 @@ class TodoEngineTest {
         assertTrue(canScheduleExactAlarmForSdk(sdkInt = 31, canScheduleExactAlarms = true))
         assertFalse(canScheduleExactAlarmForSdk(sdkInt = 31, canScheduleExactAlarms = false))
         assertFalse(canScheduleExactAlarmForSdk(sdkInt = 37, canScheduleExactAlarms = false))
+    }
+
+    @Test
+    fun fullScreenIntentAccessRequiresSystemGrantOnlyOnAndroid14AndLater() {
+        assertTrue(hasFullScreenIntentAccessForSdk(sdkInt = 33, canUseFullScreenIntent = false))
+        assertTrue(hasFullScreenIntentAccessForSdk(sdkInt = 34, canUseFullScreenIntent = true))
+        assertFalse(hasFullScreenIntentAccessForSdk(sdkInt = 34, canUseFullScreenIntent = false))
+        assertFalse(hasFullScreenIntentAccessForSdk(sdkInt = 37, canUseFullScreenIntent = false))
     }
 
     @Test
