@@ -1,4 +1,4 @@
-PixelDone v2.7.0-rc.2 is a debug prerelease for the customizable dock refactor.
+PixelDone v2.7.0 is a signed formal release for the customizable dock refactor.
 
 Highlights:
 - Replaces the fixed bottom `VIEW` and `BATCH` buttons with a user-configurable dock.
@@ -11,6 +11,6 @@ Highlights:
 - Refreshes the `DELETE DONE` trash icon, keeps Settings dock preview neutral, and raises dock button background contrast.
 - Removes the user-facing multi-select batch movement entry from the bottom action UI.
 
-Install note: use the attached debug APK, `PixelDone-2.7.0-rc.2-debug.apk`, for local validation. This debug build installs as `com.milesxue.pixeldone.debug` and remains separate from the formal signed `com.milesxue.pixeldone` app and its in-app update channel.
+Install note: use the attached signed release APK, `PixelDone-2.7.0-release.apk`, for direct installation and in-app updates. This release installs as `com.milesxue.pixeldone`; uninstall incompatible debug/prototype builds if Android reports a package or signature conflict.
 
 CODEX & XUE

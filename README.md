@@ -98,21 +98,21 @@ Release signing is configured through the local, untracked `signing/release-sign
 The signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.7.0-rc.2-release.apk
+app/build/outputs/apk/release/PixelDone-2.7.0-release.apk
 ```
 
 The current local debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.7.0-rc.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.7.0-debug.apk
 ```
 
 ## Install
 
-Install this debug build with:
+Install the signed release build with:
 
 ```powershell
-adb install -r app/build/outputs/apk/debug/PixelDone-2.7.0-rc.2-debug.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.7.0-release.apk
 ```
 
 The formal package name is:
@@ -129,4 +129,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.7.0-rc.2 debug prerelease for the customizable dock, atomic dock actions, and tighter Settings layout.
+2.7.0 formal signed release for the customizable dock, atomic dock actions, and tighter Settings layout.
