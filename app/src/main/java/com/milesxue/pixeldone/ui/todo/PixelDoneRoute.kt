@@ -3271,7 +3271,7 @@ private fun dockActionState(
 
 private fun previewDockActionState(): Map<DockAction, DockActionUiState> = mapOf(
     DockAction.SORT to DockActionUiState(active = false),
-    DockAction.DEADLINE to DockActionUiState(active = true),
+    DockAction.DEADLINE to DockActionUiState(active = false),
     DockAction.HIDE_DONE to DockActionUiState(active = false),
     DockAction.DELETE_DONE to DockActionUiState(active = false),
 )
@@ -3406,8 +3406,8 @@ private fun DockIconButton(
     }
     val backgroundColor = when {
         !enabled -> colors.disabledSurface
-        pressed || active -> colors.selectedSurface
-        else -> colors.surfaceRaised
+        pressed -> colors.surfaceRaised
+        else -> colors.selectedSurface
     }
 
     Box(
@@ -3515,16 +3515,14 @@ private fun DockActionIcon(
                 line(5.2f, 3.8f, 16.8f, 18.2f, heavyStrokeWidth)
             }
             DockAction.DELETE_DONE -> {
-                line(7f, 6f, 17f, 6f)
-                line(10f, 3f, 14f, 3f)
-                drawRect(
-                    color = color,
-                    topLeft = offset(8f, 8f),
-                    size = Size(iconSize * 8f / 22f, iconSize * 10f / 22f),
-                    style = iconStroke,
-                )
-                line(3f, 13f, 6f, 16f, thinStrokeWidth)
-                line(6f, 16f, 11f, 10f, thinStrokeWidth)
+                line(5f, 6f, 17f, 6f, heavyStrokeWidth)
+                line(9f, 3f, 13f, 3f, heavyStrokeWidth)
+                line(4.3f, 8f, 5.1f, 18.3f, heavyStrokeWidth)
+                line(17.7f, 8f, 16.9f, 18.3f, heavyStrokeWidth)
+                line(5.1f, 18.3f, 16.9f, 18.3f, heavyStrokeWidth)
+                line(8.3f, 9f, 8.3f, 16f, strokeWidth)
+                line(11f, 9f, 11f, 16f, strokeWidth)
+                line(13.7f, 9f, 13.7f, 16f, strokeWidth)
             }
         }
     }

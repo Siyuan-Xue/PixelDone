@@ -8,6 +8,7 @@ Highlights:
 - Supports centered, left-edge, and right-edge `+` placement while keeping `TRASH` free of normal-checklist dock buttons.
 - Tightens Settings section internals and increases spacing between semantic Settings sections.
 - Polishes Settings section titles, dock icon artwork, active-state border colors, and function-list icon centering.
+- Refreshes the `DELETE DONE` trash icon, keeps Settings dock preview neutral, and raises dock button background contrast.
 - Removes the user-facing multi-select batch movement entry from the bottom action UI.
 
 Install note: use the attached debug APK, `PixelDone-2.7.0-rc.2-debug.apk`, for local validation. This debug build installs as `com.milesxue.pixeldone.debug` and remains separate from the formal signed `com.milesxue.pixeldone` app and its in-app update channel.
