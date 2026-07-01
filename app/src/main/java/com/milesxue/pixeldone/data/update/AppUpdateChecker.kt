@@ -10,8 +10,17 @@ internal const val PixelDoneGiteeReleasesApiUrl =
     "https://gitee.com/api/v5/repos/milesxue/PixelDone/releases"
 internal const val PixelDoneGiteeReleasePageUrl =
     "https://gitee.com/milesxue/PixelDone/releases"
+internal const val PixelDoneGitHubReleasesApiUrl =
+    "https://api.github.com/repos/Siyuan-Xue/PixelDone/releases"
+internal const val PixelDoneGitHubReleasePageUrl =
+    "https://github.com/Siyuan-Xue/PixelDone/releases"
 internal const val PixelDoneProjectName = "PixelDone"
-private const val GiteeReleasePageSize = 100
+private const val ReleasePageSize = 100
+
+internal enum class AppUpdateSource {
+    GitHub,
+    Gitee,
+}
 
 internal enum class AppUpdateChannel {
     Formal,
@@ -32,7 +41,7 @@ internal data class ReleaseAsset(
     val downloadUrl: String,
 )
 
-internal data class GiteeRelease(
+internal data class AppRelease(
     val id: Long,
     val tagName: String,
     val htmlUrl: String,
@@ -40,12 +49,22 @@ internal data class GiteeRelease(
     val assets: List<ReleaseAsset> = emptyList(),
 )
 
+internal typealias GiteeRelease = AppRelease
+
+internal data class AppUpdateDownloadSource(
+    val source: AppUpdateSource,
+    val url: String,
+)
+
 internal data class AppUpdateInfo(
     val version: String,
     val releasePageUrl: String,
-    val apkDownloadUrl: String,
     val fileName: String,
-)
+    val downloadSources: List<AppUpdateDownloadSource>,
+) {
+    val apkDownloadUrl: String
+        get() = downloadSources.firstOrNull()?.url.orEmpty()
+}
 
 internal sealed interface AppUpdateCheckResult {
     data class Available(val info: AppUpdateInfo) : AppUpdateCheckResult
@@ -54,7 +73,7 @@ internal sealed interface AppUpdateCheckResult {
 }
 
 private data class UpdateCandidate(
-    val release: GiteeRelease,
+    val release: AppRelease,
     val version: AppVersion,
     val fileName: String,
 )
@@ -96,11 +115,49 @@ internal suspend fun checkPixelDoneUpdate(
     channel: AppUpdateChannel,
 ): AppUpdateCheckResult =
     checkAppUpdate(
-        releasesApiUrl = PixelDoneGiteeReleasesApiUrl,
         projectName = PixelDoneProjectName,
         currentVersion = currentVersion,
         channel = channel,
     )
+
+internal suspend fun checkAppUpdate(
+    projectName: String,
+    currentVersion: String,
+    channel: AppUpdateChannel,
+    openConnection: (URL) -> HttpURLConnection = { url ->
+        url.openConnection() as HttpURLConnection
+    },
+): AppUpdateCheckResult {
+    val githubResult = checkSourceUpdate(
+        source = AppUpdateSource.GitHub,
+        releasesApiUrl = PixelDoneGitHubReleasesApiUrl,
+        projectName = projectName,
+        currentVersion = currentVersion,
+        channel = channel,
+        openConnection = openConnection,
+    )
+    if (githubResult is AppUpdateCheckResult.Available) {
+        return githubResult.copy(
+            info = githubResult.info.withFallbackSources(
+                fallbackSources = fallbackGiteeDownloadSources(
+                    tagName = "v${githubResult.info.version}",
+                    fileName = githubResult.info.fileName,
+                    openConnection = openConnection,
+                ),
+            ),
+        )
+    }
+    if (githubResult == AppUpdateCheckResult.Current) return githubResult
+
+    return checkSourceUpdate(
+        source = AppUpdateSource.Gitee,
+        releasesApiUrl = PixelDoneGiteeReleasesApiUrl,
+        projectName = projectName,
+        currentVersion = currentVersion,
+        channel = channel,
+        openConnection = openConnection,
+    )
+}
 
 internal suspend fun checkAppUpdate(
     releasesApiUrl: String,
@@ -110,8 +167,26 @@ internal suspend fun checkAppUpdate(
     openConnection: (URL) -> HttpURLConnection = { url ->
         url.openConnection() as HttpURLConnection
     },
+): AppUpdateCheckResult =
+    checkSourceUpdate(
+        source = AppUpdateSource.Gitee,
+        releasesApiUrl = releasesApiUrl,
+        projectName = projectName,
+        currentVersion = currentVersion,
+        channel = channel,
+        openConnection = openConnection,
+    )
+
+private suspend fun checkSourceUpdate(
+    source: AppUpdateSource,
+    releasesApiUrl: String,
+    projectName: String,
+    currentVersion: String,
+    channel: AppUpdateChannel,
+    openConnection: (URL) -> HttpURLConnection,
 ): AppUpdateCheckResult {
-    val releases = fetchGiteeReleases(
+    val releases = fetchReleases(
+        source = source,
         releasesApiUrl = releasesApiUrl,
         openConnection = openConnection,
     ) ?: return AppUpdateCheckResult.Unavailable
@@ -127,7 +202,8 @@ internal suspend fun checkAppUpdate(
         val assets = if (candidate.release.assets.isNotEmpty()) {
             candidate.release.assets
         } else {
-            fetchGiteeReleaseAssets(
+            fetchReleaseAssets(
+                source = source,
                 releasesApiUrl = releasesApiUrl,
                 releaseId = candidate.release.id,
                 openConnection = openConnection,
@@ -138,8 +214,13 @@ internal suspend fun checkAppUpdate(
             AppUpdateInfo(
                 version = candidate.version.normalized,
                 releasePageUrl = candidate.release.htmlUrl,
-                apkDownloadUrl = asset.downloadUrl,
                 fileName = candidate.fileName,
+                downloadSources = listOf(
+                    AppUpdateDownloadSource(
+                        source = source,
+                        url = asset.downloadUrl,
+                    ),
+                ),
             ),
         )
     }
@@ -167,8 +248,13 @@ internal fun releasesToUpdateCheckResult(
                 AppUpdateInfo(
                     version = candidate.version.normalized,
                     releasePageUrl = candidate.release.htmlUrl,
-                    apkDownloadUrl = asset.downloadUrl,
                     fileName = candidate.fileName,
+                    downloadSources = listOf(
+                        AppUpdateDownloadSource(
+                            source = AppUpdateSource.Gitee,
+                            url = asset.downloadUrl,
+                        ),
+                    ),
                 ),
             )
         }
@@ -176,23 +262,83 @@ internal fun releasesToUpdateCheckResult(
     return AppUpdateCheckResult.Unavailable
 }
 
+private fun AppUpdateInfo.withFallbackSources(
+    fallbackSources: List<AppUpdateDownloadSource>,
+): AppUpdateInfo =
+    copy(
+        downloadSources = (downloadSources + fallbackSources).distinctBy { source ->
+            source.source to source.url
+        },
+    )
+
+private suspend fun fallbackGiteeDownloadSources(
+    tagName: String,
+    fileName: String,
+    openConnection: (URL) -> HttpURLConnection,
+): List<AppUpdateDownloadSource> {
+    val releases = fetchGiteeReleases(
+        releasesApiUrl = PixelDoneGiteeReleasesApiUrl,
+        openConnection = openConnection,
+    ) ?: return emptyList()
+    val release = releases.firstOrNull { release ->
+        release.tagName.equals(tagName, ignoreCase = true)
+    } ?: return emptyList()
+    val assets = if (release.assets.isNotEmpty()) {
+        release.assets
+    } else {
+        fetchGiteeReleaseAssets(
+            releasesApiUrl = PixelDoneGiteeReleasesApiUrl,
+            releaseId = release.id,
+            openConnection = openConnection,
+        ) ?: return emptyList()
+    }
+    val asset = findReleaseApkAsset(assets, fileName) ?: return emptyList()
+    return listOf(AppUpdateDownloadSource(AppUpdateSource.Gitee, asset.downloadUrl))
+}
+
 internal suspend fun fetchGiteeReleases(
     releasesApiUrl: String,
     openConnection: (URL) -> HttpURLConnection = { url ->
         url.openConnection() as HttpURLConnection
     },
-): List<GiteeRelease>? {
-    val releases = mutableListOf<GiteeRelease>()
+): List<GiteeRelease>? =
+    fetchReleases(
+        source = AppUpdateSource.Gitee,
+        releasesApiUrl = releasesApiUrl,
+        openConnection = openConnection,
+    )
+
+internal suspend fun fetchGitHubReleases(
+    releasesApiUrl: String,
+    openConnection: (URL) -> HttpURLConnection = { url ->
+        url.openConnection() as HttpURLConnection
+    },
+): List<AppRelease>? =
+    fetchReleases(
+        source = AppUpdateSource.GitHub,
+        releasesApiUrl = releasesApiUrl,
+        openConnection = openConnection,
+    )
+
+private suspend fun fetchReleases(
+    source: AppUpdateSource,
+    releasesApiUrl: String,
+    openConnection: (URL) -> HttpURLConnection,
+): List<AppRelease>? {
+    val releases = mutableListOf<AppRelease>()
     var page = 1
     while (true) {
         val body = fetchJson(
-            url = pagedGiteeUrl(releasesApiUrl, page),
+            url = pagedReleaseUrl(source, releasesApiUrl, page),
             openConnection = openConnection,
         ) ?: return null
-        val pageReleases = parseGiteeReleases(body) ?: return null
+        val pageReleases = parseReleases(
+            json = body,
+            fallbackReleasePageUrl = releasePageUrl(source),
+        ) ?: return null
         if (pageReleases.isEmpty()) break
         releases += pageReleases
-        if (pageReleases.size < GiteeReleasePageSize) break
+        if (pageReleases.size < ReleasePageSize) break
         page += 1
     }
     return releases
@@ -205,18 +351,33 @@ internal suspend fun fetchGiteeReleaseAssets(
         url.openConnection() as HttpURLConnection
     },
 ): List<ReleaseAsset>? {
+    return fetchReleaseAssets(
+        source = AppUpdateSource.Gitee,
+        releasesApiUrl = releasesApiUrl,
+        releaseId = releaseId,
+        openConnection = openConnection,
+    )
+}
+
+private suspend fun fetchReleaseAssets(
+    source: AppUpdateSource,
+    releasesApiUrl: String,
+    releaseId: Long,
+    openConnection: (URL) -> HttpURLConnection,
+): List<ReleaseAsset>? {
+    if (source != AppUpdateSource.Gitee) return emptyList()
     val assets = mutableListOf<ReleaseAsset>()
     val assetsApiUrl = giteeReleaseAssetsApiUrl(releasesApiUrl, releaseId)
     var page = 1
     while (true) {
         val body = fetchJson(
-            url = pagedGiteeUrl(assetsApiUrl, page),
+            url = pagedReleaseUrl(source, assetsApiUrl, page),
             openConnection = openConnection,
         ) ?: return null
         val pageAssets = parseGiteeReleaseAssets(body) ?: return null
         if (pageAssets.isEmpty()) break
         assets += pageAssets
-        if (pageAssets.size < GiteeReleasePageSize) break
+        if (pageAssets.size < ReleasePageSize) break
         page += 1
     }
     return assets
@@ -248,13 +409,22 @@ internal fun normalizedSemanticVersion(version: String): String? =
     parseAppVersion(version)?.normalized
 
 internal fun parseGiteeReleases(json: String): List<GiteeRelease>? =
-    extractTopLevelArrayObjects(json)?.map { releaseJson ->
-        parseGiteeRelease(releaseJson) ?: return null
-    }
+    parseReleases(json, PixelDoneGiteeReleasePageUrl)
+
+internal fun parseGitHubReleases(json: String): List<AppRelease>? =
+    parseReleases(json, PixelDoneGitHubReleasePageUrl)
 
 internal fun parseGiteeReleaseAssets(json: String): List<ReleaseAsset>? =
     extractTopLevelArrayObjects(json)?.map { assetJson ->
         parseReleaseAsset(assetJson) ?: return null
+    }
+
+private fun parseReleases(
+    json: String,
+    fallbackReleasePageUrl: String,
+): List<AppRelease>? =
+    extractTopLevelArrayObjects(json)?.map { releaseJson ->
+        parseRelease(releaseJson, fallbackReleasePageUrl) ?: return null
     }
 
 private fun sortedUpdateCandidates(
@@ -317,9 +487,20 @@ private suspend fun fetchJson(
         }
     }
 
-private fun pagedGiteeUrl(baseUrl: String, page: Int): String {
+private fun pagedReleaseUrl(source: AppUpdateSource, baseUrl: String, page: Int): String {
     val separator = if (baseUrl.contains("?")) "&" else "?"
-    return "$baseUrl${separator}direction=desc&per_page=$GiteeReleasePageSize&page=$page"
+    val parameters = when (source) {
+        AppUpdateSource.GitHub -> "per_page=$ReleasePageSize&page=$page"
+        AppUpdateSource.Gitee -> "direction=desc&per_page=$ReleasePageSize&page=$page"
+    }
+    return "$baseUrl$separator$parameters"
+}
+
+private fun releasePageUrl(source: AppUpdateSource): String {
+    return when (source) {
+        AppUpdateSource.GitHub -> PixelDoneGitHubReleasePageUrl
+        AppUpdateSource.Gitee -> PixelDoneGiteeReleasePageUrl
+    }
 }
 
 private fun giteeReleaseAssetsApiUrl(releasesApiUrl: String, releaseId: Long): String {
@@ -363,18 +544,18 @@ private fun parseRcReleaseTag(tagName: String): AppVersion? {
     )
 }
 
-private fun parseGiteeRelease(json: String): GiteeRelease? {
+private fun parseRelease(json: String, fallbackReleasePageUrl: String): AppRelease? {
     val id = extractTopLevelJsonLong(json, "id") ?: return null
     val tagName = extractTopLevelJsonString(json, "tag_name") ?: return null
     val htmlUrl = extractTopLevelJsonString(json, "html_url")
-        ?: "$PixelDoneGiteeReleasePageUrl/tag/$tagName"
+        ?: "$fallbackReleasePageUrl/tag/$tagName"
     val prerelease = extractTopLevelJsonBoolean(json, "prerelease") ?: false
     val assets = extractTopLevelJsonArray(json, "assets")
         ?.let(::extractJsonObjects)
         ?.mapNotNull(::parseReleaseAsset)
         ?: emptyList()
 
-    return GiteeRelease(
+    return AppRelease(
         id = id,
         tagName = tagName,
         htmlUrl = htmlUrl,

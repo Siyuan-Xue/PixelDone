@@ -2,16 +2,23 @@ package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.update.AppUpdateChannel
 import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
+import com.milesxue.pixeldone.data.update.AppUpdateDownloadSource
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
+import com.milesxue.pixeldone.data.update.AppUpdateSource
 import com.milesxue.pixeldone.data.update.GiteeRelease
+import com.milesxue.pixeldone.data.update.PixelDoneGiteeReleasesApiUrl
+import com.milesxue.pixeldone.data.update.PixelDoneGitHubReleasesApiUrl
 import com.milesxue.pixeldone.data.update.ReleaseAsset
+import com.milesxue.pixeldone.data.update.checkAppUpdate
 import com.milesxue.pixeldone.data.update.fetchGiteeReleases
 import com.milesxue.pixeldone.data.update.findReleaseApkAsset
 import com.milesxue.pixeldone.data.update.isNewerSemanticVersion
+import com.milesxue.pixeldone.data.update.parseGitHubReleases
 import com.milesxue.pixeldone.data.update.parseGiteeReleaseAssets
 import com.milesxue.pixeldone.data.update.parseGiteeReleases
 import com.milesxue.pixeldone.data.update.releasesToUpdateCheckResult
 import com.milesxue.pixeldone.data.update.updateApkFileName
+import java.io.ByteArrayInputStream
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
@@ -114,6 +121,133 @@ class AppUpdateCheckerTest {
         assertEquals(1, assets?.size)
         assertEquals("PixelDone-2.8.0-release.apk", assets?.single()?.name)
         assertEquals("https://gitee.com/download/release.apk", assets?.single()?.downloadUrl)
+    }
+
+    @Test
+    fun parseGitHubReleases_readsReleaseListAndAssets() {
+        val releases = parseGitHubReleases(
+            """
+            [
+              {
+                "id": 84,
+                "tag_name": "v2.8.0",
+                "html_url": "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v2.8.0",
+                "prerelease": false,
+                "assets": [
+                  {
+                    "id": 12,
+                    "name": "PixelDone-2.8.0-release.apk",
+                    "browser_download_url": "https://github.com/download/release.apk"
+                  }
+                ]
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        assertEquals(1, releases?.size)
+        val release = releases?.single()
+        assertEquals(84L, release?.id)
+        assertEquals("v2.8.0", release?.tagName)
+        assertEquals(false, release?.prerelease)
+        assertEquals(
+            "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v2.8.0",
+            release?.htmlUrl,
+        )
+        assertEquals("PixelDone-2.8.0-release.apk", release?.assets?.single()?.name)
+    }
+
+    @Test
+    fun checkAppUpdate_prefersGitHubAndAddsGiteeFallbackDownloadSource() = runBlocking {
+        val result = checkAppUpdate(
+            projectName = "PixelDone",
+            currentVersion = "2.7.0",
+            channel = AppUpdateChannel.Formal,
+            openConnection = mappedConnections(
+                githubReleasesPage(1) to releaseListJson(
+                    id = 1L,
+                    tagName = "v2.8.0",
+                    htmlUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v2.8.0",
+                    prerelease = false,
+                    assetName = "PixelDone-2.8.0-release.apk",
+                    assetUrl = "https://github.com/download/PixelDone-2.8.0-release.apk",
+                ),
+                giteeReleasesPage(1) to releaseListJson(
+                    id = 2L,
+                    tagName = "v2.8.0",
+                    htmlUrl = "https://gitee.com/milesxue/PixelDone/releases/tag/v2.8.0",
+                    prerelease = false,
+                    assetName = "PixelDone-2.8.0-release.apk",
+                    assetUrl = "https://gitee.com/download/PixelDone-2.8.0-release.apk",
+                ),
+            ),
+        )
+
+        assertTrue(result is AppUpdateCheckResult.Available)
+        val available = result as AppUpdateCheckResult.Available
+        assertEquals("2.8.0", available.info.version)
+        assertEquals("https://github.com/download/PixelDone-2.8.0-release.apk", available.info.apkDownloadUrl)
+        assertEquals(
+            listOf(AppUpdateSource.GitHub, AppUpdateSource.Gitee),
+            available.info.downloadSources.map { it.source },
+        )
+    }
+
+    @Test
+    fun checkAppUpdate_usesGiteeWhenGitHubFails() = runBlocking {
+        val result = checkAppUpdate(
+            projectName = "PixelDone",
+            currentVersion = "2.7.0",
+            channel = AppUpdateChannel.Formal,
+            openConnection = mappedConnections(
+                githubReleasesPage(1) to null,
+                giteeReleasesPage(1) to releaseListJson(
+                    id = 2L,
+                    tagName = "v2.8.0",
+                    htmlUrl = "https://gitee.com/milesxue/PixelDone/releases/tag/v2.8.0",
+                    prerelease = false,
+                    assetName = "PixelDone-2.8.0-release.apk",
+                    assetUrl = "https://gitee.com/download/PixelDone-2.8.0-release.apk",
+                ),
+            ),
+        )
+
+        assertTrue(result is AppUpdateCheckResult.Available)
+        val available = result as AppUpdateCheckResult.Available
+        assertEquals(listOf(AppUpdateSource.Gitee), available.info.downloadSources.map { it.source })
+        assertEquals("https://gitee.com/download/PixelDone-2.8.0-release.apk", available.info.apkDownloadUrl)
+    }
+
+    @Test
+    fun checkAppUpdate_usesGiteeWhenGitHubHasNoMatchingApk() = runBlocking {
+        val result = checkAppUpdate(
+            projectName = "PixelDone",
+            currentVersion = "2.7.0",
+            channel = AppUpdateChannel.Formal,
+            openConnection = mappedConnections(
+                githubReleasesPage(1) to releaseListJson(
+                    id = 1L,
+                    tagName = "v2.8.0",
+                    htmlUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v2.8.0",
+                    prerelease = false,
+                    assetName = "PixelDone-2.8.0-debug.apk",
+                    assetUrl = "https://github.com/download/wrong.apk",
+                ),
+                giteeReleasesPage(1) to releaseListJson(
+                    id = 2L,
+                    tagName = "v2.8.0",
+                    htmlUrl = "https://gitee.com/milesxue/PixelDone/releases/tag/v2.8.0",
+                    prerelease = false,
+                    assetName = "PixelDone-2.8.0-release.apk",
+                    assetUrl = "https://gitee.com/download/PixelDone-2.8.0-release.apk",
+                ),
+            ),
+        )
+
+        assertTrue(result is AppUpdateCheckResult.Available)
+        val available = result as AppUpdateCheckResult.Available
+        assertEquals(listOf(AppUpdateSource.Gitee), available.info.downloadSources.map { it.source })
+        assertEquals("https://gitee.com/download/PixelDone-2.8.0-release.apk", available.info.apkDownloadUrl)
     }
 
     @Test
@@ -323,15 +457,25 @@ class AppUpdateCheckerTest {
         val info = AppUpdateInfo(
             version = "2.8.0-rc.1",
             releasePageUrl = "https://gitee.com/milesxue/PixelDone/releases/tag/v2.8.0-rc.1",
-            apkDownloadUrl = "https://gitee.com/download/PixelDone-2.8.0-rc.1-debug.apk",
             fileName = "PixelDone-2.8.0-rc.1-debug.apk",
+            downloadSources = listOf(
+                AppUpdateDownloadSource(
+                    source = AppUpdateSource.GitHub,
+                    url = "https://github.com/download/PixelDone-2.8.0-rc.1-debug.apk",
+                ),
+                AppUpdateDownloadSource(
+                    source = AppUpdateSource.Gitee,
+                    url = "https://gitee.com/download/PixelDone-2.8.0-rc.1-debug.apk",
+                ),
+            ),
         )
 
         assertEquals(
-            "https://gitee.com/download/PixelDone-2.8.0-rc.1-debug.apk",
+            "https://github.com/download/PixelDone-2.8.0-rc.1-debug.apk",
             info.apkDownloadUrl,
         )
         assertEquals("PixelDone-2.8.0-rc.1-debug.apk", info.fileName)
+        assertEquals(listOf(AppUpdateSource.GitHub, AppUpdateSource.Gitee), info.downloadSources.map { it.source })
     }
 
     @Test
@@ -373,6 +517,61 @@ class AppUpdateCheckerTest {
             prerelease = prerelease,
             assets = assets,
         )
+
+    private fun githubReleasesPage(page: Int): String =
+        "$PixelDoneGitHubReleasesApiUrl?per_page=100&page=$page"
+
+    private fun giteeReleasesPage(page: Int): String =
+        "$PixelDoneGiteeReleasesApiUrl?direction=desc&per_page=100&page=$page"
+
+    private fun releaseListJson(
+        id: Long,
+        tagName: String,
+        htmlUrl: String,
+        prerelease: Boolean,
+        assetName: String,
+        assetUrl: String,
+    ): String =
+        """
+        [
+          {
+            "id": $id,
+            "tag_name": "$tagName",
+            "html_url": "$htmlUrl",
+            "prerelease": $prerelease,
+            "assets": [
+              {
+                "name": "$assetName",
+                "browser_download_url": "$assetUrl"
+              }
+            ]
+          }
+        ]
+        """.trimIndent()
+
+    private fun mappedConnections(
+        vararg responses: Pair<String, String?>,
+    ): (URL) -> HttpURLConnection {
+        val responseMap = responses.toMap()
+        return { url ->
+            responseMap[url.toString()]
+                ?.let { body -> JsonConnection(url, body) }
+                ?: TimeoutConnection(url)
+        }
+    }
+
+    private class JsonConnection(url: URL, private val body: String) : HttpURLConnection(url) {
+        override fun disconnect() = Unit
+
+        override fun usingProxy(): Boolean = false
+
+        override fun connect() = Unit
+
+        override fun getResponseCode(): Int = HTTP_OK
+
+        override fun getInputStream(): ByteArrayInputStream =
+            ByteArrayInputStream(body.toByteArray())
+    }
 
     private class TimeoutConnection(url: URL) : HttpURLConnection(url) {
         override fun disconnect() = Unit

@@ -26,6 +26,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -92,7 +93,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -146,6 +149,7 @@ import com.milesxue.pixeldone.data.update.AppUpdateDownloadProgress
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadResult
 import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
+import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
 import com.milesxue.pixeldone.domain.todo.*
 import com.milesxue.pixeldone.ui.theme.PixelDoneColors
 internal const val CompletionSortDelayMillis = 2_000L
@@ -1078,60 +1082,60 @@ internal fun PixelDoneApp() {
     }
 
     fun startUpdateDownload(info: AppUpdateInfo, revealProgressDialog: Boolean = false) {
-        if (activeUpdateDownload?.version == info.version) {
+        if (
+            activeUpdateDownload?.version == info.version &&
+            activeUpdateDownload?.fileName == info.fileName
+        ) {
             if (revealProgressDialog) revealUpdateProgressDialog()
             return
         }
         if (revealProgressDialog) revealUpdateProgressDialog()
-        when (val result = updateService.enqueue(info)) {
-            is AppUpdateDownloadResult.Started -> {
-                activeUpdateDownload = result.download
-                updateUiState = AppUpdateUiState(
-                    status = UpdateUiStatus.Downloading,
-                    info = info,
-                    message = formatUpdateDownloadMessage(info.version),
-                )
-                updateScope.launch {
-                    val completion = updateService.awaitCompletion(result.download) { progress ->
-                        if (activeUpdateDownload?.downloadId == result.download.downloadId) {
+        updateScope.launch {
+            for (request in appUpdateDownloadRequests(info)) {
+                when (val result = updateService.enqueue(request)) {
+                    is AppUpdateDownloadResult.Started -> {
+                        activeUpdateDownload = result.download
+                        updateUiState = AppUpdateUiState(
+                            status = UpdateUiStatus.Downloading,
+                            info = info,
+                            message = formatUpdateDownloadMessage(info.version),
+                        )
+                        val completion = updateService.awaitCompletion(result.download) { progress ->
+                            if (activeUpdateDownload?.downloadId == result.download.downloadId) {
+                                updateUiState = AppUpdateUiState(
+                                    status = UpdateUiStatus.Downloading,
+                                    info = info,
+                                    message = formatUpdateDownloadMessage(info.version, progress),
+                                    progress = progress,
+                                )
+                            }
+                        }
+                        if (activeUpdateDownload?.downloadId != result.download.downloadId) {
+                            return@launch
+                        }
+                        activeUpdateDownload = null
+                        if (
+                            completion == AppUpdateDownloadCompletion.Success &&
+                            openDownloadedUpdate(result.download)
+                        ) {
+                            showUpdateProgressDialog = false
+                            updateProgressDialogDismissed = false
                             updateUiState = AppUpdateUiState(
-                                status = UpdateUiStatus.Downloading,
-                                info = info,
-                                message = formatUpdateDownloadMessage(info.version, progress),
-                                progress = progress,
+                                status = UpdateUiStatus.Installing,
+                                message = "install: ${versionLabel(info.version)}",
                             )
+                            return@launch
                         }
                     }
-                    if (activeUpdateDownload?.downloadId != result.download.downloadId) {
-                        return@launch
-                    }
-                    activeUpdateDownload = null
-                    showUpdateProgressDialog = false
-                    updateProgressDialogDismissed = false
-                    if (
-                        completion == AppUpdateDownloadCompletion.Success &&
-                        openDownloadedUpdate(result.download)
-                    ) {
-                        updateUiState = AppUpdateUiState(
-                            status = UpdateUiStatus.Installing,
-                            message = "install: ${versionLabel(info.version)}",
-                        )
-                    } else {
-                        updateUiState = AppUpdateUiState(
-                            status = UpdateUiStatus.Offline,
-                            message = "update failed",
-                        )
-                    }
+                    AppUpdateDownloadResult.Failed -> Unit
                 }
             }
-            AppUpdateDownloadResult.Failed -> {
-                showUpdateProgressDialog = false
-                updateProgressDialogDismissed = false
-                updateUiState = AppUpdateUiState(
-                    status = UpdateUiStatus.Offline,
-                    message = "update failed",
-                )
-            }
+            showUpdateProgressDialog = false
+            updateProgressDialogDismissed = false
+            updateUiState = AppUpdateUiState(
+                status = UpdateUiStatus.Offline,
+                message = "update failed",
+            )
         }
     }
 
@@ -4054,6 +4058,25 @@ private fun UpdateGlyph(
 }
 
 @Composable
+private fun DialogCloseTextButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    Text(
+        text = text,
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = colors.primaryInteractive,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
 private fun UpdateAvailableDialog(
     info: AppUpdateInfo?,
     currentVersion: String,
@@ -4081,33 +4104,24 @@ private fun UpdateAvailableDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.textSecondary,
                 )
-                Row(
+                Text(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, colors.borderWeak, RectangleShape)
-                        .background(colors.surfaceSoft)
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
-                        checked = neverShowUpdateDialog,
-                        onCheckedChange = onNeverShowUpdateDialogChange,
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = colors.primary,
-                            uncheckedColor = colors.textSecondary,
-                            checkmarkColor = colors.background,
-                        ),
-                    )
-                    Text(
-                        modifier = Modifier.weight(1f),
-                        text = "DO NOT SHOW AGAIN",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                        .toggleable(
+                            value = neverShowUpdateDialog,
+                            role = Role.Checkbox,
+                            onValueChange = onNeverShowUpdateDialogChange,
+                        )
+                        .semantics {
+                            stateDescription = if (neverShowUpdateDialog) "enabled" else "disabled"
+                        }
+                        .padding(vertical = 2.dp),
+                    text = "DO NOT SHOW AGAIN",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (neverShowUpdateDialog) colors.primaryInteractive else colors.textSecondary,
+                    fontWeight = if (neverShowUpdateDialog) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         },
         confirmButton = {
@@ -4118,10 +4132,9 @@ private fun UpdateAvailableDialog(
             )
         },
         dismissButton = {
-            PixelButton(
+            DialogCloseTextButton(
                 text = "LATER",
                 onClick = onDismiss,
-                primary = false,
             )
         },
         shape = RectangleShape,
@@ -4169,10 +4182,9 @@ private fun UpdateDownloadProgressDialog(
             }
         },
         confirmButton = {
-            PixelButton(
+            DialogCloseTextButton(
                 text = "CLOSE",
                 onClick = onDismiss,
-                primary = false,
             )
         },
         shape = RectangleShape,
@@ -4284,14 +4296,9 @@ private fun TodoImagePreviewDialog(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
+                DialogCloseTextButton(
                     text = "CLOSE",
-                    modifier = Modifier
-                        .clickable(onClick = onDismiss)
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colors.primaryInteractive,
-                    maxLines = 1,
+                    onClick = onDismiss,
                 )
             }
         },
@@ -4503,10 +4510,9 @@ private fun DeleteConfirmationDialog(
             )
         },
         dismissButton = {
-            PixelButton(
+            DialogCloseTextButton(
                 text = "CANCEL",
                 onClick = onDismiss,
-                primary = false,
             )
         },
         shape = RectangleShape,

@@ -49,9 +49,9 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Set reminder repeat per todo: none, daily, or weekly.
 - Advance daily and weekly repeating todos to the next reminder time after a notification fires.
 - Use restrained haptic feedback for core task and list-state actions.
-- Check synced Gitee Releases automatically on app start and show a quiet footer update state when a release is available.
+- Check GitHub Releases automatically on app start, with synced Gitee Releases as fallback, and show a quiet footer update state when a release is available.
 - Show an update prompt dialog for users who have not disabled update prompts.
-- Download only the exact latest channel-matching APK through Android DownloadManager: formal release APKs for release builds and RC debug APKs for `PixelDone-beta`.
+- Download only the exact latest channel-matching APK through Android DownloadManager: formal release APKs for release builds and RC debug APKs for `PixelDone-beta`, trying GitHub first and synced Gitee second.
 - Show `downloading` with live footer progress while an in-app update APK downloads silently.
 - Show a dismissible update progress dialog when an update is started from a prompt or footer.
 - Keep update downloads running silently when the progress dialog is closed.
@@ -90,7 +90,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - `domain/todo/`: pure Kotlin todo, checklist, sorting, and reminder rules with no Android or Compose imports.
 - `data/todo/`: SharedPreferences JSON persistence behind a repository boundary.
 - `data/image/`: private image-copying, safe file-path handling, and preview bitmap sampling.
-- `data/update/`: synced Gitee release checks, DownloadManager integration, and install-intent preparation.
+- `data/update/`: GitHub-first release checks, synced Gitee fallback, DownloadManager integration, and install-intent preparation.
 - `reminder/`: AlarmManager, notification, boot, receiver, foreground service, and XHigh full-screen alarm integration.
 - `ui/todo/`: screen route, UI state holder, and ViewModel teaching entry point.
 - `ui/todo/components/`: reusable pixel-style Compose controls and icons.
@@ -126,24 +126,24 @@ Code pushes, tags, formal releases, and beta RC prereleases stay on GitHub:
 https://github.com/Siyuan-Xue/PixelDone/releases
 ```
 
-The in-app update checker reads the synced Gitee release mirror:
+The in-app update checker reads GitHub Releases first and uses the synced Gitee release mirror as fallback:
 
 ```text
 https://gitee.com/milesxue/PixelDone/releases
 ```
 
-Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror before relying on in-app update availability.
+Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
 
-The signed release APK is copied to:
+The latest formal signed release APK remains:
 
 ```text
 app/build/outputs/apk/release/PixelDone-2.7.1-release.apk
 ```
 
-The current local debug APK is copied to:
+The current beta RC debug APK is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.7.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.7.2-rc.1-debug.apk
 ```
 
 ## Install
@@ -152,6 +152,12 @@ Install the signed release build with:
 
 ```sh
 adb install -r app/build/outputs/apk/release/PixelDone-2.7.1-release.apk
+```
+
+Install the beta RC debug build with:
+
+```sh
+adb install -r app/build/outputs/apk/debug/PixelDone-2.7.2-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -168,4 +174,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.7.1 formal signed release for the synced Gitee update mirror, formal/beta update channels, and RC beta release rules.
+2.7.2-rc.1 beta RC validates lightweight update dialogs and GitHub-first update fallback queues.

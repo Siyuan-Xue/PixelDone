@@ -17,10 +17,13 @@ import kotlinx.coroutines.withContext
 internal const val UpdateApkMimeType = "application/vnd.android.package-archive"
 private const val UpdateDownloadPollMillis = 750L
 private const val UpdateDownloadMaxWaitMillis = 10 * 60 * 1_000L
+private const val UpdateDownloadStalledWaitMillis = 30 * 1_000L
 private const val UpdatePreferencesName = "pixel_done_update_downloads"
 private const val ActiveDownloadVersionKey = "active_download_version"
 private const val ActiveDownloadIdKey = "active_download_id"
 private const val ActiveDownloadFileNameKey = "active_download_file_name"
+private const val ActiveDownloadSourceKey = "active_download_source"
+private const val ActiveDownloadUrlKey = "active_download_url"
 private val PixelDoneUpdateApkRegex =
     Regex(
         "^${Regex.escape(PixelDoneProjectName)}-" +
@@ -77,15 +80,45 @@ internal fun activeUpdateDownloadMatchesLatest(
     download: AppUpdateDownload?,
     latestVersion: String,
     latestFileName: String,
+    latestSource: AppUpdateSource,
+    latestUrl: String,
 ): Boolean {
     return download?.version == latestVersion &&
-        download.fileName.equals(latestFileName, ignoreCase = true)
+        download.fileName.equals(latestFileName, ignoreCase = true) &&
+        download.source == latestSource &&
+        download.url == latestUrl
 }
+
+internal fun isUpdateDownloadStalled(
+    elapsedMillis: Long,
+    lastProgressMillis: Long,
+    stalledWaitMillis: Long = UpdateDownloadStalledWaitMillis,
+): Boolean =
+    elapsedMillis - lastProgressMillis >= stalledWaitMillis
+
+internal data class AppUpdateDownloadRequest(
+    val version: String,
+    val fileName: String,
+    val source: AppUpdateSource,
+    val url: String,
+)
+
+internal fun appUpdateDownloadRequests(info: AppUpdateInfo): List<AppUpdateDownloadRequest> =
+    info.downloadSources.map { source ->
+        AppUpdateDownloadRequest(
+            version = info.version,
+            fileName = info.fileName,
+            source = source.source,
+            url = source.url,
+        )
+    }
 
 internal data class AppUpdateDownload(
     val version: String,
     val downloadId: Long,
     val fileName: String,
+    val source: AppUpdateSource,
+    val url: String,
 )
 
 internal data class AppUpdateDownloadProgress(
@@ -123,14 +156,14 @@ internal class AppUpdateDownloader(context: Context) {
     private val preferences: SharedPreferences =
         appContext.getSharedPreferences(UpdatePreferencesName, Context.MODE_PRIVATE)
 
-    fun enqueue(info: AppUpdateInfo): AppUpdateDownloadResult {
+    fun enqueue(request: AppUpdateDownloadRequest): AppUpdateDownloadResult {
         return try {
-            val fileName = info.fileName
+            val fileName = request.fileName
             cleanupStaleUpdateApkFiles(latestFileName = fileName)
-            reusableActiveDownload(info.version, fileName)?.let { return AppUpdateDownloadResult.Started(it) }
+            reusableActiveDownload(request)?.let { return AppUpdateDownloadResult.Started(it) }
             downloadedApkFile(fileName).delete()
-            val request = DownloadManager.Request(Uri.parse(info.apkDownloadUrl))
-                .setTitle("${PixelDoneProjectName} ${info.version}")
+            val downloadRequest = DownloadManager.Request(Uri.parse(request.url))
+                .setTitle("${PixelDoneProjectName} ${request.version}")
                 .setDescription("Downloading ${PixelDoneProjectName} update")
                 .setMimeType(UpdateApkMimeType)
                 .setNotificationVisibility(
@@ -143,11 +176,13 @@ internal class AppUpdateDownloader(context: Context) {
                     Environment.DIRECTORY_DOWNLOADS,
                     fileName,
                 )
-            val downloadId = downloadManager.enqueue(request)
+            val downloadId = downloadManager.enqueue(downloadRequest)
             val download = AppUpdateDownload(
-                version = info.version,
+                version = request.version,
                 downloadId = downloadId,
                 fileName = fileName,
+                source = request.source,
+                url = request.url,
             )
             rememberActiveDownload(download)
             AppUpdateDownloadResult.Started(download)
@@ -161,11 +196,18 @@ internal class AppUpdateDownloader(context: Context) {
         onProgress: (AppUpdateDownloadProgress) -> Unit = {},
     ): AppUpdateDownloadCompletion {
         var elapsedMillis = 0L
+        var lastProgressMillis = 0L
+        var lastBytesDownloaded = 0L
         while (elapsedMillis <= UpdateDownloadMaxWaitMillis) {
             val snapshot = withContext(Dispatchers.IO) {
                 downloadSnapshot(download.downloadId)
             }
             snapshot?.progress?.let(onProgress)
+            val bytesDownloaded = snapshot?.progress?.bytesDownloaded ?: 0L
+            if (bytesDownloaded > lastBytesDownloaded) {
+                lastBytesDownloaded = bytesDownloaded
+                lastProgressMillis = elapsedMillis
+            }
             when (snapshot?.status) {
                 DownloadManager.STATUS_SUCCESSFUL -> {
                     return withContext(Dispatchers.IO) {
@@ -178,8 +220,7 @@ internal class AppUpdateDownloader(context: Context) {
                     }
                 }
                 DownloadManager.STATUS_FAILED -> {
-                    forgetActiveDownload(download)
-                    downloadedApkFile(download.fileName).delete()
+                    forgetAndDelete(download)
                     return AppUpdateDownloadCompletion.Failed
                 }
                 DownloadManager.STATUS_PENDING,
@@ -188,10 +229,14 @@ internal class AppUpdateDownloader(context: Context) {
                 null,
                 -> Unit
             }
+            if (isUpdateDownloadStalled(elapsedMillis, lastProgressMillis)) {
+                forgetAndDelete(download)
+                return AppUpdateDownloadCompletion.Failed
+            }
             delay(UpdateDownloadPollMillis)
             elapsedMillis += UpdateDownloadPollMillis
         }
-        forgetActiveDownload(download)
+        forgetAndDelete(download)
         return AppUpdateDownloadCompletion.Failed
     }
 
@@ -259,9 +304,17 @@ internal class AppUpdateDownloader(context: Context) {
         }
     }
 
-    private fun reusableActiveDownload(version: String, fileName: String): AppUpdateDownload? {
+    private fun reusableActiveDownload(request: AppUpdateDownloadRequest): AppUpdateDownload? {
         val activeDownload = activeDownload()
-        if (!activeUpdateDownloadMatchesLatest(activeDownload, version, fileName)) {
+        if (
+            !activeUpdateDownloadMatchesLatest(
+                download = activeDownload,
+                latestVersion = request.version,
+                latestFileName = request.fileName,
+                latestSource = request.source,
+                latestUrl = request.url,
+            )
+        ) {
             activeDownload?.let { download ->
                 cancelDownload(download)
                 forgetActiveDownload(download)
@@ -306,6 +359,14 @@ internal class AppUpdateDownloader(context: Context) {
         val fileName = preferences.getString(ActiveDownloadFileNameKey, null)
             ?.takeIf { it.isNotBlank() }
             ?: return null
+        val source = preferences.getString(ActiveDownloadSourceKey, null)
+            ?.let { value ->
+                runCatching { AppUpdateSource.valueOf(value) }.getOrNull()
+            }
+            ?: return null
+        val url = preferences.getString(ActiveDownloadUrlKey, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
         val downloadId = preferences.getLong(ActiveDownloadIdKey, -1L)
             .takeIf { it >= 0L }
             ?: return null
@@ -313,6 +374,8 @@ internal class AppUpdateDownloader(context: Context) {
             version = version,
             downloadId = downloadId,
             fileName = fileName,
+            source = source,
+            url = url,
         )
     }
 
@@ -321,6 +384,8 @@ internal class AppUpdateDownloader(context: Context) {
             .putString(ActiveDownloadVersionKey, download.version)
             .putLong(ActiveDownloadIdKey, download.downloadId)
             .putString(ActiveDownloadFileNameKey, download.fileName)
+            .putString(ActiveDownloadSourceKey, download.source.name)
+            .putString(ActiveDownloadUrlKey, download.url)
             .apply()
     }
 
@@ -331,7 +396,15 @@ internal class AppUpdateDownloader(context: Context) {
             .remove(ActiveDownloadVersionKey)
             .remove(ActiveDownloadIdKey)
             .remove(ActiveDownloadFileNameKey)
+            .remove(ActiveDownloadSourceKey)
+            .remove(ActiveDownloadUrlKey)
             .apply()
+    }
+
+    private fun forgetAndDelete(download: AppUpdateDownload) {
+        cancelDownload(download)
+        forgetActiveDownload(download)
+        downloadedApkFile(download.fileName).delete()
     }
 
     private fun cancelDownload(download: AppUpdateDownload) {

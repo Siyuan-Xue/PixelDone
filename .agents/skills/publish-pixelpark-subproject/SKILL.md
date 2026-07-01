@@ -9,7 +9,7 @@ description: Verify and publish the already-standalone PixelDone repository to G
 
 PixelDone is already a standalone Git repository. Use this skill to verify the repository remote, run debug release checks, push `main`, and optionally create an explicit beta RC GitHub prerelease.
 
-GitHub is the canonical publishing surface for code pushes, tags, and release assets. PixelDone's in-app updater reads the user's synced Gitee release mirror, so create beta RC prereleases on GitHub first and verify the Gitee mirror only after the external sync has run.
+GitHub is the canonical publishing surface for code pushes, tags, and release assets. PixelDone's in-app updater checks GitHub Releases first and uses the user's synced Gitee release mirror as fallback, so create beta RC prereleases on GitHub first and verify the Gitee mirror only after the external sync has run.
 
 Do not treat a PixelDone-only clone as a parent PixelPark workspace. Parent synchronization is optional and requires an external parent checkout.
 

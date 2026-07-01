@@ -3,7 +3,7 @@ package com.milesxue.pixeldone.data.update
 /**
  * 应用更新边界。
  *
- * 教学说明：检查 Gitee Release、启动 DownloadManager、打开安装界面都是“外部系统动作”。
+ * 教学说明：检查 GitHub/Gitee Release、启动 DownloadManager、打开安装界面都是“外部系统动作”。
  * UI 通过这个服务表达意图，而不是直接操作网络和下载组件。
  */
 internal class UpdateService(
@@ -16,8 +16,8 @@ internal class UpdateService(
             channel = channel,
         )
 
-    fun enqueue(info: AppUpdateInfo): AppUpdateDownloadResult =
-        downloader.enqueue(info)
+    fun enqueue(request: AppUpdateDownloadRequest): AppUpdateDownloadResult =
+        downloader.enqueue(request)
 
     suspend fun awaitCompletion(
         download: AppUpdateDownload,

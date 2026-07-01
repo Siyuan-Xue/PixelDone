@@ -9,7 +9,7 @@ description: Launch PixelDone as a formal private signed release APK for direct 
 
 Use this skill for formal PixelPark launches that distribute signed release APKs directly through GitHub releases. Keep it separate from debug-only shipping, daily Git cleanup, and local APK deployment.
 
-GitHub is the canonical publishing surface for code pushes, tags, and release assets. PixelDone's in-app updater reads the user's synced Gitee release mirror, so create the release on GitHub first and verify the Gitee mirror only after the external sync has run. Do not create Gitee releases directly unless the user explicitly requests a one-off manual operation.
+GitHub is the canonical publishing surface for code pushes, tags, and release assets. PixelDone's in-app updater checks GitHub Releases first and uses the user's synced Gitee release mirror as fallback, so create the release on GitHub first and verify the Gitee mirror only after the external sync has run. Do not create Gitee releases directly unless the user explicitly requests a one-off manual operation.
 
 If the task is only a beta RC GitHub prerelease, use `$publish-pixelpark-subproject`. If it is only end-of-day Git wrap-up, use `$pixel-daily-ship`. If it is only device installation or file transfer, use `$deploy-android-apks`.
 
@@ -37,7 +37,7 @@ Confirm or infer these launch decisions before changing files:
 - Target app: PixelDone.
 - Release kind: first formal release, feature release, patch release, or package/signing migration.
 - Target `versionName` and `versionCode` policy. Increment `versionCode`; keep `versionName` semantic and in release order.
-- Distribution target: private signed release APK through GitHub release. Do not produce Google Play AAB unless explicitly requested. App-internal update availability is confirmed through the synced Gitee mirror after GitHub release publication.
+- Distribution target: private signed release APK through GitHub release. Do not produce Google Play AAB unless explicitly requested. App-internal update availability is primary on GitHub and fallback through the synced Gitee mirror after GitHub release publication.
 - Package migration stance. Formal PixelPark package names should use `com.milesxue.<product>`.
 - Data migration stance. If package name or signing certificate changes, default to no local data migration unless the user explicitly asks for it.
 - Deploy stance. Do not install to devices unless the user explicitly asks for deployment after the release build.

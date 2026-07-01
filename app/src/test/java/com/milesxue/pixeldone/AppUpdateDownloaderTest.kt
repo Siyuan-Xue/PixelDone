@@ -1,9 +1,14 @@
 package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.update.AppUpdateDownload
+import com.milesxue.pixeldone.data.update.AppUpdateDownloadSource
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadProgress
+import com.milesxue.pixeldone.data.update.AppUpdateInfo
+import com.milesxue.pixeldone.data.update.AppUpdateSource
 import com.milesxue.pixeldone.data.update.activeUpdateDownloadMatchesLatest
+import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
 import com.milesxue.pixeldone.data.update.isPixelDoneUpdateApkFileName
+import com.milesxue.pixeldone.data.update.isUpdateDownloadStalled
 import com.milesxue.pixeldone.data.update.shouldCleanInstalledUpdate
 import com.milesxue.pixeldone.data.update.staleUpdateApkFileNames
 import com.milesxue.pixeldone.data.update.updateApkVersion
@@ -72,11 +77,13 @@ class AppUpdateDownloaderTest {
     }
 
     @Test
-    fun activeUpdateDownloadMatchesLatest_requiresSameVersionAndFileName() {
+    fun activeUpdateDownloadMatchesLatest_requiresSameVersionFileNameSourceAndUrl() {
         val active = AppUpdateDownload(
             version = "2.8.0-rc.2",
             downloadId = 42L,
             fileName = "PixelDone-2.8.0-rc.2-debug.apk",
+            source = AppUpdateSource.GitHub,
+            url = "https://github.com/download/PixelDone-2.8.0-rc.2-debug.apk",
         )
 
         assertTrue(
@@ -84,6 +91,8 @@ class AppUpdateDownloaderTest {
                 download = active,
                 latestVersion = "2.8.0-rc.2",
                 latestFileName = "PixelDone-2.8.0-rc.2-debug.apk",
+                latestSource = AppUpdateSource.GitHub,
+                latestUrl = "https://github.com/download/PixelDone-2.8.0-rc.2-debug.apk",
             ),
         )
         assertFalse(
@@ -91,6 +100,76 @@ class AppUpdateDownloaderTest {
                 download = active,
                 latestVersion = "2.6.0",
                 latestFileName = "PixelDone-2.6.0-release.apk",
+                latestSource = AppUpdateSource.GitHub,
+                latestUrl = "https://github.com/download/PixelDone-2.8.0-rc.2-debug.apk",
+            ),
+        )
+        assertFalse(
+            activeUpdateDownloadMatchesLatest(
+                download = active,
+                latestVersion = "2.8.0-rc.2",
+                latestFileName = "PixelDone-2.8.0-rc.2-debug.apk",
+                latestSource = AppUpdateSource.Gitee,
+                latestUrl = "https://gitee.com/download/PixelDone-2.8.0-rc.2-debug.apk",
+            ),
+        )
+    }
+
+    @Test
+    fun appUpdateDownloadRequests_keepsGitHubThenGiteeQueueForSameApkFile() {
+        val info = AppUpdateInfo(
+            version = "2.8.0-rc.2",
+            releasePageUrl = "https://github.com/Siyuan-Xue/PixelDone/releases/tag/v2.8.0-rc.2",
+            fileName = "PixelDone-2.8.0-rc.2-debug.apk",
+            downloadSources = listOf(
+                AppUpdateDownloadSource(
+                    source = AppUpdateSource.GitHub,
+                    url = "https://github.com/download/PixelDone-2.8.0-rc.2-debug.apk",
+                ),
+                AppUpdateDownloadSource(
+                    source = AppUpdateSource.Gitee,
+                    url = "https://gitee.com/download/PixelDone-2.8.0-rc.2-debug.apk",
+                ),
+            ),
+        )
+
+        val requests = appUpdateDownloadRequests(info)
+
+        assertEquals(listOf(AppUpdateSource.GitHub, AppUpdateSource.Gitee), requests.map { it.source })
+        assertEquals(
+            listOf(
+                "PixelDone-2.8.0-rc.2-debug.apk",
+                "PixelDone-2.8.0-rc.2-debug.apk",
+            ),
+            requests.map { it.fileName },
+        )
+        assertEquals(
+            "https://gitee.com/download/PixelDone-2.8.0-rc.2-debug.apk",
+            requests.last().url,
+        )
+    }
+
+    @Test
+    fun isUpdateDownloadStalled_usesElapsedTimeSinceLastByteProgress() {
+        assertFalse(
+            isUpdateDownloadStalled(
+                elapsedMillis = 29_999L,
+                lastProgressMillis = 0L,
+                stalledWaitMillis = 30_000L,
+            ),
+        )
+        assertTrue(
+            isUpdateDownloadStalled(
+                elapsedMillis = 30_000L,
+                lastProgressMillis = 0L,
+                stalledWaitMillis = 30_000L,
+            ),
+        )
+        assertFalse(
+            isUpdateDownloadStalled(
+                elapsedMillis = 45_000L,
+                lastProgressMillis = 20_000L,
+                stalledWaitMillis = 30_000L,
             ),
         )
     }
