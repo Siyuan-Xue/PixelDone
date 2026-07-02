@@ -24,6 +24,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep a fixed `TRASH` list for soft-deleted tasks.
 - Keep a fixed `SETTINGS` list for app options instead of todo storage.
 - Expand the top bar to switch checklists and edit checklist names.
+- Use Android system back gestures to return through the current session's checklist history before leaving the app.
 - Long-press the `+` control to create a new checklist while short press still creates a task.
 - Tap a todo row to edit it in the bottom editor.
 - Attach one local image to each todo with the row image button.
@@ -136,24 +137,24 @@ https://gitee.com/milesxue/PixelDone/releases
 
 Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
 
-The signed release APK is copied to:
+The signed release APK, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.7.4-release.apk
+app/build/outputs/apk/release/PixelDone-2.8.0-rc.1-release.apk
 ```
 
-The local debug build, if assembled from this formal source, is copied to:
+The beta RC debug build is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.7.4-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.8.0-rc.1-debug.apk
 ```
 
 ## Install
 
-Install the signed release build with:
+Install the beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-2.7.4-release.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.8.0-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -170,4 +171,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.7.4 formal signed release for custom dialog action alignment and Android 14+ full-screen intent permission flow fixes.
+2.8.0 rc1 beta prerelease for checklist back-stack navigation through Android system back gestures.

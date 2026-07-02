@@ -304,6 +304,42 @@ internal fun consumeTodoListHighlightRequest(
     }
 }
 
+internal data class ChecklistBackNavigation(
+    val targetId: String,
+    val remainingStack: List<String>,
+)
+
+internal fun pushChecklistBackStack(
+    stack: List<String>,
+    currentId: String,
+    targetId: String,
+    validIds: Set<String>,
+): List<String> {
+    val prunedStack = stack.filter { it in validIds }
+    if (currentId == targetId || currentId !in validIds || targetId !in validIds) {
+        return prunedStack
+    }
+    return prunedStack + currentId
+}
+
+internal fun nextChecklistBackNavigation(
+    stack: List<String>,
+    validIds: Set<String>,
+    currentId: String,
+): ChecklistBackNavigation? {
+    val remainingStack = stack.filter { it in validIds }.toMutableList()
+    while (remainingStack.isNotEmpty()) {
+        val candidateId = remainingStack.removeAt(remainingStack.lastIndex)
+        if (candidateId != currentId) {
+            return ChecklistBackNavigation(
+                targetId = candidateId,
+                remainingStack = remainingStack,
+            )
+        }
+    }
+    return null
+}
+
 internal data class PendingTodoToggleFeedback(
     val initialCompletedById: Map<String, Boolean> = emptyMap(),
     val latestCompletedById: Map<String, Boolean> = emptyMap(),
@@ -409,7 +445,15 @@ internal fun PixelDoneApp() {
     }
     var batchMoveMode by remember { mutableStateOf(BatchMoveMode.IDLE) }
     var batchMoveSelectedTodoIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var checklistBackStack by remember { mutableStateOf<List<String>>(emptyList()) }
     val selectedChecklist = selectedChecklistOf(checklistState)
+    val checklistIds = checklistState.lists.map { it.id }
+    val checklistIdSet = checklistIds.toSet()
+    val checklistBackNavigation = nextChecklistBackNavigation(
+        stack = checklistBackStack,
+        validIds = checklistIdSet,
+        currentId = selectedChecklist.id,
+    )
     val currentChecklistState by rememberUpdatedState(checklistState)
     val isTrashSelected = isTrashChecklist(selectedChecklist)
     val isSettingsSelected = isSettingsChecklist(selectedChecklist)
@@ -436,6 +480,13 @@ internal fun PixelDoneApp() {
         cleanupInstalledUpdateIfNeeded()
         val currentTodos = normalTodos(checklistState)
         reminderScheduler.sync(currentTodos, currentTodos)
+    }
+
+    LaunchedEffect(checklistIds) {
+        val prunedStack = checklistBackStack.filter { it in checklistIdSet }
+        if (prunedStack != checklistBackStack) {
+            checklistBackStack = prunedStack
+        }
     }
 
     val sortedVisibleIds = visibleTodos(todos, sortMode, hideCompleted).map { it.id }
@@ -560,6 +611,12 @@ internal fun PixelDoneApp() {
             targetChecklistId = targetChecklistId,
             todoIds = selectedIds,
         ) ?: return
+        checklistBackStack = pushChecklistBackStack(
+            stack = checklistBackStack,
+            currentId = selectedChecklist.id,
+            targetId = updatedState.selectedListId,
+            validIds = updatedState.lists.mapTo(mutableSetOf()) { it.id },
+        )
         updateChecklistState(updatedState)
         clearBatchMoveState()
         keepDisplayOrderDuringSortDelay = false
@@ -936,6 +993,14 @@ internal fun PixelDoneApp() {
             return false
         }
 
+        if (updatedState.selectedListId != checklistState.selectedListId) {
+            checklistBackStack = pushChecklistBackStack(
+                stack = checklistBackStack,
+                currentId = selectedChecklist.id,
+                targetId = updatedState.selectedListId,
+                validIds = updatedState.lists.mapTo(mutableSetOf()) { it.id },
+            )
+        }
         updateChecklistState(updatedState)
         requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
         keepDisplayOrderDuringSortDelay = false
@@ -951,8 +1016,16 @@ internal fun PixelDoneApp() {
         editorMode = EditorMode.None
     }
 
-    fun selectChecklist(id: String) {
+    fun selectChecklist(id: String, recordBackStack: Boolean = true) {
         val updatedState = selectTodoChecklist(checklistState, id) ?: return
+        if (recordBackStack) {
+            checklistBackStack = pushChecklistBackStack(
+                stack = checklistBackStack,
+                currentId = selectedChecklist.id,
+                targetId = updatedState.selectedListId,
+                validIds = updatedState.lists.mapTo(mutableSetOf()) { it.id },
+            )
+        }
         updateChecklistState(updatedState)
         closeTransientControls()
         clearEditor()
@@ -962,6 +1035,20 @@ internal fun PixelDoneApp() {
         displayOrderIds = emptyList()
         requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
         headerExpanded = false
+    }
+
+    fun navigateBackChecklist() {
+        val navigation = nextChecklistBackNavigation(
+            stack = checklistBackStack,
+            validIds = checklistState.lists.mapTo(mutableSetOf()) { it.id },
+            currentId = selectedChecklist.id,
+        ) ?: return
+        checklistBackStack = navigation.remainingStack
+        selectChecklist(navigation.targetId, recordBackStack = false)
+    }
+
+    BackHandler(enabled = batchMoveMode == BatchMoveMode.IDLE && checklistBackNavigation != null) {
+        navigateBackChecklist()
     }
 
     fun confirmDelete() {
@@ -1304,7 +1391,7 @@ internal fun PixelDoneApp() {
             isSettingsSelected = isSettingsSelected,
             headerExpanded = headerExpanded,
             onHeaderExpandedChange = { headerExpanded = it },
-            onSelectChecklist = ::selectChecklist,
+            onSelectChecklist = { id -> selectChecklist(id) },
             onEditChecklist = { id ->
                 checklistState.lists
                     .firstOrNull { it.id == id && isNormalChecklist(it) }

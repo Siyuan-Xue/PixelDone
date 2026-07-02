@@ -1,14 +1,11 @@
-PixelDone v2.7.4 is a formal signed release for custom dialog action alignment and Android 14+ full-screen intent permission flow fixes.
+PixelDone v2.8.0-rc.1 is a beta RC prerelease for checklist back-stack navigation through Android system back gestures.
 
 Highlights:
-- Keeps borderless `LATER` and `CLOSE` dialog text actions vertically centered with filled action buttons after border removal.
-- Uses a shared dialog action row for paired custom dialog actions, including update prompt and delete confirmation dialogs.
-- Keeps single-action and title-row close controls on the same stable dialog action height.
-- Keeps full-screen intent access on Android 14+ tied to `NotificationManager.canUseFullScreenIntent()`.
-- Reopens the dedicated full-screen intent grant page for XHigh reminders when the permission is still missing after returning from exact-alarm setup.
-- Falls back through notification settings and app details if the dedicated full-screen settings activity is unavailable.
-- Documents that PixelDone-beta uses a separate debug package, so full-screen permission grants remain separate from the formal app.
+- Maintains a session-only checklist history across normal checklists, `TRASH`, and `SETTINGS`.
+- Routes Android system back and edge-swipe gestures to the previous checklist when checklist history exists.
+- Lets Android keep the default back-to-home behavior when checklist history is empty.
+- Keeps batch move back handling above checklist navigation, so back still closes target selection or batch selection first.
 
-Install note: use the attached signed release APK, `PixelDone-2.7.4-release.apk`, for direct installation or in-app update. This build installs as `com.milesxue.pixeldone`; PixelDone-beta remains a separate debug app under `com.milesxue.pixeldone.debug`.
+Install note: use the attached beta debug APK, `PixelDone-2.8.0-rc.1-debug.apk`, for PixelDone-beta testing. This build installs as `com.milesxue.pixeldone.debug`; the formal app remains `com.milesxue.pixeldone`.
 
 CODEX & XUE

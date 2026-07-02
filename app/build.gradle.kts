@@ -33,8 +33,8 @@ android {
         applicationId = "com.milesxue.pixeldone"
         minSdk = 26
         targetSdk = 37
-        versionCode = 51
-        versionName = "2.7.4"
+        versionCode = 52
+        versionName = "2.8.0-rc.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
