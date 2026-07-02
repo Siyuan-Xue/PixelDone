@@ -1,4 +1,4 @@
-PixelDone v2.8.0-rc.1 is a beta RC prerelease for checklist back-stack navigation through Android system back gestures.
+PixelDone v2.8.0 is a formal signed release for checklist back-stack navigation through Android system back gestures.
 
 Highlights:
 - Maintains a session-only checklist history across normal checklists, `TRASH`, and `SETTINGS`.
@@ -6,6 +6,6 @@ Highlights:
 - Lets Android keep the default back-to-home behavior when checklist history is empty.
 - Keeps batch move back handling above checklist navigation, so back still closes target selection or batch selection first.
 
-Install note: use the attached beta debug APK, `PixelDone-2.8.0-rc.1-debug.apk`, for PixelDone-beta testing. This build installs as `com.milesxue.pixeldone.debug`; the formal app remains `com.milesxue.pixeldone`.
+Install note: use the attached signed release APK, `PixelDone-2.8.0-release.apk`, for direct installation or update of `com.milesxue.pixeldone`. `PixelDone-beta` remains a separate debug package, `com.milesxue.pixeldone.debug`.
 
 CODEX & XUE

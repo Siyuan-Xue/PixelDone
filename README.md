@@ -137,24 +137,24 @@ https://gitee.com/milesxue/PixelDone/releases
 
 Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
 
-The signed release APK, if assembled, is copied to:
+The signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.8.0-rc.1-release.apk
+app/build/outputs/apk/release/PixelDone-2.8.0-release.apk
 ```
 
-The beta RC debug build is copied to:
+A local debug build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.8.0-rc.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.8.0-debug.apk
 ```
 
 ## Install
 
-Install the beta RC debug build with:
+Install the signed formal release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.8.0-rc.1-debug.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.8.0-release.apk
 ```
 
 The formal package name is:
@@ -171,4 +171,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.8.0 rc1 beta prerelease for checklist back-stack navigation through Android system back gestures.
+2.8.0 formal signed release for checklist back-stack navigation through Android system back gestures.
