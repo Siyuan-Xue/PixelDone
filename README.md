@@ -136,24 +136,24 @@ https://gitee.com/milesxue/PixelDone/releases
 
 Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
 
-The signed release APK, if assembled, is copied to:
+The signed release APK is copied to:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.7.4-rc.2-release.apk
+app/build/outputs/apk/release/PixelDone-2.7.4-release.apk
 ```
 
-The beta RC debug build is copied to:
+The local debug build, if assembled from this formal source, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.7.4-rc.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.7.4-debug.apk
 ```
 
 ## Install
 
-Install the beta RC debug build with:
+Install the signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.7.4-rc.2-debug.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.7.4-release.apk
 ```
 
 The formal package name is:
@@ -170,4 +170,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.7.4 rc2 beta prerelease for custom dialog action alignment and Android 14+ full-screen intent permission flow fixes.
+2.7.4 formal signed release for custom dialog action alignment and Android 14+ full-screen intent permission flow fixes.
