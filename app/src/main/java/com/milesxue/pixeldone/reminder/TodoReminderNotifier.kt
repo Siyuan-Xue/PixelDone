@@ -136,6 +136,13 @@ object TodoReminderNotifier {
         val actionIds = dueItems.map { it.id }
         val stopLabel = if (dueItems.size > 1) "STOP ALL" else "STOP"
         val snoozeLabel = if (dueItems.size > 1) "SNOOZE ALL 10" else "SNOOZE 10"
+        val stopAlarmIntent = XHighAlarmService.actionPendingIntent(
+            context = context,
+            todoIds = actionIds,
+            action = XHighAlarmService.ACTION_STOP_ALARM,
+            companionShortItems = companionShortItems,
+            firedDueAtMillis = firedDueAtMillis,
+        )
         context.getSystemService(NotificationManager::class.java)
             .createNotificationChannel(xhighNotificationChannel())
 
@@ -145,6 +152,7 @@ object TodoReminderNotifier {
             .setContentText(dueItems.xhighNotificationText(firedDueAtMillis))
             .setContentIntent(activityIntent)
             .setFullScreenIntent(activityIntent, true)
+            .setDeleteIntent(stopAlarmIntent)
             .setOngoing(true)
             .setAutoCancel(false)
             .setShowWhen(true)
@@ -158,13 +166,7 @@ object TodoReminderNotifier {
                 Notification.Action.Builder(
                     Icon.createWithResource(context, R.drawable.ic_notification),
                     stopLabel,
-                    XHighAlarmService.actionPendingIntent(
-                        context = context,
-                        todoIds = actionIds,
-                        action = XHighAlarmService.ACTION_STOP_ALARM,
-                        companionShortItems = companionShortItems,
-                        firedDueAtMillis = firedDueAtMillis,
-                    ),
+                    stopAlarmIntent,
                 ).build(),
             )
             .addAction(

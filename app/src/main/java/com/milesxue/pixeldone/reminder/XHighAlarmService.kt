@@ -22,6 +22,7 @@ import com.milesxue.pixeldone.domain.todo.snoozeTodosAfterReminder
 class XHighAlarmService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+    private var foregroundStarted = false
     private var activeTodoIds: List<String> = emptyList()
     private var activeCompanionShortItems: List<TodoItem> = emptyList()
     private var activeFiredDueAtMillis: Long = 0L
@@ -45,6 +46,7 @@ class XHighAlarmService : Service() {
 
     override fun onDestroy() {
         stopPlayback()
+        clearActiveAlarmState()
         super.onDestroy()
     }
 
@@ -68,6 +70,15 @@ class XHighAlarmService : Service() {
                 companionShortItems = companionShortItems,
             ),
         )
+        foregroundStarted = true
+        activeXHighAlarmFrom(
+            items = items,
+            firedDueAtMillis = firedDueAtMillis,
+            companionShortItems = companionShortItems,
+            updatedAtMillis = System.currentTimeMillis(),
+        )?.let { activeAlarm ->
+            pixelDoneAppContainer().activeXHighAlarmStore.save(activeAlarm)
+        }
         startPlayback()
     }
 
@@ -80,12 +91,16 @@ class XHighAlarmService : Service() {
 
     private fun stopAlarm(showCompanionShortReminder: Boolean) {
         stopPlayback()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
+        if (foregroundStarted) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            foregroundStarted = false
         }
+        clearActiveAlarmState()
         if (showCompanionShortReminder) {
             showCompanionShortReminderAfterAcknowledgement()
         }
@@ -93,6 +108,10 @@ class XHighAlarmService : Service() {
         activeCompanionShortItems = emptyList()
         activeFiredDueAtMillis = 0L
         stopSelf()
+    }
+
+    private fun clearActiveAlarmState() {
+        pixelDoneAppContainer().activeXHighAlarmStore.clear()
     }
 
     private fun showCompanionShortReminderAfterAcknowledgement() {
@@ -273,7 +292,29 @@ class XHighAlarmService : Service() {
             companionShortItems: List<TodoItem> = emptyList(),
             firedDueAtMillis: Long = 0L,
         ): PendingIntent {
-            val intent = Intent(context, XHighAlarmService::class.java).apply {
+            val intent = actionIntent(
+                context = context,
+                todoIds = todoIds,
+                action = action,
+                companionShortItems = companionShortItems,
+                firedDueAtMillis = firedDueAtMillis,
+            )
+            return PendingIntent.getService(
+                context,
+                batchRequestCode(todoIds, action),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
+        fun actionIntent(
+            context: Context,
+            todoIds: List<String>,
+            action: String,
+            companionShortItems: List<TodoItem> = emptyList(),
+            firedDueAtMillis: Long = 0L,
+        ): Intent {
+            return Intent(context, XHighAlarmService::class.java).apply {
                 this.action = action
                 putStringArrayListExtra(EXTRA_BATCH_TODO_IDS, ArrayList(todoIds))
                 todoIds.firstOrNull()?.let { putExtra(TodoAlarmScheduler.EXTRA_TODO_ID, it) }
@@ -282,12 +323,6 @@ class XHighAlarmService : Service() {
                     putExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, firedDueAtMillis)
                 }
             }
-            return PendingIntent.getService(
-                context,
-                batchRequestCode(todoIds, action),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
         }
 
         private fun batchRequestCode(todoIds: List<String>, action: String): Int {

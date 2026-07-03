@@ -50,6 +50,8 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Schedule a local alarm notification for each active future todo.
 - Set reminder repeat per todo: none, daily, or weekly.
 - Advance daily and weekly repeating todos to the next reminder time after a notification fires.
+- Keep an emergency XHigh alarm control panel available in PixelDone while an XHigh alarm is ringing.
+- Stop XHigh alarm sound and vibration when the alarm notification is dismissed.
 - Use restrained haptic feedback for core task and list-state actions.
 - Check GitHub Releases automatically on app start, with synced Gitee Releases as fallback, and show a quiet footer update state when a release is available.
 - Show an update prompt dialog for users who have not disabled update prompts.
@@ -62,7 +64,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Open the system install confirmation after an in-app update APK finishes downloading.
 - Open Android's install-unknown-apps settings first when update installation permission is missing.
 - Check quietly for the latest release on every app start without suppressing an available update.
-- Keep Android 14+ full-screen intent permission checks tied to the system grant and reopen the correct grant page for XHigh reminders when needed.
+- Keep Android 14+ full-screen intent permission checks tied to the system grant and preserve STOP/SNOOZE access when Android denies full-screen launch.
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
@@ -142,13 +144,13 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The latest formal signed release APK remains:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.9.0-release.apk
+app/build/outputs/apk/release/PixelDone-2.9.1-release.apk
 ```
 
 The local debug build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.0-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.1-debug.apk
 ```
 
 ## Install
@@ -156,7 +158,7 @@ app/build/outputs/apk/debug/PixelDone-2.9.0-debug.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-2.9.0-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.9.1-release.apk
 ```
 
 The formal package name is:
@@ -173,4 +175,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.0 formal signed release for quick delete mode and the four-function dock cap.
+2.9.1 formal signed patch release for reliable XHigh alarm stop/snooze fallback controls.

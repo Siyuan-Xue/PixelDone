@@ -11,6 +11,7 @@ class TodoBootReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
 
         val appContainer = context.pixelDoneAppContainer()
+        appContainer.activeXHighAlarmStore.clear()
         val state = appContainer.todoRepository.loadTodoState()
         val currentTodos = normalTodos(state)
         appContainer.reminderScheduler.sync(currentTodos, currentTodos)

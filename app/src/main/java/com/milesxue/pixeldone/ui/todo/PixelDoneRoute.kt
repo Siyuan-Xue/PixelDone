@@ -153,6 +153,8 @@ import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
 import com.milesxue.pixeldone.domain.todo.*
+import com.milesxue.pixeldone.reminder.ActiveXHighAlarm
+import com.milesxue.pixeldone.reminder.XHighAlarmService
 import com.milesxue.pixeldone.ui.theme.PixelDoneColors
 internal const val CompletionSortDelayMillis = 2_000L
 private const val MinuteMillis = 60_000L
@@ -383,6 +385,7 @@ internal fun PixelDoneApp() {
     val imageStore = remember(appContainer) { appContainer.todoImageStore }
     val updateService = remember(appContainer) { appContainer.updateService }
     val reminderScheduler = remember(appContainer) { appContainer.reminderScheduler }
+    val activeXHighAlarmStore = remember(appContainer) { appContainer.activeXHighAlarmStore }
     val viewModelFactory = remember(appContainer) {
         PixelDoneViewModel.factory(
             todoRepository = todoRepository,
@@ -426,6 +429,7 @@ internal fun PixelDoneApp() {
     var showUpdateProgressDialog by remember { mutableStateOf(false) }
     var updateProgressDialogDismissed by remember { mutableStateOf(false) }
     var permissionRefreshTick by remember { mutableStateOf(0) }
+    var activeXHighAlarm by remember { mutableStateOf(activeXHighAlarmStore.load()) }
     var scrollRequestSequence by remember { mutableStateOf(0) }
     var highlightRequestSequence by remember { mutableStateOf(0) }
     var todoListScrollRequest by remember {
@@ -715,6 +719,25 @@ internal fun PixelDoneApp() {
 
     fun openInstallUpdateSettings() {
         openPackageSettingsAction(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+    }
+
+    fun refreshActiveXHighAlarm() {
+        activeXHighAlarm = activeXHighAlarmStore.load()
+    }
+
+    fun startActiveXHighAlarmAction(action: String) {
+        val alarm = activeXHighAlarm ?: activeXHighAlarmStore.load() ?: return
+        context.startService(
+            XHighAlarmService.actionIntent(
+                context = context,
+                todoIds = alarm.todoIds,
+                action = action,
+                companionShortItems = alarm.companionShortItems(),
+                firedDueAtMillis = alarm.firedDueAtMillis,
+            ),
+        )
+        activeXHighAlarmStore.clear()
+        activeXHighAlarm = null
     }
 
     fun missingReminderCapabilities(item: TodoItem): Set<ReminderCapability> {
@@ -1359,11 +1382,13 @@ internal fun PixelDoneApp() {
         } else {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_START) {
+                    refreshActiveXHighAlarm()
                     cleanupInstalledUpdateIfNeeded()
                     checkForUpdateSilently()
                 }
                 if (event == Lifecycle.Event.ON_RESUME) {
                     permissionRefreshTick += 1
+                    refreshActiveXHighAlarm()
                     cleanupInstalledUpdateIfNeeded()
                     val currentTodos = normalTodos(currentChecklistState)
                     reminderScheduler.sync(currentTodos, currentTodos)
@@ -1585,6 +1610,13 @@ internal fun PixelDoneApp() {
             },
             onRequestFullScreenIntentPermission = ::openFullScreenIntentSettings,
             onRequestInstallUpdatesPermission = ::openInstallUpdateSettings,
+            activeXHighAlarm = activeXHighAlarm,
+            onSnoozeActiveXHighAlarm = {
+                startActiveXHighAlarmAction(XHighAlarmService.ACTION_SNOOZE_ALARM)
+            },
+            onStopActiveXHighAlarm = {
+                startActiveXHighAlarmAction(XHighAlarmService.ACTION_STOP_ALARM)
+            },
         )
         UpdateAvailableDialog(
             info = if (showUpdatePromptDialog) updatePromptInfo else null,
@@ -1702,6 +1734,9 @@ private fun PixelDoneScreen(
     onRequestExactAlarmPermission: () -> Unit,
     onRequestFullScreenIntentPermission: () -> Unit,
     onRequestInstallUpdatesPermission: () -> Unit,
+    activeXHighAlarm: ActiveXHighAlarm? = null,
+    onSnoozeActiveXHighAlarm: () -> Unit = {},
+    onStopActiveXHighAlarm: () -> Unit = {},
 ) {
     val colors = PixelDoneColors.current
     BoxWithConstraints(
@@ -1732,6 +1767,13 @@ private fun PixelDoneScreen(
                 onSelectChecklist = onSelectChecklist,
                 onEditChecklist = onEditChecklist,
             )
+            activeXHighAlarm?.let { alarm ->
+                XHighAlarmControlPanel(
+                    alarm = alarm,
+                    onSnooze = onSnoozeActiveXHighAlarm,
+                    onStop = onStopActiveXHighAlarm,
+                )
+            }
             TaskWorkspacePanel(
                 todos = todos,
                 isTrashSelected = isTrashSelected,
@@ -1897,6 +1939,74 @@ private fun Header(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
             )
+        }
+    }
+}
+
+@Composable
+private fun XHighAlarmControlPanel(
+    alarm: ActiveXHighAlarm,
+    onSnooze: () -> Unit,
+    onStop: () -> Unit,
+) {
+    val colors = PixelDoneColors.current
+    PixelPanel(
+        borderColor = colors.error,
+        color = colors.destructiveSurface,
+        contentPadding = PaddingValues(10.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (alarm.displayCount == 1) "XHIGH ALARM RINGING" else "${alarm.displayCount} XHIGH ALARMS",
+                    color = colors.error,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.sp,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = alarm.firedDueAtMillis.formatDateTime(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = alarm.primaryTitle(),
+                color = colors.textPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PixelButton(
+                    text = "SNOOZE 10",
+                    onClick = onSnooze,
+                    modifier = Modifier.weight(1f),
+                    selected = true,
+                )
+                PixelButton(
+                    text = "STOP",
+                    onClick = onStop,
+                    modifier = Modifier.weight(1f),
+                    destructive = true,
+                )
+            }
         }
     }
 }

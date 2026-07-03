@@ -11,6 +11,7 @@ import com.milesxue.pixeldone.data.update.AppUpdateChannel
 import com.milesxue.pixeldone.data.update.UpdateService
 import com.milesxue.pixeldone.domain.todo.ClockProvider
 import com.milesxue.pixeldone.domain.todo.SystemClockProvider
+import com.milesxue.pixeldone.reminder.ActiveXHighAlarmStore
 import com.milesxue.pixeldone.reminder.AndroidReminderScheduler
 import com.milesxue.pixeldone.reminder.ReminderScheduler
 
@@ -33,6 +34,7 @@ internal class PixelDoneAppContainer(context: Context) {
         channel = AppUpdateChannel.fromBuildConfigValue(BuildConfig.UPDATE_CHANNEL),
     )
     val reminderScheduler: ReminderScheduler = AndroidReminderScheduler(appContext)
+    val activeXHighAlarmStore: ActiveXHighAlarmStore = ActiveXHighAlarmStore.create(appContext)
 }
 
 internal fun Context.pixelDoneAppContainer(): PixelDoneAppContainer {

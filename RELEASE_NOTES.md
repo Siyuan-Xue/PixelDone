@@ -1,16 +1,13 @@
-PixelDone v2.9.0 is a formal signed release for quick delete mode and dock function configuration.
+PixelDone v2.9.1 is a formal signed patch release for reliable XHigh alarm controls when Android full-screen access is unavailable.
 
 Highlights:
-- Adds the optional `DELETE MODE` dock function for normal checklists.
-- Lets `DELETE MODE` replace each visible todo row's image-button slot with a direct delete button.
-- Shows the same aligned delete button for completed todos, which normally do not show image actions.
-- Moves active and completed todos directly into `TRASH` without a confirmation dialog.
-- Caps the configurable normal-checklist dock at four function buttons.
-- Keeps all five dock functions available in Settings: `PRI/TIME`, `DDL`, `HIDE/UNHIDE`, `DELETE DONE`, and `DELETE MODE`.
-- When four functions are already selected, tapping a fifth function removes the first selected function and appends the newly tapped one.
-- Normalizes any previously saved five-function dock configuration back to the four-function limit.
-- Keeps existing confirmation dialogs for editor deletes, completed-task cleanup, checklist deletion, and emptying `TRASH`.
+- Keeps XHigh alarms ringing when Full Screen access is missing, matching the existing urgent-alarm behavior.
+- Stores the currently ringing XHigh alarm so PixelDone can show an emergency control panel after the app is opened.
+- Adds `SNOOZE 10` and `STOP` controls in the main PixelDone UI while an XHigh alarm is active.
+- Stops alarm sound and vibration when the XHigh alarm notification is dismissed.
+- Clears stale active-alarm state after reboot or after the alarm is stopped, snoozed, or the service is destroyed.
+- Preserves the existing lock-screen full-screen alarm screen when Android grants Full Screen access.
 
-Install note: use the attached signed release APK, `PixelDone-2.9.0-release.apk`, for direct installation or update of `com.milesxue.pixeldone`. Existing `com.milesxue.pixeldone.debug` beta installs remain separate.
+Install note: use the attached signed release APK, `PixelDone-2.9.1-release.apk`, for direct installation or update of `com.milesxue.pixeldone`. Existing `com.milesxue.pixeldone.debug` beta installs remain separate.
 
 CODEX & XUE
