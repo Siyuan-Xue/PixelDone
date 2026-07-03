@@ -118,7 +118,8 @@ internal fun PixelItemDeleteButton(
             .size(36.dp)
             .border(1.dp, colors.borderWeak, RectangleShape)
             .background(colors.surfaceRaised)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "DELETE TASK" },
         contentAlignment = Alignment.Center,
     ) {
         PixelTrashIcon(color = colors.error)

@@ -119,6 +119,7 @@ import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
 import com.milesxue.pixeldone.ui.todo.components.FloatingNewTaskButton
 import com.milesxue.pixeldone.ui.todo.components.PixelAlarmIcon
 import com.milesxue.pixeldone.ui.todo.components.PixelButton
+import com.milesxue.pixeldone.ui.todo.components.PixelItemDeleteButton
 import com.milesxue.pixeldone.ui.todo.components.PixelItemImageButton
 import com.milesxue.pixeldone.ui.todo.components.PixelPanel
 import com.milesxue.pixeldone.ui.todo.components.PixelRestoreButton
@@ -445,6 +446,7 @@ internal fun PixelDoneApp() {
     }
     var batchMoveMode by remember { mutableStateOf(BatchMoveMode.IDLE) }
     var batchMoveSelectedTodoIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var batchDeleteActive by remember { mutableStateOf(false) }
     var checklistBackStack by remember { mutableStateOf<List<String>>(emptyList()) }
     val selectedChecklist = selectedChecklistOf(checklistState)
     val checklistIds = checklistState.lists.map { it.id }
@@ -570,8 +572,13 @@ internal fun PixelDoneApp() {
         batchMoveSelectedTodoIds = emptySet()
     }
 
+    fun clearBatchDeleteState() {
+        batchDeleteActive = false
+    }
+
     fun closeTransientControls() {
         clearBatchMoveState()
+        clearBatchDeleteState()
     }
 
     fun consumeTodoListHighlight(sequence: Int) {
@@ -592,6 +599,7 @@ internal fun PixelDoneApp() {
 
     fun openBatchMoveTargetPicker() {
         if (batchMoveMode == BatchMoveMode.SELECTING && batchMoveSelectedTodoIds.isNotEmpty()) {
+            clearBatchDeleteState()
             batchMoveMode = BatchMoveMode.TARGET_PICKER
         }
     }
@@ -632,6 +640,10 @@ internal fun PixelDoneApp() {
             BatchMoveMode.SELECTING -> clearBatchMoveState()
             BatchMoveMode.IDLE -> Unit
         }
+    }
+
+    BackHandler(enabled = batchDeleteActive) {
+        clearBatchDeleteState()
     }
 
     fun hasNotificationPermission(): Boolean {
@@ -1047,8 +1059,42 @@ internal fun PixelDoneApp() {
         selectChecklist(navigation.targetId, recordBackStack = false)
     }
 
-    BackHandler(enabled = batchMoveMode == BatchMoveMode.IDLE && checklistBackNavigation != null) {
+    BackHandler(
+        enabled = batchMoveMode == BatchMoveMode.IDLE && !batchDeleteActive && checklistBackNavigation != null,
+    ) {
         navigateBackChecklist()
+    }
+
+    fun toggleBatchDeleteMode() {
+        if (!isNormalChecklistSelected || todos.isEmpty()) {
+            clearBatchDeleteState()
+            return
+        }
+        clearBatchMoveState()
+        batchDeleteActive = !batchDeleteActive
+    }
+
+    fun quickDeleteTodo(todoId: String) {
+        if (!isNormalChecklistSelected) return
+        requestTodoListScroll(TodoListScrollIntent.KeepPosition)
+        val updatedState = moveTodoItemToTrash(
+            state = checklistState,
+            checklistId = selectedChecklist.id,
+            todoId = todoId,
+            trashedAtMillis = System.currentTimeMillis(),
+        ) ?: return
+        updateChecklistState(updatedState)
+        val updatedSelectedTodos = updatedState.lists.firstOrNull { it.id == selectedChecklist.id }?.items
+        if (updatedSelectedTodos?.isEmpty() == true) {
+            clearBatchDeleteState()
+        }
+        if (imagePreviewTodoId == todoId) {
+            imagePreviewTodoId = null
+        }
+        if (editingTaskId == todoId) {
+            clearEditor()
+            editorMode = EditorMode.None
+        }
     }
 
     fun confirmDelete() {
@@ -1512,11 +1558,14 @@ internal fun PixelDoneApp() {
             onDockConfigChange = ::setDockConfigPreference,
             batchMoveMode = batchMoveMode,
             batchMoveSelectedTodoIds = batchMoveSelectedTodoIds,
+            batchDeleteActive = batchDeleteActive,
             onToggleBatchMoveSelection = ::toggleBatchMoveSelection,
             onOpenBatchMoveTargetPicker = ::openBatchMoveTargetPicker,
             onCloseBatchMoveTargetPicker = ::closeBatchMoveTargetPicker,
             onCancelBatchMove = ::clearBatchMoveState,
             onMoveSelectedTodosToChecklist = ::moveSelectedTodosToChecklist,
+            onToggleBatchDelete = ::toggleBatchDeleteMode,
+            onQuickDeleteTodo = ::quickDeleteTodo,
             displayOrderIds = displayOrderIds,
             keepDisplayOrder = keepDisplayOrderDuringSortDelay,
             todoListScrollRequest = todoListScrollRequest,
@@ -1628,11 +1677,14 @@ private fun PixelDoneScreen(
     onDockConfigChange: (DockConfig) -> Unit,
     batchMoveMode: BatchMoveMode,
     batchMoveSelectedTodoIds: Set<String>,
+    batchDeleteActive: Boolean,
     onToggleBatchMoveSelection: (String) -> Unit,
     onOpenBatchMoveTargetPicker: () -> Unit,
     onCloseBatchMoveTargetPicker: () -> Unit,
     onCancelBatchMove: () -> Unit,
     onMoveSelectedTodosToChecklist: (String, List<String>) -> Unit,
+    onToggleBatchDelete: () -> Unit,
+    onQuickDeleteTodo: (String) -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
@@ -1703,11 +1755,14 @@ private fun PixelDoneScreen(
                 onDockConfigChange = onDockConfigChange,
                 batchMoveMode = batchMoveMode,
                 batchMoveSelectedTodoIds = batchMoveSelectedTodoIds,
+                batchDeleteActive = batchDeleteActive,
                 onToggleBatchMoveSelection = onToggleBatchMoveSelection,
                 onOpenBatchMoveTargetPicker = onOpenBatchMoveTargetPicker,
                 onCloseBatchMoveTargetPicker = onCloseBatchMoveTargetPicker,
                 onCancelBatchMove = onCancelBatchMove,
                 onMoveSelectedTodosToChecklist = onMoveSelectedTodosToChecklist,
+                onToggleBatchDelete = onToggleBatchDelete,
+                onQuickDeleteTodo = onQuickDeleteTodo,
                 displayOrderIds = displayOrderIds,
                 keepDisplayOrder = keepDisplayOrder,
                 todoListScrollRequest = todoListScrollRequest,
@@ -1926,11 +1981,14 @@ private fun TaskWorkspacePanel(
     onDockConfigChange: (DockConfig) -> Unit,
     batchMoveMode: BatchMoveMode,
     batchMoveSelectedTodoIds: Set<String>,
+    batchDeleteActive: Boolean,
     onToggleBatchMoveSelection: (String) -> Unit,
     onOpenBatchMoveTargetPicker: () -> Unit,
     onCloseBatchMoveTargetPicker: () -> Unit,
     onCancelBatchMove: () -> Unit,
     onMoveSelectedTodosToChecklist: (String, List<String>) -> Unit,
+    onToggleBatchDelete: () -> Unit,
+    onQuickDeleteTodo: (String) -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
@@ -2020,11 +2078,14 @@ private fun TaskWorkspacePanel(
                 dockConfig = dockConfig,
                 batchMoveMode = batchMoveMode,
                 batchMoveSelectedTodoIds = batchMoveSelectedTodoIds,
+                batchDeleteActive = batchDeleteActive,
                 onToggleBatchMoveSelection = onToggleBatchMoveSelection,
                 onOpenBatchMoveTargetPicker = onOpenBatchMoveTargetPicker,
                 onCloseBatchMoveTargetPicker = onCloseBatchMoveTargetPicker,
                 onCancelBatchMove = onCancelBatchMove,
                 onMoveSelectedTodosToChecklist = onMoveSelectedTodosToChecklist,
+                onToggleBatchDelete = onToggleBatchDelete,
+                onQuickDeleteTodo = onQuickDeleteTodo,
                 displayOrderIds = displayOrderIds,
                 keepDisplayOrder = keepDisplayOrder,
                 todoListScrollRequest = todoListScrollRequest,
@@ -2426,6 +2487,7 @@ private fun DockAction.settingsTitle(): String = when (this) {
     DockAction.DEADLINE -> "DDL"
     DockAction.HIDE_DONE -> "HIDE/UNHIDE"
     DockAction.DELETE_DONE -> "DELETE DONE"
+    DockAction.BATCH_DELETE -> "DELETE MODE"
 }
 
 private fun DockAction.settingsValue(): String = when (this) {
@@ -2433,6 +2495,7 @@ private fun DockAction.settingsValue(): String = when (this) {
     DockAction.DEADLINE -> "deadline countdown"
     DockAction.HIDE_DONE -> "done visibility"
     DockAction.DELETE_DONE -> "completed cleanup"
+    DockAction.BATCH_DELETE -> "row quick delete"
 }
 
 private fun DockAction.contentDescription(): String = when (this) {
@@ -2440,6 +2503,7 @@ private fun DockAction.contentDescription(): String = when (this) {
     DockAction.DEADLINE -> "TOGGLE DEADLINE"
     DockAction.HIDE_DONE -> "TOGGLE DONE VISIBILITY"
     DockAction.DELETE_DONE -> "DELETE COMPLETED TASKS"
+    DockAction.BATCH_DELETE -> "TOGGLE QUICK DELETE"
 }
 
 @Composable
@@ -3006,11 +3070,14 @@ private fun TodoListPanel(
     dockConfig: DockConfig,
     batchMoveMode: BatchMoveMode,
     batchMoveSelectedTodoIds: Set<String>,
+    batchDeleteActive: Boolean,
     onToggleBatchMoveSelection: (String) -> Unit,
     onOpenBatchMoveTargetPicker: () -> Unit,
     onCloseBatchMoveTargetPicker: () -> Unit,
     onCancelBatchMove: () -> Unit,
     onMoveSelectedTodosToChecklist: (String, List<String>) -> Unit,
+    onToggleBatchDelete: () -> Unit,
+    onQuickDeleteTodo: (String) -> Unit,
     displayOrderIds: List<String>,
     keepDisplayOrder: Boolean,
     todoListScrollRequest: TodoListScrollRequest,
@@ -3208,8 +3275,10 @@ private fun TodoListPanel(
                                 showDeadlineCountdown = showDeadlineCountdown,
                                 highlighted = item.id in activeHighlightedTodoIds,
                                 batchMoveActive = batchMoveActive,
+                                batchDeleteActive = batchDeleteActive,
                                 selectedForBatch = item.id in batchMoveSelectedTodoIds,
                                 onToggleBatchSelection = onToggleBatchMoveSelection,
+                                onQuickDeleteTodo = onQuickDeleteTodo,
                             )
                         }
                     }
@@ -3250,6 +3319,8 @@ private fun TodoListPanel(
                             hideCompleted = hideCompleted,
                             showDeadlineCountdown = showDeadlineCountdown,
                             completedCount = completedCount,
+                            totalCount = todos.size,
+                            batchDeleteActive = batchDeleteActive,
                         ),
                         onActionClick = { action ->
                             when (action) {
@@ -3265,6 +3336,7 @@ private fun TodoListPanel(
                                 DockAction.DEADLINE -> onDeadlineCountdownChange(!showDeadlineCountdown)
                                 DockAction.HIDE_DONE -> onHideCompletedChange(!hideCompleted)
                                 DockAction.DELETE_DONE -> onDeleteCompleted()
+                                DockAction.BATCH_DELETE -> onToggleBatchDelete()
                             }
                         },
                         onAddClick = onOpenTaskEditor,
@@ -3372,6 +3444,8 @@ private fun dockActionState(
     hideCompleted: Boolean,
     showDeadlineCountdown: Boolean,
     completedCount: Int,
+    totalCount: Int,
+    batchDeleteActive: Boolean,
 ): Map<DockAction, DockActionUiState> = mapOf(
     DockAction.SORT to DockActionUiState(active = sortMode == SortMode.TIME),
     DockAction.DEADLINE to DockActionUiState(active = showDeadlineCountdown),
@@ -3380,6 +3454,10 @@ private fun dockActionState(
         active = false,
         enabled = completedCount > 0,
     ),
+    DockAction.BATCH_DELETE to DockActionUiState(
+        active = batchDeleteActive,
+        enabled = totalCount > 0,
+    ),
 )
 
 private fun previewDockActionState(): Map<DockAction, DockActionUiState> = mapOf(
@@ -3387,6 +3465,7 @@ private fun previewDockActionState(): Map<DockAction, DockActionUiState> = mapOf
     DockAction.DEADLINE to DockActionUiState(active = false),
     DockAction.HIDE_DONE to DockActionUiState(active = false),
     DockAction.DELETE_DONE to DockActionUiState(active = false),
+    DockAction.BATCH_DELETE to DockActionUiState(active = false),
 )
 
 @Composable
@@ -3399,74 +3478,80 @@ private fun BottomActionDock(
     modifier: Modifier = Modifier,
 ) {
     val normalizedConfig = config.normalized()
-    when (normalizedConfig.plusPlacement) {
-        DockPlusPlacement.CENTER -> {
-            val sides = centerDockActionSides(normalizedConfig.actions)
-            Row(
-                modifier = modifier
-                    .fillMaxWidth()
-                    .height(64.dp),
-                verticalAlignment = Alignment.Bottom,
+    if (
+        normalizedConfig.plusPlacement == DockPlusPlacement.CENTER &&
+        normalizedConfig.actions.size <= 4
+    ) {
+        val sides = centerDockActionSides(normalizedConfig.actions)
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(64.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.BottomEnd,
             ) {
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.BottomEnd,
-                ) {
-                    DockActionGroup(
-                        actions = sides.left,
-                        actionState = actionState,
-                        onActionClick = onActionClick,
-                        modifier = Modifier.padding(end = 18.dp),
-                    )
-                }
-                FloatingNewTaskButton(
-                    onClick = onAddClick,
-                    onLongClick = onAddLongClick,
-                    modifier = Modifier.width(56.dp),
-                )
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.BottomStart,
-                ) {
-                    DockActionGroup(
-                        actions = sides.right,
-                        actionState = actionState,
-                        onActionClick = onActionClick,
-                        modifier = Modifier.padding(start = 18.dp),
-                    )
-                }
-            }
-        }
-        DockPlusPlacement.LEFT_EDGE -> {
-            Row(
-                modifier = modifier
-                    .fillMaxWidth()
-                    .height(64.dp),
-                horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.Start),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                FloatingNewTaskButton(onClick = onAddClick, onLongClick = onAddLongClick)
                 DockActionGroup(
-                    actions = normalizedConfig.actions,
+                    actions = sides.left,
                     actionState = actionState,
                     onActionClick = onActionClick,
+                    modifier = Modifier.padding(end = 18.dp),
+                )
+            }
+            FloatingNewTaskButton(
+                onClick = onAddClick,
+                onLongClick = onAddLongClick,
+                modifier = Modifier.width(56.dp),
+            )
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.BottomStart,
+            ) {
+                DockActionGroup(
+                    actions = sides.right,
+                    actionState = actionState,
+                    onActionClick = onActionClick,
+                    modifier = Modifier.padding(start = 18.dp),
                 )
             }
         }
-        DockPlusPlacement.RIGHT_EDGE -> {
-            Row(
-                modifier = modifier
-                    .fillMaxWidth()
-                    .height(64.dp),
-                horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.End),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                DockActionGroup(
-                    actions = normalizedConfig.actions,
-                    actionState = actionState,
-                    onActionClick = onActionClick,
-                )
-                FloatingNewTaskButton(onClick = onAddClick, onLongClick = onAddLongClick)
+        return
+    }
+
+    val items = orderedDockItems(normalizedConfig)
+    val spacing = if (normalizedConfig.actions.size >= 5) 5.dp else 18.dp
+    val alignment = when (normalizedConfig.plusPlacement) {
+        DockPlusPlacement.CENTER -> Alignment.CenterHorizontally
+        DockPlusPlacement.LEFT_EDGE -> Alignment.Start
+        DockPlusPlacement.RIGHT_EDGE -> Alignment.End
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(64.dp),
+        horizontalArrangement = Arrangement.spacedBy(spacing, alignment),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        items.forEach { item ->
+            when (item) {
+                DockItem.Add -> {
+                    FloatingNewTaskButton(
+                        onClick = onAddClick,
+                        onLongClick = onAddLongClick,
+                    )
+                }
+                is DockItem.Action -> {
+                    val state = actionState[item.action] ?: DockActionUiState(active = false)
+                    DockIconButton(
+                        action = item.action,
+                        active = state.active,
+                        enabled = state.enabled,
+                        onClick = { onActionClick(item.action) },
+                    )
+                }
             }
         }
     }
@@ -3637,6 +3722,20 @@ private fun DockActionIcon(
                 line(11f, 9f, 11f, 16f, strokeWidth)
                 line(13.7f, 9f, 13.7f, 16f, strokeWidth)
             }
+            DockAction.BATCH_DELETE -> {
+                line(4f, 4.5f, 11.5f, 4.5f, heavyStrokeWidth)
+                line(6.7f, 2.5f, 9.3f, 2.5f, heavyStrokeWidth)
+                line(4.7f, 6.5f, 5.3f, 14.8f, strokeWidth)
+                line(10.8f, 6.5f, 10.2f, 14.8f, strokeWidth)
+                line(5.3f, 14.8f, 10.2f, 14.8f, strokeWidth)
+                line(7f, 8f, 7f, 13f, thinStrokeWidth)
+                line(9f, 8f, 9f, 13f, thinStrokeWidth)
+                line(14f, 5f, 20f, 5f, strokeWidth)
+                line(14f, 10f, 19f, 10f, strokeWidth)
+                line(14f, 15f, 18f, 15f, strokeWidth)
+                line(18f, 13f, 20f, 15f, heavyStrokeWidth)
+                line(20f, 15f, 18f, 17f, heavyStrokeWidth)
+            }
         }
     }
 }
@@ -3790,8 +3889,10 @@ private fun TodoRow(
     showDeadlineCountdown: Boolean,
     highlighted: Boolean,
     batchMoveActive: Boolean,
+    batchDeleteActive: Boolean,
     selectedForBatch: Boolean,
     onToggleBatchSelection: (String) -> Unit,
+    onQuickDeleteTodo: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val colors = PixelDoneColors.current
@@ -3828,6 +3929,8 @@ private fun TodoRow(
             .clickable {
                 if (batchMoveActive) {
                     onToggleBatchSelection(item.id)
+                } else if (batchDeleteActive) {
+                    Unit
                 } else {
                     when (todoRowClickAction(item.id, editingTaskId)) {
                         TodoRowClickAction.Edit -> onEditTodo(item)
@@ -3901,7 +4004,11 @@ private fun TodoRow(
                 }
             }
         }
-        if (!item.completed && !batchMoveActive) {
+        if (batchDeleteActive && !batchMoveActive) {
+            PixelItemDeleteButton(
+                onClick = { onQuickDeleteTodo(item.id) },
+            )
+        } else if (!item.completed && !batchMoveActive) {
             PixelItemImageButton(
                 hasImage = item.imageFileName != null,
                 onClick = { onOpenTodoImage(item) },
@@ -4799,11 +4906,14 @@ private fun PhonePreview() {
             onDockConfigChange = {},
             batchMoveMode = BatchMoveMode.IDLE,
             batchMoveSelectedTodoIds = emptySet(),
+            batchDeleteActive = false,
             onToggleBatchMoveSelection = { _ -> },
             onOpenBatchMoveTargetPicker = {},
             onCloseBatchMoveTargetPicker = {},
             onCancelBatchMove = {},
             onMoveSelectedTodosToChecklist = { _, _ -> },
+            onToggleBatchDelete = {},
+            onQuickDeleteTodo = {},
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),
@@ -4815,7 +4925,7 @@ private fun PhonePreview() {
             onDarkThemeChange = {},
             showUpdateDialogs = true,
             onShowUpdateDialogsChange = {},
-            currentVersion = "2.7.0",
+            currentVersion = "2.9.0-rc.1",
             permissionSettingsState = previewPermissionSettingsState(),
             onRequestNotificationPermission = {},
             onRequestExactAlarmPermission = {},
@@ -4887,11 +4997,14 @@ private fun TabletPreview() {
             onDockConfigChange = {},
             batchMoveMode = BatchMoveMode.IDLE,
             batchMoveSelectedTodoIds = emptySet(),
+            batchDeleteActive = false,
             onToggleBatchMoveSelection = { _ -> },
             onOpenBatchMoveTargetPicker = {},
             onCloseBatchMoveTargetPicker = {},
             onCancelBatchMove = {},
             onMoveSelectedTodosToChecklist = { _, _ -> },
+            onToggleBatchDelete = {},
+            onQuickDeleteTodo = {},
             displayOrderIds = emptyList(),
             keepDisplayOrder = false,
             todoListScrollRequest = previewScrollRequest(),

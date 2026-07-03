@@ -1,5 +1,6 @@
 package com.milesxue.pixeldone
 
+import com.milesxue.pixeldone.domain.todo.AllDockActions
 import com.milesxue.pixeldone.domain.todo.DockAction
 import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.DockItem
@@ -11,6 +12,20 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class DockRulesTest {
+    @Test
+    fun allDockActionsIncludesOptionalQuickDeleteMode() {
+        assertEquals(
+            listOf(
+                DockAction.SORT,
+                DockAction.DEADLINE,
+                DockAction.HIDE_DONE,
+                DockAction.DELETE_DONE,
+                DockAction.BATCH_DELETE,
+            ),
+            AllDockActions,
+        )
+    }
+
     @Test
     fun defaultDockPlacesSortLeftAndDeadlineRightOfCenteredAdd() {
         val items = orderedDockItems(DockConfig())
@@ -70,6 +85,7 @@ class DockRulesTest {
                 DockAction.HIDE_DONE,
                 DockAction.DEADLINE,
                 DockAction.SORT,
+                DockAction.BATCH_DELETE,
             ),
         )
 
@@ -78,6 +94,7 @@ class DockRulesTest {
                 DockAction.HIDE_DONE,
                 DockAction.SORT,
                 DockAction.DEADLINE,
+                DockAction.BATCH_DELETE,
             ),
             actions,
         )

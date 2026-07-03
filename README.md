@@ -29,6 +29,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Tap a todo row to edit it in the bottom editor.
 - Attach one local image to each todo with the row image button.
 - Show completed todos in a compact row that hides subtitles and image actions.
+- Enable the `DELETE MODE` dock function to replace row image slots with direct-to-`TRASH` delete buttons.
 - Preview, replace, or remove a todo image without requesting broad photo-library permission.
 - Decode todo image previews safely for large camera images while preserving the original attachment file.
 - Delete an edited todo from the task editor, matching the checklist editor delete flow.
@@ -65,7 +66,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
-- Use four atomic dock functions for `PRI/TIME`, `DDL`, `HIDE/UNHIDE`, and `DELETE DONE`.
+- Use five atomic dock functions for `PRI/TIME`, `DDL`, `HIDE/UNHIDE`, `DELETE DONE`, and `DELETE MODE`.
 - Keep the default dock centered as `PRI/TIME`, `+`, and `DDL`.
 - Keep `TRASH` and `SETTINGS` free of the normal-checklist dock.
 - Show settings permission state with clickable status glyphs instead of larger config buttons.
@@ -137,24 +138,24 @@ https://gitee.com/milesxue/PixelDone/releases
 
 Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
 
-The signed release APK is copied to:
+The latest formal signed release APK remains:
 
 ```text
 app/build/outputs/apk/release/PixelDone-2.8.0-release.apk
 ```
 
-A local debug build, if assembled, is copied to:
+The current beta RC debug build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.8.0-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.0-rc.1-debug.apk
 ```
 
 ## Install
 
-Install the signed formal release build with:
+Install the current beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-2.8.0-release.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.9.0-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -171,4 +172,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.8.0 formal signed release for checklist back-stack navigation through Android system back gestures.
+2.9.0-rc.1 beta RC for optional quick delete mode in the normal-checklist dock.

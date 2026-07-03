@@ -1,11 +1,12 @@
-PixelDone v2.8.0 is a formal signed release for checklist back-stack navigation through Android system back gestures.
+PixelDone v2.9.0-rc.1 is a beta RC for optional quick delete mode in normal checklists.
 
 Highlights:
-- Maintains a session-only checklist history across normal checklists, `TRASH`, and `SETTINGS`.
-- Routes Android system back and edge-swipe gestures to the previous checklist when checklist history exists.
-- Lets Android keep the default back-to-home behavior when checklist history is empty.
-- Keeps batch move back handling above checklist navigation, so back still closes target selection or batch selection first.
+- Adds a configurable `DELETE MODE` dock function.
+- Lets `DELETE MODE` replace each visible todo row's image-button slot with a direct delete button.
+- Shows the same aligned delete button for completed todos, which normally do not show image actions.
+- Moves active and completed todos directly into `TRASH` without a confirmation dialog.
+- Keeps existing confirmation dialogs for editor deletes, completed-task cleanup, checklist deletion, and emptying `TRASH`.
 
-Install note: use the attached signed release APK, `PixelDone-2.8.0-release.apk`, for direct installation or update of `com.milesxue.pixeldone`. `PixelDone-beta` remains a separate debug package, `com.milesxue.pixeldone.debug`.
+Install note: use the attached beta debug APK, `PixelDone-2.9.0-rc.1-debug.apk`, for direct installation or update of `com.milesxue.pixeldone.debug`. The latest formal signed package remains `com.milesxue.pixeldone`.
 
 CODEX & XUE
