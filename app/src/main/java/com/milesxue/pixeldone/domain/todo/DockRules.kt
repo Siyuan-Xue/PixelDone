@@ -36,6 +36,8 @@ val DefaultDockActions: List<DockAction> = listOf(
     DockAction.DEADLINE,
 )
 
+const val MaxDockActions: Int = 4
+
 val AllDockActions: List<DockAction> = listOf(
     DockAction.SORT,
     DockAction.DEADLINE,
@@ -48,6 +50,15 @@ fun normalizeDockActions(actions: List<DockAction>): List<DockAction> {
     val seen = mutableSetOf<DockAction>()
     return actions.filter { action ->
         action in AllDockActions && seen.add(action)
+    }.take(MaxDockActions)
+}
+
+fun toggleDockActionSelection(actions: List<DockAction>, action: DockAction): List<DockAction> {
+    val normalizedActions = normalizeDockActions(actions)
+    return when {
+        action in normalizedActions -> normalizedActions - action
+        normalizedActions.size < MaxDockActions -> normalizedActions + action
+        else -> normalizedActions.drop(1) + action
     }
 }
 

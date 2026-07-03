@@ -67,6 +67,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
 - Use five atomic dock functions for `PRI/TIME`, `DDL`, `HIDE/UNHIDE`, `DELETE DONE`, and `DELETE MODE`.
+- Select up to four dock function buttons; selecting a fifth function replaces the first selected function.
 - Keep the default dock centered as `PRI/TIME`, `+`, and `DDL`.
 - Keep `TRASH` and `SETTINGS` free of the normal-checklist dock.
 - Show settings permission state with clickable status glyphs instead of larger config buttons.
@@ -147,7 +148,7 @@ app/build/outputs/apk/release/PixelDone-2.8.0-release.apk
 The current beta RC debug build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.0-rc.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.0-rc.2-debug.apk
 ```
 
 ## Install
@@ -155,7 +156,7 @@ app/build/outputs/apk/debug/PixelDone-2.9.0-rc.1-debug.apk
 Install the current beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.9.0-rc.1-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.9.0-rc.2-debug.apk
 ```
 
 The formal package name is:
@@ -172,4 +173,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.0-rc.1 beta RC for optional quick delete mode in the normal-checklist dock.
+2.9.0-rc.2 beta RC for the four-function dock cap and quick delete mode.

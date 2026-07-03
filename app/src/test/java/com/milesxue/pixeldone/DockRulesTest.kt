@@ -5,9 +5,11 @@ import com.milesxue.pixeldone.domain.todo.DockAction
 import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.DockItem
 import com.milesxue.pixeldone.domain.todo.DockPlusPlacement
+import com.milesxue.pixeldone.domain.todo.MaxDockActions
 import com.milesxue.pixeldone.domain.todo.centerDockActionSides
 import com.milesxue.pixeldone.domain.todo.normalizeDockActions
 import com.milesxue.pixeldone.domain.todo.orderedDockItems
+import com.milesxue.pixeldone.domain.todo.toggleDockActionSelection
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -98,5 +100,78 @@ class DockRulesTest {
             ),
             actions,
         )
+    }
+
+    @Test
+    fun normalizedDockActionsAreCappedAtDefaultMaximum() {
+        val actions = normalizeDockActions(AllDockActions)
+
+        assertEquals(MaxDockActions, actions.size)
+        assertEquals(
+            listOf(
+                DockAction.SORT,
+                DockAction.DEADLINE,
+                DockAction.HIDE_DONE,
+                DockAction.DELETE_DONE,
+            ),
+            actions,
+        )
+    }
+
+    @Test
+    fun selectingFifthDockActionReplacesFirstSelectedAction() {
+        val actions = toggleDockActionSelection(
+            listOf(
+                DockAction.SORT,
+                DockAction.DEADLINE,
+                DockAction.HIDE_DONE,
+                DockAction.DELETE_DONE,
+            ),
+            DockAction.BATCH_DELETE,
+        )
+
+        assertEquals(
+            listOf(
+                DockAction.DEADLINE,
+                DockAction.HIDE_DONE,
+                DockAction.DELETE_DONE,
+                DockAction.BATCH_DELETE,
+            ),
+            actions,
+        )
+    }
+
+    @Test
+    fun selectingExistingDockActionRemovesIt() {
+        val actions = toggleDockActionSelection(
+            listOf(
+                DockAction.SORT,
+                DockAction.DEADLINE,
+                DockAction.HIDE_DONE,
+            ),
+            DockAction.DEADLINE,
+        )
+
+        assertEquals(
+            listOf(
+                DockAction.SORT,
+                DockAction.HIDE_DONE,
+            ),
+            actions,
+        )
+    }
+
+    @Test
+    fun orderedDockItemsNeverRenderMoreThanMaximumActions() {
+        val items = orderedDockItems(
+            DockConfig(
+                plusPlacement = DockPlusPlacement.CENTER,
+                actions = AllDockActions,
+            ),
+        )
+        val actionCount = items.count { item -> item is DockItem.Action }
+
+        assertEquals(MaxDockActions, actionCount)
+        assertEquals(false, DockItem.Action(DockAction.BATCH_DELETE) in items)
     }
 }

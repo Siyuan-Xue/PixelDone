@@ -2320,7 +2320,7 @@ private fun DockActionSettingsList(
     ) {
         SettingsRowText(
             title = "FUNCTIONS",
-            value = "${normalizedConfig.actions.size}/${AllDockActions.size} SELECTED",
+            value = "${normalizedConfig.actions.size}/$MaxDockActions SELECTED",
         )
         AllDockActions.forEach { action ->
             DockActionSettingsRow(
@@ -2330,7 +2330,7 @@ private fun DockActionSettingsList(
                 onToggle = {
                     onDockConfigChange(
                         normalizedConfig.copy(
-                            actions = toggledDockActions(normalizedConfig.actions, action),
+                            actions = toggleDockActionSelection(normalizedConfig.actions, action),
                         ),
                     )
                 },
@@ -2449,15 +2449,6 @@ private fun SettingsOrderButton(
     }
 }
 
-private fun toggledDockActions(actions: List<DockAction>, action: DockAction): List<DockAction> {
-    val normalizedActions = normalizeDockActions(actions)
-    return if (action in normalizedActions) {
-        normalizedActions - action
-    } else {
-        normalizedActions + action
-    }
-}
-
 private fun movedDockActions(
     actions: List<DockAction>,
     action: DockAction,
@@ -2473,8 +2464,10 @@ private fun movedDockActions(
     return normalizedActions
 }
 
-private fun DockConfig.previewLabel(): String =
-    "${plusPlacement.settingsLabel()}  ${actions.size}/${AllDockActions.size}"
+private fun DockConfig.previewLabel(): String {
+    val normalizedConfig = normalized()
+    return "${normalizedConfig.plusPlacement.settingsLabel()}  ${normalizedConfig.actions.size}/$MaxDockActions"
+}
 
 private fun DockPlusPlacement.settingsLabel(): String = when (this) {
     DockPlusPlacement.CENTER -> "CENTER"
@@ -4925,7 +4918,7 @@ private fun PhonePreview() {
             onDarkThemeChange = {},
             showUpdateDialogs = true,
             onShowUpdateDialogsChange = {},
-            currentVersion = "2.9.0-rc.1",
+            currentVersion = "2.9.0-rc.2",
             permissionSettingsState = previewPermissionSettingsState(),
             onRequestNotificationPermission = {},
             onRequestExactAlarmPermission = {},
