@@ -142,21 +142,21 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The latest formal signed release APK remains:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.8.0-release.apk
+app/build/outputs/apk/release/PixelDone-2.9.0-release.apk
 ```
 
-The current beta RC debug build, if assembled, is copied to:
+The local debug build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.0-rc.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.0-debug.apk
 ```
 
 ## Install
 
-Install the current beta RC debug build with:
+Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.9.0-rc.2-debug.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.9.0-release.apk
 ```
 
 The formal package name is:
@@ -173,4 +173,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.0-rc.2 beta RC for the four-function dock cap and quick delete mode.
+2.9.0 formal signed release for quick delete mode and the four-function dock cap.

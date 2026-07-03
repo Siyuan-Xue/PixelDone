@@ -4918,7 +4918,7 @@ private fun PhonePreview() {
             onDarkThemeChange = {},
             showUpdateDialogs = true,
             onShowUpdateDialogsChange = {},
-            currentVersion = "2.9.0-rc.2",
+            currentVersion = "2.9.0",
             permissionSettingsState = previewPermissionSettingsState(),
             onRequestNotificationPermission = {},
             onRequestExactAlarmPermission = {},
