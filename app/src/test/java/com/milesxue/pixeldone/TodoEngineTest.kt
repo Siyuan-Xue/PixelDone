@@ -4,6 +4,8 @@ import com.milesxue.pixeldone.data.todo.TodoJsonCodec
 import com.milesxue.pixeldone.domain.todo.*
 import com.milesxue.pixeldone.ui.todo.CompletionSortDelayMillis
 import com.milesxue.pixeldone.ui.todo.PendingTodoToggleFeedback
+import com.milesxue.pixeldone.ui.todo.SystemReminderPermissionDecision
+import com.milesxue.pixeldone.ui.todo.SystemReminderPermissionTarget
 import com.milesxue.pixeldone.ui.todo.TodoListHighlightRequest
 import com.milesxue.pixeldone.ui.todo.TodoRowClickAction
 import com.milesxue.pixeldone.ui.todo.consumeTodoListHighlightRequest
@@ -14,6 +16,7 @@ import com.milesxue.pixeldone.ui.todo.hasFullScreenIntentAccessForSdk
 import com.milesxue.pixeldone.ui.todo.isDueExpired
 import com.milesxue.pixeldone.ui.todo.nextTodoListClockRefreshDelayMillis
 import com.milesxue.pixeldone.ui.todo.recordTodoToggle
+import com.milesxue.pixeldone.ui.todo.systemReminderPermissionDecision
 import com.milesxue.pixeldone.ui.todo.todoRowClickAction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -374,6 +377,37 @@ class TodoEngineTest {
         assertTrue(hasFullScreenIntentAccessForSdk(sdkInt = 34, canUseFullScreenIntent = true))
         assertFalse(hasFullScreenIntentAccessForSdk(sdkInt = 34, canUseFullScreenIntent = false))
         assertFalse(hasFullScreenIntentAccessForSdk(sdkInt = 37, canUseFullScreenIntent = false))
+    }
+
+    @Test
+    fun systemReminderPermissionDecisionQueuesFullScreenOnlyAfterExactAlarm() {
+        assertEquals(
+            SystemReminderPermissionDecision(
+                target = SystemReminderPermissionTarget.FULL_SCREEN_INTENT,
+                queueFullScreenFollowUp = false,
+            ),
+            systemReminderPermissionDecision(setOf(ReminderCapability.FULL_SCREEN_INTENT_ACCESS)),
+        )
+        assertEquals(
+            SystemReminderPermissionDecision(
+                target = SystemReminderPermissionTarget.EXACT_ALARM,
+                queueFullScreenFollowUp = true,
+            ),
+            systemReminderPermissionDecision(
+                setOf(
+                    ReminderCapability.EXACT_ALARM_ACCESS,
+                    ReminderCapability.FULL_SCREEN_INTENT_ACCESS,
+                ),
+            ),
+        )
+        assertEquals(
+            SystemReminderPermissionDecision(
+                target = SystemReminderPermissionTarget.EXACT_ALARM,
+                queueFullScreenFollowUp = false,
+            ),
+            systemReminderPermissionDecision(setOf(ReminderCapability.EXACT_ALARM_ACCESS)),
+        )
+        assertNull(systemReminderPermissionDecision(emptySet()))
     }
 
     @Test

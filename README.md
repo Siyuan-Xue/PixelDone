@@ -65,6 +65,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Open Android's install-unknown-apps settings first when update installation permission is missing.
 - Check quietly for the latest release on every app start without suppressing an available update.
 - Keep Android 14+ full-screen intent permission checks tied to the system grant and preserve STOP/SNOOZE access when Android denies full-screen launch.
+- Treat a direct return from Android's Full Screen access page as no grant instead of repeatedly reopening the permission page.
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
@@ -144,13 +145,13 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The latest formal signed release APK remains:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.9.1-release.apk
+app/build/outputs/apk/release/PixelDone-2.9.2-release.apk
 ```
 
 The local debug build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.2-debug.apk
 ```
 
 ## Install
@@ -158,7 +159,7 @@ app/build/outputs/apk/debug/PixelDone-2.9.1-debug.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-2.9.1-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.9.2-release.apk
 ```
 
 The formal package name is:
@@ -175,4 +176,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.1 formal signed patch release for reliable XHigh alarm stop/snooze fallback controls.
+2.9.2 formal signed patch release for one-shot Full Screen permission handling on XHigh tasks.

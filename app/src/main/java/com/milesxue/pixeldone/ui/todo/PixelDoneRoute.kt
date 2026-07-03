@@ -253,6 +253,37 @@ internal fun hasFullScreenIntentAccessForSdk(
     canUseFullScreenIntent: Boolean,
 ): Boolean = sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || canUseFullScreenIntent
 
+internal enum class SystemReminderPermissionTarget {
+    EXACT_ALARM,
+    FULL_SCREEN_INTENT,
+}
+
+internal data class SystemReminderPermissionDecision(
+    val target: SystemReminderPermissionTarget,
+    val queueFullScreenFollowUp: Boolean,
+)
+
+internal fun systemReminderPermissionDecision(
+    missingCapabilities: Set<ReminderCapability>,
+): SystemReminderPermissionDecision? {
+    return when {
+        ReminderCapability.EXACT_ALARM_ACCESS in missingCapabilities -> {
+            SystemReminderPermissionDecision(
+                target = SystemReminderPermissionTarget.EXACT_ALARM,
+                queueFullScreenFollowUp =
+                    ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities,
+            )
+        }
+        ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities -> {
+            SystemReminderPermissionDecision(
+                target = SystemReminderPermissionTarget.FULL_SCREEN_INTENT,
+                queueFullScreenFollowUp = false,
+            )
+        }
+        else -> null
+    }
+}
+
 private data class PermissionSettingsState(
     val notificationsGranted: Boolean,
     val exactAlarmGranted: Boolean,
@@ -753,18 +784,14 @@ internal fun PixelDoneApp() {
 
     fun requestSystemReminderPermissionIfNeeded(item: TodoItem) {
         val missingCapabilities = missingReminderCapabilities(item)
-        val action = when {
-            ReminderCapability.EXACT_ALARM_ACCESS in missingCapabilities -> {
-                if (ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities) {
-                    pendingFullScreenPermissionTodoId = item.id
-                }
-                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
-            }
-            ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities -> {
-                pendingFullScreenPermissionTodoId = item.id
+        val decision = systemReminderPermissionDecision(missingCapabilities) ?: return
+        if (decision.queueFullScreenFollowUp) {
+            pendingFullScreenPermissionTodoId = item.id
+        }
+        val action = when (decision.target) {
+            SystemReminderPermissionTarget.EXACT_ALARM -> Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+            SystemReminderPermissionTarget.FULL_SCREEN_INTENT ->
                 Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT
-            }
-            else -> return
         }
         openPackageSettingsAction(action)
     }
@@ -1407,15 +1434,16 @@ internal fun PixelDoneApp() {
                             )
                         }
                     }
-                    pendingFullScreenPermissionTodoId?.let { id ->
+                    val fullScreenFollowUpTodoId = pendingFullScreenPermissionTodoId
+                    pendingFullScreenPermissionTodoId = null
+                    fullScreenFollowUpTodoId?.let { id ->
                         val item = normalTodos(currentChecklistState).firstOrNull { it.id == id }
-                        pendingFullScreenPermissionTodoId = null
                         if (
                             item != null &&
                             reminderScheduler.canScheduleExactAlarms() &&
                             !hasFullScreenIntentAccess()
                         ) {
-                            requestSystemReminderPermissionIfNeeded(item)
+                            openFullScreenIntentSettings()
                         }
                     }
                 }
