@@ -3775,9 +3775,27 @@ private fun DockActionIcon(
         val heavyStrokeWidth = iconSize * 2.8f / 22f
         val iconStroke = Stroke(
             width = strokeWidth,
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round,
+            cap = StrokeCap.Square,
+            join = StrokeJoin.Miter,
         )
+        fun rect(
+            left: Float,
+            top: Float,
+            right: Float,
+            bottom: Float,
+            width: Float = strokeWidth,
+        ) {
+            drawRect(
+                color = color,
+                topLeft = offset(left, top),
+                size = Size(x(right) - x(left), y(bottom) - y(top)),
+                style = Stroke(
+                    width = width,
+                    cap = StrokeCap.Square,
+                    join = StrokeJoin.Miter,
+                ),
+            )
+        }
         fun line(
             startX: Float,
             startY: Float,
@@ -3790,82 +3808,76 @@ private fun DockActionIcon(
                 start = offset(startX, startY),
                 end = offset(endX, endY),
                 strokeWidth = width,
-                cap = StrokeCap.Round,
+                cap = StrokeCap.Square,
             )
         }
         when (action) {
             DockAction.SORT -> {
-                line(5f, 2.5f, 5f, 17.2f, heavyStrokeWidth)
-                line(1.8f, 13.8f, 5f, 17.2f, heavyStrokeWidth)
-                line(8.2f, 13.8f, 5f, 17.2f, heavyStrokeWidth)
-                line(11f, 4f, 20f, 4f, strokeWidth)
-                line(11f, 8.5f, 18f, 8.5f, strokeWidth)
-                line(11f, 13f, 16f, 13f, strokeWidth)
-                line(11f, 17.5f, 13f, 17.5f, strokeWidth)
-            }
-            DockAction.DEADLINE -> {
-                val flamePath = Path().apply {
-                    moveTo(x(5f), y(12.5f))
-                    cubicTo(x(2.8f), y(9.2f), x(5.2f), y(5.5f), x(7.4f), y(5.1f))
-                    cubicTo(x(7.3f), y(7.2f), x(9.6f), y(7.8f), x(10.3f), y(5.6f))
-                    cubicTo(x(11.2f), y(3.1f), x(13.7f), y(2.4f), x(15.5f), y(2.8f))
-                    cubicTo(x(14.3f), y(5.4f), x(14.9f), y(7.5f), x(16.8f), y(8.6f))
-                    cubicTo(x(18.8f), y(9.8f), x(18.4f), y(12.4f), x(16.7f), y(14.1f))
-                }
-                drawPath(color = color, path = flamePath, style = iconStroke)
+                rect(2.5f, 4.5f, 6.5f, 16.5f, thinStrokeWidth)
+                line(8.8f, 6f, 13.2f, 6f, strokeWidth)
+                line(8.8f, 10f, 15.2f, 10f, strokeWidth)
+                line(8.8f, 14f, 17.2f, 14f, strokeWidth)
                 drawCircle(
                     color = color,
-                    radius = iconSize * 5.6f / 22f,
-                    center = offset(11f, 13.7f),
-                    style = iconStroke,
+                    radius = iconSize * 4.1f / 22f,
+                    center = offset(16.2f, 16.2f),
+                    style = Stroke(
+                        width = thinStrokeWidth,
+                        cap = StrokeCap.Square,
+                        join = StrokeJoin.Miter,
+                    ),
                 )
-                line(11f, 13.7f, 11f, 9.9f, thinStrokeWidth)
-                line(11f, 13.7f, 14.2f, 16.1f, thinStrokeWidth)
+                line(16.2f, 16.2f, 16.2f, 13.8f, thinStrokeWidth)
+                line(16.2f, 16.2f, 18.3f, 17.3f, thinStrokeWidth)
+            }
+            DockAction.DEADLINE -> {
+                rect(4f, 5.5f, 18f, 18f, strokeWidth)
+                line(4f, 9f, 18f, 9f, thinStrokeWidth)
+                line(7f, 3.5f, 7f, 7.5f, heavyStrokeWidth)
+                line(15f, 3.5f, 15f, 7.5f, heavyStrokeWidth)
+                drawCircle(
+                    color = color,
+                    radius = iconSize * 3f / 22f,
+                    center = offset(11f, 13.6f),
+                    style = Stroke(
+                        width = thinStrokeWidth,
+                        cap = StrokeCap.Square,
+                        join = StrokeJoin.Miter,
+                    ),
+                )
+                line(11f, 13.6f, 11f, 11.7f, thinStrokeWidth)
+                line(11f, 13.6f, 13.2f, 14.8f, thinStrokeWidth)
             }
             DockAction.HIDE_DONE -> {
                 val eyePath = Path().apply {
                     moveTo(x(3f), y(11f))
-                    quadraticTo(x(7.1f), y(5.8f), x(11f), y(5.8f))
-                    quadraticTo(x(15f), y(5.8f), x(19f), y(11f))
-                    quadraticTo(x(15f), y(16.2f), x(11f), y(16.2f))
-                    quadraticTo(x(7.1f), y(16.2f), x(3f), y(11f))
+                    lineTo(x(7.5f), y(6.5f))
+                    lineTo(x(14.5f), y(6.5f))
+                    lineTo(x(19f), y(11f))
+                    lineTo(x(14.5f), y(15.5f))
+                    lineTo(x(7.5f), y(15.5f))
+                    close()
                 }
                 drawPath(color = color, path = eyePath, style = iconStroke)
-                drawCircle(
-                    color = color,
-                    radius = iconSize * 2.7f / 22f,
-                    center = offset(11f, 11f),
-                    style = Stroke(
-                        width = thinStrokeWidth,
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round,
-                    ),
-                )
-                line(5.2f, 3.8f, 16.8f, 18.2f, heavyStrokeWidth)
+                rect(9f, 9f, 13f, 13f, thinStrokeWidth)
+                line(5f, 4.5f, 17f, 17.5f, heavyStrokeWidth)
             }
             DockAction.DELETE_DONE -> {
                 line(5f, 6f, 17f, 6f, heavyStrokeWidth)
-                line(9f, 3f, 13f, 3f, heavyStrokeWidth)
-                line(4.3f, 8f, 5.1f, 18.3f, heavyStrokeWidth)
-                line(17.7f, 8f, 16.9f, 18.3f, heavyStrokeWidth)
-                line(5.1f, 18.3f, 16.9f, 18.3f, heavyStrokeWidth)
-                line(8.3f, 9f, 8.3f, 16f, strokeWidth)
-                line(11f, 9f, 11f, 16f, strokeWidth)
-                line(13.7f, 9f, 13.7f, 16f, strokeWidth)
+                line(8.5f, 3.5f, 13.5f, 3.5f, heavyStrokeWidth)
+                rect(6f, 8f, 16f, 18f, strokeWidth)
+                line(8.3f, 13.4f, 10.1f, 15.2f, thinStrokeWidth)
+                line(10.1f, 15.2f, 14f, 10.8f, thinStrokeWidth)
             }
             DockAction.BATCH_DELETE -> {
-                line(4f, 4.5f, 11.5f, 4.5f, heavyStrokeWidth)
-                line(6.7f, 2.5f, 9.3f, 2.5f, heavyStrokeWidth)
-                line(4.7f, 6.5f, 5.3f, 14.8f, strokeWidth)
-                line(10.8f, 6.5f, 10.2f, 14.8f, strokeWidth)
-                line(5.3f, 14.8f, 10.2f, 14.8f, strokeWidth)
-                line(7f, 8f, 7f, 13f, thinStrokeWidth)
-                line(9f, 8f, 9f, 13f, thinStrokeWidth)
-                line(14f, 5f, 20f, 5f, strokeWidth)
-                line(14f, 10f, 19f, 10f, strokeWidth)
-                line(14f, 15f, 18f, 15f, strokeWidth)
-                line(18f, 13f, 20f, 15f, heavyStrokeWidth)
-                line(20f, 15f, 18f, 17f, heavyStrokeWidth)
+                line(3.5f, 5f, 12f, 5f, strokeWidth)
+                line(3.5f, 10f, 12f, 10f, strokeWidth)
+                line(3.5f, 15f, 12f, 15f, strokeWidth)
+                line(14f, 7f, 20f, 7f, heavyStrokeWidth)
+                line(15.7f, 5f, 18.3f, 5f, heavyStrokeWidth)
+                rect(14.8f, 9f, 19.2f, 17f, strokeWidth)
+                line(16.2f, 10.5f, 16.2f, 15.5f, thinStrokeWidth)
+                line(17.8f, 10.5f, 17.8f, 15.5f, thinStrokeWidth)
             }
         }
     }

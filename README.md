@@ -70,6 +70,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
 - Use five atomic dock functions for `PRI/TIME`, `DDL`, `HIDE/UNHIDE`, `DELETE DONE`, and `DELETE MODE`.
+- Use redesigned pixel-line dock icons for all five dock functions in the main dock and dock settings.
 - Select up to four dock function buttons; selecting a fifth function replaces the first selected function.
 - Keep the default dock centered as `PRI/TIME`, `+`, and `DDL`.
 - Keep `TRASH` and `SETTINGS` free of the normal-checklist dock.
@@ -148,18 +149,18 @@ The latest formal signed release APK remains:
 app/build/outputs/apk/release/PixelDone-2.9.2-release.apk
 ```
 
-The local debug build, if assembled, is copied to:
+The current local debug RC build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.3-rc.1-debug.apk
 ```
 
 ## Install
 
-Install the current formal signed release build with:
+Install the current local debug RC build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-2.9.2-release.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.9.3-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -176,4 +177,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.2 formal signed patch release for one-shot Full Screen permission handling on XHigh tasks.
+2.9.3-rc.1 debug RC for the redesigned five-function dock icon set.

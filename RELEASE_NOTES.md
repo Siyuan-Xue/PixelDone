@@ -1,11 +1,11 @@
-PixelDone v2.9.2 is a formal signed patch release for one-shot Full Screen permission handling on XHigh tasks.
+PixelDone v2.9.3-rc.1 is a debug RC for the redesigned five-function dock icon set.
 
 Highlights:
-- Stops repeatedly reopening Android's Full Screen access settings when a user returns without granting permission.
-- Treats an unchanged Full Screen permission state as an intentional no-grant result after the one-time request.
-- Still queues the Full Screen access page once after Exact Alarm permission is granted when both capabilities are missing.
-- Keeps the existing XHigh notification and in-app stop/snooze fallback behavior for devices without Full Screen access.
+- Redesigns the `PRI/TIME`, `DDL`, `HIDE/UNHIDE`, `DELETE DONE`, and `DELETE MODE` dock icons as restrained pixel-line symbols.
+- Keeps the bottom dock and dock settings list on the same shared icon renderer.
+- Preserves the existing dock actions, ordering rules, accessibility descriptions, and settings persistence.
+- Keeps this build on the debug beta channel for local RC validation.
 
-Install note: use the attached signed release APK, `PixelDone-2.9.2-release.apk`, for direct installation or update of `com.milesxue.pixeldone`. Existing `com.milesxue.pixeldone.debug` beta installs remain separate.
+Install note: use the local debug RC APK, `PixelDone-2.9.3-rc.1-debug.apk`, for direct installation or update of `com.milesxue.pixeldone.debug`. Existing `com.milesxue.pixeldone` formal installs remain separate.
 
 CODEX & XUE
