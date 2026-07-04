@@ -69,10 +69,10 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
-- Use five atomic dock functions for `PRI/TIME`, `DDL`, `HIDE/UNHIDE`, `DELETE DONE`, and `DELETE MODE`.
-- Use redesigned pixel-line dock icons for all five dock functions in the main dock and dock settings.
+- Use five atomic dock functions for `SORT`, `DDL`, `HIDE/UNHIDE`, `DELETE DONE`, and `DELETE MODE`.
+- Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph.
 - Select up to four dock function buttons; selecting a fifth function replaces the first selected function.
-- Keep the default dock centered as `PRI/TIME`, `+`, and `DDL`.
+- Keep the default dock centered as `SORT`, `+`, and `DDL`.
 - Keep `TRASH` and `SETTINGS` free of the normal-checklist dock.
 - Show settings permission state with clickable status glyphs instead of larger config buttons.
 - Keep clay primary controls readable in dark mode.
@@ -152,7 +152,7 @@ app/build/outputs/apk/release/PixelDone-2.9.2-release.apk
 The current local debug RC build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.3-rc.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.3-rc.2-debug.apk
 ```
 
 ## Install
@@ -160,7 +160,7 @@ app/build/outputs/apk/debug/PixelDone-2.9.3-rc.1-debug.apk
 Install the current local debug RC build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.9.3-rc.1-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.9.3-rc.2-debug.apk
 ```
 
 The formal package name is:
@@ -177,4 +177,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.3-rc.1 debug RC for the redesigned five-function dock icon set.
+2.9.3-rc.2 debug RC for the clarified Priority/Time dock toggle.

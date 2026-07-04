@@ -2614,7 +2614,7 @@ private fun DockPlusPlacement.settingsLabel(): String = when (this) {
 }
 
 private fun DockAction.settingsTitle(): String = when (this) {
-    DockAction.SORT -> "PRI/TIME"
+    DockAction.SORT -> "SORT"
     DockAction.DEADLINE -> "DDL"
     DockAction.HIDE_DONE -> "HIDE/UNHIDE"
     DockAction.DELETE_DONE -> "DELETE DONE"
@@ -2622,7 +2622,7 @@ private fun DockAction.settingsTitle(): String = when (this) {
 }
 
 private fun DockAction.settingsValue(): String = when (this) {
-    DockAction.SORT -> "sort mode"
+    DockAction.SORT -> "priority / time"
     DockAction.DEADLINE -> "deadline countdown"
     DockAction.HIDE_DONE -> "done visibility"
     DockAction.DELETE_DONE -> "completed cleanup"
@@ -3750,10 +3750,15 @@ private fun DockIconButton(
                 indication = null,
                 onClick = onClick,
             )
-            .semantics { contentDescription = action.contentDescription() },
+            .semantics {
+                contentDescription = action.contentDescription()
+                if (action == DockAction.SORT) {
+                    stateDescription = if (active) "TIME" else "PRIORITY"
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
-        DockActionIcon(action = action, color = iconColor)
+        DockActionIcon(action = action, color = iconColor, active = active)
     }
 }
 
@@ -3762,7 +3767,27 @@ private fun DockActionIcon(
     action: DockAction,
     color: Color,
     modifier: Modifier = Modifier.size(22.dp),
+    active: Boolean = false,
 ) {
+    if (action == DockAction.SORT) {
+        Box(
+            modifier = modifier,
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = if (active) "T" else "P",
+                color = color,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+            )
+        }
+        return
+    }
+
     Canvas(modifier = modifier) {
         val iconSize = min(size.width, size.height)
         val left = (size.width - iconSize) / 2f
@@ -3812,24 +3837,7 @@ private fun DockActionIcon(
             )
         }
         when (action) {
-            DockAction.SORT -> {
-                rect(2.5f, 4.5f, 6.5f, 16.5f, thinStrokeWidth)
-                line(8.8f, 6f, 13.2f, 6f, strokeWidth)
-                line(8.8f, 10f, 15.2f, 10f, strokeWidth)
-                line(8.8f, 14f, 17.2f, 14f, strokeWidth)
-                drawCircle(
-                    color = color,
-                    radius = iconSize * 4.1f / 22f,
-                    center = offset(16.2f, 16.2f),
-                    style = Stroke(
-                        width = thinStrokeWidth,
-                        cap = StrokeCap.Square,
-                        join = StrokeJoin.Miter,
-                    ),
-                )
-                line(16.2f, 16.2f, 16.2f, 13.8f, thinStrokeWidth)
-                line(16.2f, 16.2f, 18.3f, 17.3f, thinStrokeWidth)
-            }
+            DockAction.SORT -> Unit
             DockAction.DEADLINE -> {
                 rect(4f, 5.5f, 18f, 18f, strokeWidth)
                 line(4f, 9f, 18f, 9f, thinStrokeWidth)
