@@ -1,5 +1,8 @@
 package com.milesxue.pixeldone.ui.todo
 
+import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
+import com.milesxue.pixeldone.domain.todo.DockConfig
+import com.milesxue.pixeldone.domain.todo.PixelDoneSettings
 import com.milesxue.pixeldone.domain.todo.SortMode
 import com.milesxue.pixeldone.domain.todo.TodoChecklistState
 
@@ -10,6 +13,8 @@ import com.milesxue.pixeldone.domain.todo.TodoChecklistState
  */
 data class PixelDoneUiState(
     val checklistState: TodoChecklistState,
+    val settings: PixelDoneSettings = PixelDoneSettings(),
+    val syncStatus: SyncCoordinatorStatus = SyncCoordinatorStatus.LOCAL_ONLY,
     val sortMode: SortMode = SortMode.PRIORITY,
     val hideCompleted: Boolean = false,
     val showDeadlineCountdown: Boolean = false,
@@ -33,5 +38,8 @@ sealed interface PixelDoneAction {
     data class SetSortMode(val sortMode: SortMode) : PixelDoneAction
     data class SetHideCompleted(val hideCompleted: Boolean) : PixelDoneAction
     data class SetDeadlineCountdownVisible(val visible: Boolean) : PixelDoneAction
+    data class SetDarkTheme(val enabled: Boolean) : PixelDoneAction
+    data class SetDockConfig(val config: DockConfig) : PixelDoneAction
+    data class SetShowUpdateDialogs(val showDialogs: Boolean) : PixelDoneAction
     data object SystemActionConsumed : PixelDoneAction
 }

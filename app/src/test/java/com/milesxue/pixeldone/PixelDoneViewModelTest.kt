@@ -1,6 +1,10 @@
 package com.milesxue.pixeldone
 
+import com.milesxue.pixeldone.data.settings.InMemoryPixelDoneSettingsStore
 import com.milesxue.pixeldone.data.todo.TodoRepository
+import com.milesxue.pixeldone.domain.todo.DockAction
+import com.milesxue.pixeldone.domain.todo.DockConfig
+import com.milesxue.pixeldone.domain.todo.DockPlusPlacement
 import com.milesxue.pixeldone.domain.todo.ReminderCapability
 import com.milesxue.pixeldone.domain.todo.SettingsChecklistId
 import com.milesxue.pixeldone.domain.todo.SortMode
@@ -68,6 +72,32 @@ class PixelDoneViewModelTest {
         assertEquals(SortMode.TIME, viewModel.uiState.value.sortMode)
         assertEquals(true, viewModel.uiState.value.hideCompleted)
         assertEquals(true, viewModel.uiState.value.showDeadlineCountdown)
+        assertEquals(initial, repository.state.value)
+    }
+    @Test
+    fun persistedSettingsActionsUpdateSettingsStoreWithoutTouchingTodos() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val settingsStore = InMemoryPixelDoneSettingsStore()
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            settingsStore = settingsStore,
+        )
+        val dockConfig = DockConfig(
+            plusPlacement = DockPlusPlacement.LEFT_EDGE,
+            actions = listOf(DockAction.SORT, DockAction.HIDE_DONE),
+        )
+
+        viewModel.onAction(PixelDoneAction.SetDarkTheme(true))
+        viewModel.onAction(PixelDoneAction.SetDockConfig(dockConfig))
+        viewModel.onAction(PixelDoneAction.SetShowUpdateDialogs(false))
+
+        assertEquals(true, settingsStore.loadSettings().darkTheme)
+        assertEquals(DockPlusPlacement.LEFT_EDGE, settingsStore.loadSettings().dockConfig.plusPlacement)
+        assertEquals(listOf(DockAction.SORT, DockAction.HIDE_DONE), settingsStore.loadSettings().dockConfig.actions)
+        assertEquals(false, settingsStore.loadSettings().showUpdateDialogs)
+        assertEquals(settingsStore.loadSettings(), viewModel.uiState.value.settings)
         assertEquals(initial, repository.state.value)
     }
 }

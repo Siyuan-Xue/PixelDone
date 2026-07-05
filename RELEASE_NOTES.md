@@ -1,10 +1,10 @@
-PixelDone v2.9.3 is a formal signed release for restored anchored Dock spacing, the quick-delete icon, and architecture review.
+PixelDone v2.10.0-rc.1 is a beta release candidate for the local-first storage and sync-readiness refactor.
 
 Highlights:
-- Restores Dock action spacing to the anchored layout where function buttons keep fixed gaps from the `+` button.
-- Keeps centered odd Dock button counts weighted to the left side, matching the earlier Dock interaction model.
-- Redraws the quick-delete Dock icon with a clearer line-style trash can.
-- Splits Dock and update/permission presentation code out of the main route for a cleaner teaching architecture.
-- Adds a Google Play readiness review covering permission, privacy, robustness, and Dock function boundaries.
+- Moves todo/checklist persistence to Room while keeping the existing SharedPreferences JSON format as a legacy migration reader.
+- Moves local settings such as theme, Dock configuration, update prompt preference, and future sync toggle placeholder behind DataStore.
+- Routes persisted settings through ViewModel actions and immutable UI state instead of direct Composable storage writes.
+- Adds local-only auth/sync seams and pure Kotlin conflict-resolution rules without login UI, Supabase SDKs, server config, or network sync.
+- Adds future Tencent Cloud Lighthouse + self-hosted Supabase architecture notes for a later cross-device sync phase.
 
-Install note: use the signed release APK, `PixelDone-2.9.3-release.apk`, for direct installation or update of `com.milesxue.pixeldone`. Existing `com.milesxue.pixeldone.debug` RC installs remain separate.
+Install note: this prerelease asset is the debug RC APK, `PixelDone-2.10.0-rc.1-debug.apk`, for `com.milesxue.pixeldone.debug`. It installs separately from the formal signed app `com.milesxue.pixeldone`; the latest formal signed release remains v2.9.3.

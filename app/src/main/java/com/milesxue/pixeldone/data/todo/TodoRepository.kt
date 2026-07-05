@@ -6,10 +6,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Todo 数据层入口。
+ * Todo data-layer entry point.
  *
- * 教学说明：Repository 是 UI/领域逻辑与本地存储之间的边界。
- * 这一轮不迁移 DataStore，仍然使用 SharedPreferences JSON，避免改变用户已有数据格式。
+ * The repository keeps UI/domain code behind [TodoStateStore]. Production uses Room through
+ * that interface; tests can keep using the in-memory implementation.
  */
 class TodoRepository(private val store: TodoStateStore) {
     private val _state = MutableStateFlow(store.loadTodoState())

@@ -146,6 +146,7 @@ import com.milesxue.pixeldone.data.update.AppUpdateDownloadResult
 import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
+import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.todo.AllDockActions
 import com.milesxue.pixeldone.domain.todo.DefaultChecklistId
 import com.milesxue.pixeldone.domain.todo.DefaultChecklistName
@@ -341,7 +342,6 @@ internal fun PixelDoneApp() {
     val context = LocalContext.current
     val updateScope = rememberCoroutineScope()
     val appContainer = remember(context) { context.pixelDoneAppContainer() }
-    val todoPreferences = remember(appContainer) { appContainer.todoPreferences }
     val todoRepository = remember(appContainer) { appContainer.todoRepository }
     val imageStore = remember(appContainer) { appContainer.todoImageStore }
     val updateService = remember(appContainer) { appContainer.updateService }
@@ -351,13 +351,18 @@ internal fun PixelDoneApp() {
         PixelDoneViewModel.factory(
             todoRepository = todoRepository,
             reminderScheduler = reminderScheduler,
+            settingsStore = appContainer.settingsStore,
+            syncCoordinator = appContainer.syncCoordinator,
         )
     }
     val viewModel: PixelDoneViewModel = viewModel(factory = viewModelFactory)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val checklistState = uiState.checklistState
-    var darkTheme by remember { mutableStateOf(todoPreferences.loadDarkTheme()) }
-    var dockConfig by remember { mutableStateOf(todoPreferences.loadDockConfig()) }
+    val settings = uiState.settings
+    val darkTheme = settings.darkTheme
+    val dockConfig = settings.dockConfig
+    val neverShowUpdateDialog = settings.neverShowUpdateDialog
+    val syncStatusText = uiState.syncStatus.settingsLabel()
     var titleInput by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TodoPriority.MEDIUM) }
     var selectedReminderRepeat by remember { mutableStateOf(ReminderRepeat.NONE) }
@@ -382,9 +387,6 @@ internal fun PixelDoneApp() {
     var updateUiState by remember { mutableStateOf(AppUpdateUiState()) }
     var updateCheckInFlight by remember { mutableStateOf(false) }
     var activeUpdateDownload by remember { mutableStateOf<AppUpdateDownload?>(null) }
-    var neverShowUpdateDialog by remember {
-        mutableStateOf(todoPreferences.loadNeverShowUpdateDialog())
-    }
     var showUpdatePromptDialog by remember { mutableStateOf(false) }
     var updatePromptInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var showUpdateProgressDialog by remember { mutableStateOf(false) }
@@ -1162,23 +1164,19 @@ internal fun PixelDoneApp() {
         "get: ${versionLabel(BuildConfig.VERSION_NAME)} -> ${versionLabel(info.version)}"
 
     fun setNeverShowUpdateDialog(neverShow: Boolean) {
-        neverShowUpdateDialog = neverShow
-        todoPreferences.saveNeverShowUpdateDialog(neverShow)
+        viewModel.onAction(PixelDoneAction.SetShowUpdateDialogs(!neverShow))
     }
 
     fun setShowUpdateDialogs(showDialogs: Boolean) {
-        setNeverShowUpdateDialog(!showDialogs)
+        viewModel.onAction(PixelDoneAction.SetShowUpdateDialogs(showDialogs))
     }
 
     fun setDarkThemePreference(enabled: Boolean) {
-        darkTheme = enabled
-        todoPreferences.saveDarkTheme(enabled)
+        viewModel.onAction(PixelDoneAction.SetDarkTheme(enabled))
     }
 
     fun setDockConfigPreference(config: DockConfig) {
-        val normalizedConfig = config.normalized()
-        dockConfig = normalizedConfig
-        todoPreferences.saveDockConfig(normalizedConfig)
+        viewModel.onAction(PixelDoneAction.SetDockConfig(config.normalized()))
     }
 
     fun dismissUpdatePromptDialog() {
@@ -1561,6 +1559,7 @@ internal fun PixelDoneApp() {
             showUpdateDialogs = shouldShowUpdatePromptSetting(neverShowUpdateDialog),
             onShowUpdateDialogsChange = ::setShowUpdateDialogs,
             currentVersion = BuildConfig.VERSION_NAME,
+            syncStatusText = syncStatusText,
             permissionSettingsState = permissionRefreshTick.let { currentPermissionSettingsState() },
             onRequestNotificationPermission = ::requestNotificationPermissionFromSettings,
             onRequestExactAlarmPermission = {
@@ -1687,6 +1686,7 @@ private fun PixelDoneScreen(
     showUpdateDialogs: Boolean,
     onShowUpdateDialogsChange: (Boolean) -> Unit,
     currentVersion: String,
+    syncStatusText: String,
     permissionSettingsState: PermissionSettingsState,
     onRequestNotificationPermission: () -> Unit,
     onRequestExactAlarmPermission: () -> Unit,
@@ -1799,6 +1799,7 @@ private fun PixelDoneScreen(
                 showUpdateDialogs = showUpdateDialogs,
                 onShowUpdateDialogsChange = onShowUpdateDialogsChange,
                 currentVersion = currentVersion,
+                syncStatusText = syncStatusText,
                 permissionSettingsState = permissionSettingsState,
                 onRequestNotificationPermission = onRequestNotificationPermission,
                 onRequestExactAlarmPermission = onRequestExactAlarmPermission,
@@ -2093,6 +2094,7 @@ private fun TaskWorkspacePanel(
     showUpdateDialogs: Boolean,
     onShowUpdateDialogsChange: (Boolean) -> Unit,
     currentVersion: String,
+    syncStatusText: String,
     permissionSettingsState: PermissionSettingsState,
     onRequestNotificationPermission: () -> Unit,
     onRequestExactAlarmPermission: () -> Unit,
@@ -2114,6 +2116,7 @@ private fun TaskWorkspacePanel(
                 showUpdateDialogs = showUpdateDialogs,
                 onShowUpdateDialogsChange = onShowUpdateDialogsChange,
                 currentVersion = currentVersion,
+                syncStatusText = syncStatusText,
                 updateUiState = updateUiState,
                 onUpdateClick = onUpdateClick,
                 dockConfig = dockConfig,
@@ -2208,6 +2211,7 @@ private fun SettingsPanel(
     showUpdateDialogs: Boolean,
     onShowUpdateDialogsChange: (Boolean) -> Unit,
     currentVersion: String,
+    syncStatusText: String,
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
     dockConfig: DockConfig,
@@ -2319,6 +2323,11 @@ private fun SettingsPanel(
                     title = "MAKER",
                     value = "CODEX & XUE",
                     valueColor = colors.primary,
+                )
+                SettingsAboutTextRow(
+                    title = "SYNC",
+                    value = syncStatusText,
+                    valueColor = colors.primaryInteractive,
                 )
                 SettingsAboutTextRow(
                     title = "UPDATE PERMISSIONS",
@@ -2768,6 +2777,10 @@ private fun SettingsRowText(
 
 private fun Boolean.permissionLabel(): String =
     if (this) "GRANTED" else "NEEDS SETUP"
+
+private fun SyncCoordinatorStatus.settingsLabel(): String = when (this) {
+    SyncCoordinatorStatus.LOCAL_ONLY -> "LOCAL ONLY"
+}
 
 @Composable
 private fun TaskEditorPanel(
@@ -4657,6 +4670,7 @@ private fun PhonePreview() {
             showUpdateDialogs = true,
             onShowUpdateDialogsChange = {},
             currentVersion = "2.9.0",
+            syncStatusText = "LOCAL ONLY",
             permissionSettingsState = previewPermissionSettingsState(),
             onRequestNotificationPermission = {},
             onRequestExactAlarmPermission = {},
@@ -4748,6 +4762,7 @@ private fun TabletPreview() {
             showUpdateDialogs = true,
             onShowUpdateDialogsChange = {},
             currentVersion = "2.7.0",
+            syncStatusText = "LOCAL ONLY",
             permissionSettingsState = previewPermissionSettingsState(),
             onRequestNotificationPermission = {},
             onRequestExactAlarmPermission = {},

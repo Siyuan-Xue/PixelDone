@@ -78,7 +78,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Show settings permission state with clickable status glyphs instead of larger config buttons.
 - Keep clay primary controls readable in dark mode.
 - Consume todo row highlight events once so returning from `SETTINGS` does not replay an old highlight.
-- Persist checklists and todos locally on the device with SharedPreferences JSON.
+- Persist checklists and todos locally on the device with Room, migrating legacy SharedPreferences JSON on first launch.
 - Keep system bars aligned with the selected light or dark PixelDone theme.
 
 ## Tech Stack
@@ -88,7 +88,9 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Material 3
 - AndroidX
 - AndroidX Lifecycle ViewModel
-- SharedPreferences
+- Room
+- DataStore
+- SharedPreferences legacy migration reader
 - AlarmManager notifications
 - Manual dependency injection
 
@@ -96,9 +98,12 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 
 - `MainActivity.kt`: Android entry point, system bars, and top-level Compose host only.
 - `PixelDoneApplication.kt`: owns the app-level dependency container.
-- `di/`: manual dependency injection for repositories, image storage, update service, reminder scheduler, and clock.
+- `di/`: manual dependency injection for local storage, settings, sync placeholders, image storage, update service, reminder scheduler, and clock.
 - `domain/todo/`: pure Kotlin todo, checklist, sorting, and reminder rules with no Android or Compose imports.
-- `data/todo/`: SharedPreferences JSON persistence behind a repository boundary.
+- `data/todo/`: todo repository boundary and legacy SharedPreferences JSON migration reader.
+- `data/local/`: Room database, DAO, entities, and mappers for local-first todo/checklist storage.
+- `data/settings/`: DataStore-backed local settings for theme, Dock configuration, update prompts, and future sync toggle placeholder.
+- `data/sync/` and `domain/sync/`: local-only auth/sync seams plus pure Kotlin conflict-resolution placeholders for a future backend.
 - `data/image/`: private image-copying, safe file-path handling, and preview bitmap sampling.
 - `data/update/`: GitHub-first release checks, synced Gitee fallback, DownloadManager integration, and install-intent preparation.
 - `reminder/`: AlarmManager, notification, boot, receiver, foreground service, and XHigh full-screen alarm integration.
@@ -150,10 +155,10 @@ The latest formal signed release APK is:
 app/build/outputs/apk/release/PixelDone-2.9.3-release.apk
 ```
 
-Local debug builds, if assembled, are copied to:
+The latest beta RC debug APK is:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.3-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.10.0-rc.1-debug.apk
 ```
 
 ## Install
@@ -162,6 +167,12 @@ Install the current formal signed release build with:
 
 ```sh
 adb install -r app/build/outputs/apk/release/PixelDone-2.9.3-release.apk
+```
+
+Install the beta RC debug build with:
+
+```sh
+adb install -r app/build/outputs/apk/debug/PixelDone-2.10.0-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -178,4 +189,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.3 formal signed release for the restored anchored Dock spacing, quick-delete icon, and architecture review.
+2.10.0-rc.1 beta RC for local-first Room/DataStore storage, ViewModel-owned settings, and future sync readiness. The latest formal signed release remains 2.9.3.
