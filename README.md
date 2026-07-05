@@ -152,7 +152,7 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The latest formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.9.3-release.apk
+app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
 ```
 
 The latest beta RC debug APK is:
@@ -166,7 +166,7 @@ app/build/outputs/apk/debug/PixelDone-2.10.0-rc.3-debug.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-2.9.3-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
 ```
 
 Install the beta RC debug build with:
@@ -189,4 +189,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.10.0-rc.3 beta RC for local-first Room/DataStore storage, optional Supabase Auth/PostgREST sync, stable todo item bulk upsert, and corrected sync error presentation behind the Settings cloud area. The latest formal signed release remains 2.9.3.
+2.10.0 formal signed release for local-first Room/DataStore storage, optional Settings-based Supabase Auth/PostgREST sync, stable todo item bulk upsert, and corrected sync error presentation. The latest beta RC debug build remains 2.10.0-rc.3.
