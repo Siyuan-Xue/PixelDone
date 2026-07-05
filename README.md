@@ -144,24 +144,24 @@ https://gitee.com/milesxue/PixelDone/releases
 
 Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
 
-The latest formal signed release APK remains:
+The latest formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.9.2-release.apk
+app/build/outputs/apk/release/PixelDone-2.9.3-release.apk
 ```
 
-The current local debug RC build, if assembled, is copied to:
+Local debug builds, if assembled, are copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.3-rc.4-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.3-debug.apk
 ```
 
 ## Install
 
-Install the current local debug RC build with:
+Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.9.3-rc.4-debug.apk
+adb install -r app/build/outputs/apk/release/PixelDone-2.9.3-release.apk
 ```
 
 The formal package name is:
@@ -178,4 +178,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.3-rc.4 debug RC for the restored anchored Dock spacing, quick-delete icon, and architecture review.
+2.9.3 formal signed release for the restored anchored Dock spacing, quick-delete icon, and architecture review.

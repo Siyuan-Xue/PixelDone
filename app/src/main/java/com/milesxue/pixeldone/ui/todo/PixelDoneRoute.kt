@@ -2317,7 +2317,7 @@ private fun SettingsPanel(
                 )
                 SettingsAboutTextRow(
                     title = "MAKER",
-                    value = "CODEX x XUE",
+                    value = "CODEX & XUE",
                     valueColor = colors.primary,
                 )
                 SettingsAboutTextRow(
