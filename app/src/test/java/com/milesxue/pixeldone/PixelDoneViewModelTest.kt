@@ -1,7 +1,11 @@
 package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.settings.InMemoryPixelDoneSettingsStore
+import com.milesxue.pixeldone.data.sync.AuthSessionRepository
+import com.milesxue.pixeldone.data.sync.SyncCoordinator
 import com.milesxue.pixeldone.data.todo.TodoRepository
+import com.milesxue.pixeldone.domain.sync.AuthSession
+import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.todo.DockAction
 import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.DockPlusPlacement
@@ -15,10 +19,27 @@ import com.milesxue.pixeldone.domain.todo.updateChecklistItems
 import com.milesxue.pixeldone.reminder.ReminderScheduler
 import com.milesxue.pixeldone.ui.todo.PixelDoneAction
 import com.milesxue.pixeldone.ui.todo.PixelDoneViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestWatcher
+import org.junit.runner.Description
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PixelDoneViewModelTest {
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
+
     @Test
     fun replaceChecklistStatePersistsAndSyncsReminders() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
@@ -33,6 +54,24 @@ class PixelDoneViewModelTest {
         assertEquals(updated, repository.state.value)
         assertEquals(updated, viewModel.uiState.value.checklistState)
         assertEquals(listOf(todo), scheduler.lastCurrentItems)
+    }
+
+    @Test
+    fun replaceChecklistStateRequestsCloudSync() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val syncCoordinator = FakeSyncCoordinator()
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            syncCoordinator = syncCoordinator,
+        )
+        val todo = TodoItem("one", "One", TodoPriority.HIGH, 2_000L, false, 1L)
+        val updated = updateChecklistItems(initial, initial.selectedListId, listOf(todo))!!
+
+        viewModel.onAction(PixelDoneAction.ReplaceChecklistState(updated))
+
+        assertEquals(1, syncCoordinator.requestCount)
     }
 
     @Test
@@ -74,6 +113,7 @@ class PixelDoneViewModelTest {
         assertEquals(true, viewModel.uiState.value.showDeadlineCountdown)
         assertEquals(initial, repository.state.value)
     }
+
     @Test
     fun persistedSettingsActionsUpdateSettingsStoreWithoutTouchingTodos() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
@@ -100,6 +140,77 @@ class PixelDoneViewModelTest {
         assertEquals(settingsStore.loadSettings(), viewModel.uiState.value.settings)
         assertEquals(initial, repository.state.value)
     }
+
+    @Test
+    fun signInSuccessClearsPasswordAndRequestsSync() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val authRepository = FakeAuthSessionRepository()
+        val syncCoordinator = FakeSyncCoordinator()
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            authSessionRepository = authRepository,
+            syncCoordinator = syncCoordinator,
+        )
+
+        viewModel.onAction(PixelDoneAction.SetAuthEmail("person@example.com"))
+        viewModel.onAction(PixelDoneAction.SetAuthPassword("secret"))
+        viewModel.onAction(PixelDoneAction.SignIn)
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals(listOf("person@example.com" to "secret"), authRepository.signInRequests)
+        assertEquals(true, viewModel.uiState.value.authSession.signedIn)
+        assertEquals("person@example.com", viewModel.uiState.value.authSession.userEmail)
+        assertEquals("", viewModel.uiState.value.authInput.password)
+        assertEquals("Signed in.", viewModel.uiState.value.authInput.message)
+        assertNull(viewModel.uiState.value.authInput.error)
+        assertEquals(1, syncCoordinator.requestCount)
+    }
+
+    @Test
+    fun cancelSignInClearsPasswordAndMessagesButKeepsEmail() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val authRepository = FakeAuthSessionRepository(signInFailure = IllegalStateException("Wrong password"))
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            authSessionRepository = authRepository,
+        )
+
+        viewModel.onAction(PixelDoneAction.SetAuthEmail("person@example.com"))
+        viewModel.onAction(PixelDoneAction.SetAuthPassword("secret"))
+        viewModel.onAction(PixelDoneAction.SignIn)
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals("Wrong password", viewModel.uiState.value.authInput.error)
+        viewModel.onAction(PixelDoneAction.CancelSignIn)
+
+        val input = viewModel.uiState.value.authInput
+        assertEquals("person@example.com", input.email)
+        assertEquals("", input.password)
+        assertEquals(false, input.busy)
+        assertNull(input.error)
+        assertNull(input.message)
+    }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class MainDispatcherRule(
+    private val dispatcher: TestDispatcher = StandardTestDispatcher(),
+) : TestWatcher() {
+    override fun starting(description: Description) {
+        Dispatchers.setMain(dispatcher)
+    }
+
+    fun advanceUntilIdle() {
+        dispatcher.scheduler.advanceUntilIdle()
+    }
+
+    override fun finished(description: Description) {
+        Dispatchers.resetMain()
+    }
 }
 
 private class FakeReminderScheduler : ReminderScheduler {
@@ -120,4 +231,51 @@ private class FakeReminderScheduler : ReminderScheduler {
     override fun canScheduleExactAlarms(): Boolean = true
 
     override fun cancel(itemId: String) = Unit
+}
+
+
+private class FakeAuthSessionRepository(
+    private val signInFailure: Exception? = null,
+) : AuthSessionRepository {
+    private val mutableSession = MutableStateFlow(
+        AuthSession(
+            cloudAvailable = true,
+            displayLabel = "SIGNED OUT",
+        ),
+    )
+    override val session: StateFlow<AuthSession> = mutableSession.asStateFlow()
+    var signInRequests: List<Pair<String, String>> = emptyList()
+
+    override suspend fun signIn(email: String, password: String): AuthSession {
+        signInRequests = signInRequests + (email to password)
+        signInFailure?.let { throw it }
+        val signedInSession = AuthSession(
+            signedIn = true,
+            userId = "user-1",
+            userEmail = email,
+            displayLabel = email,
+            cloudAvailable = true,
+            accessToken = "access-token",
+        )
+        mutableSession.value = signedInSession
+        return signedInSession
+    }
+
+    override suspend fun signOut() {
+        mutableSession.value = mutableSession.value.copy(
+            signedIn = false,
+            accessToken = null,
+        )
+    }
+}
+private class FakeSyncCoordinator : SyncCoordinator {
+    private val mutableStatus = MutableStateFlow(SyncCoordinatorStatus.IDLE)
+    override val status: StateFlow<SyncCoordinatorStatus> = mutableStatus.asStateFlow()
+    var requestCount: Int = 0
+
+    override suspend fun syncNow(): SyncCoordinatorStatus = mutableStatus.value
+
+    override fun requestSync() {
+        requestCount += 1
+    }
 }

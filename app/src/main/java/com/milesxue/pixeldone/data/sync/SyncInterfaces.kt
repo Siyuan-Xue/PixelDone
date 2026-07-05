@@ -8,34 +8,79 @@ import kotlinx.coroutines.flow.asStateFlow
 
 interface AuthSessionRepository {
     val session: StateFlow<AuthSession>
+    suspend fun signIn(email: String, password: String): AuthSession
+    suspend fun signOut()
 }
 
 class LocalOnlyAuthSessionRepository : AuthSessionRepository {
     private val localOnlySession = MutableStateFlow(AuthSession())
     override val session: StateFlow<AuthSession> = localOnlySession.asStateFlow()
+
+    override suspend fun signIn(email: String, password: String): AuthSession {
+        throw SyncConfigurationException("Cloud sync is not configured.")
+    }
+
+    override suspend fun signOut() = Unit
 }
 
 interface SyncCoordinator {
     val status: StateFlow<SyncCoordinatorStatus>
+    suspend fun syncNow(): SyncCoordinatorStatus
+    fun requestSync()
 }
 
 class LocalOnlySyncCoordinator : SyncCoordinator {
     private val localOnlyStatus = MutableStateFlow(SyncCoordinatorStatus.LOCAL_ONLY)
     override val status: StateFlow<SyncCoordinatorStatus> = localOnlyStatus.asStateFlow()
+
+    override suspend fun syncNow(): SyncCoordinatorStatus = SyncCoordinatorStatus.LOCAL_ONLY
+    override fun requestSync() = Unit
 }
 
-data class RemoteTodoRecord(
-    val localId: String?,
-    val remoteId: String,
+class SyncConfigurationException(message: String) : Exception(message)
+class SyncRemoteException(message: String, val statusCode: Int? = null) : Exception(message)
+
+data class RemoteTodoSnapshot(
+    val checklists: List<RemoteChecklistRecord> = emptyList(),
+    val items: List<RemoteTodoItemRecord> = emptyList(),
+)
+
+data class RemoteChecklistRecord(
+    val localId: String,
+    val remoteId: String? = null,
     val ownerUserId: String,
-    val checklistLocalId: String?,
-    val title: String?,
+    val sortIndex: Int,
+    val name: String,
+    val createdAtMillis: Long,
     val updatedAtMillis: Long,
-    val deletedAtMillis: Long?,
-    val remoteVersion: Long,
+    val deletedAtMillis: Long? = null,
+    val remoteVersion: Long? = null,
+)
+
+data class RemoteTodoItemRecord(
+    val localId: String,
+    val remoteId: String? = null,
+    val ownerUserId: String,
+    val checklistLocalId: String,
+    val sortIndex: Int,
+    val title: String,
+    val priority: String,
+    val dueAtMillis: Long,
+    val completed: Boolean,
+    val createdAtMillis: Long,
+    val updatedAtMillis: Long,
+    val deletedAtMillis: Long? = null,
+    val reminderRepeat: String,
+    val imageLocalName: String? = null,
+    val imageRemotePath: String? = null,
+    val imageSyncState: String,
+    val trashedFromChecklistId: String? = null,
+    val trashedFromChecklistName: String? = null,
+    val trashedAtMillis: Long? = null,
+    val remoteVersion: Long? = null,
 )
 
 interface RemoteTodoDataSource {
-    suspend fun pullTodos(ownerUserId: String, sinceMillis: Long?): List<RemoteTodoRecord>
-    suspend fun pushTodos(ownerUserId: String, records: List<RemoteTodoRecord>)
+    suspend fun pullSnapshot(session: AuthSession): RemoteTodoSnapshot
+    suspend fun pushSnapshot(session: AuthSession, snapshot: RemoteTodoSnapshot): RemoteTodoSnapshot
 }

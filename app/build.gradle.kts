@@ -4,8 +4,29 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties()
+if (localPropertiesFile.isFile) {
+    localPropertiesFile.inputStream().use(localProperties::load)
+}
+
+fun pixelDoneConfigValue(vararg candidates: Pair<String, String>): String {
+    for ((gradleName, localName) in candidates) {
+        providers.gradleProperty(gradleName).orNull?.let { return it }
+        localProperties.getProperty(localName)?.let { return it }
+        System.getenv(gradleName)?.let { return it }
+    }
+    return ""
+}
+
+fun pixelDoneBooleanConfigValue(gradleName: String, localName: String): Boolean =
+    pixelDoneConfigValue(gradleName to localName).trim().equals("true", ignoreCase = true)
+
+fun buildConfigString(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 val releaseSigningPropertiesFile = rootProject.file("signing/release-signing.properties")
 val releaseSigningProperties = Properties()
 val releaseSigningRequested = gradle.startParameter.taskNames.any {
@@ -26,6 +47,28 @@ fun releaseSigningProperty(name: String): String =
             "Missing release signing property '$name' in ${releaseSigningPropertiesFile.absolutePath}"
         )
 
+val supabaseUrl = pixelDoneConfigValue(
+    "PIXELDONE_SUPABASE_URL" to "pixeldone.supabaseUrl",
+)
+val supabasePublishableKey = pixelDoneConfigValue(
+    "PIXELDONE_SUPABASE_PUBLISHABLE_KEY" to "pixeldone.supabasePublishableKey",
+    "PIXELDONE_SUPABASE_ANON_KEY" to "pixeldone.supabaseAnonKey",
+)
+val requireCloudConfig = pixelDoneBooleanConfigValue(
+    "PIXELDONE_REQUIRE_CLOUD_CONFIG",
+    "pixeldone.requireCloudConfig",
+)
+
+if (requireCloudConfig && (supabaseUrl.isBlank() || supabasePublishableKey.isBlank())) {
+    throw org.gradle.api.GradleException(
+        "PIXELDONE_REQUIRE_CLOUD_CONFIG=true requires PIXELDONE_SUPABASE_URL and PIXELDONE_SUPABASE_PUBLISHABLE_KEY."
+    )
+}
+
+if (requireCloudConfig && releaseSigningRequested && supabaseUrl.trim().startsWith("http://", ignoreCase = true)) {
+    throw org.gradle.api.GradleException("Cloud-enabled release builds require an HTTPS Supabase URL.")
+}
+
 android {
     namespace = "com.milesxue.pixeldone"
     compileSdk = 37
@@ -34,10 +77,20 @@ android {
         applicationId = "com.milesxue.pixeldone"
         minSdk = 26
         targetSdk = 37
-        versionCode = 64
-        versionName = "2.10.0-rc.1"
+        versionCode = 65
+        versionName = "2.10.0-rc.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            buildConfigString(supabaseUrl),
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_PUBLISHABLE_KEY",
+            buildConfigString(supabasePublishableKey),
+        )
     }
 
     signingConfigs {
@@ -55,10 +108,12 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             buildConfigField("String", "UPDATE_CHANNEL", "\"beta\"")
+            buildConfigField("Boolean", "ALLOW_INSECURE_SUPABASE_HTTP", "true")
         }
         release {
             isDebuggable = false
             buildConfigField("String", "UPDATE_CHANNEL", "\"formal\"")
+            buildConfigField("Boolean", "ALLOW_INSECURE_SUPABASE_HTTP", "false")
             if (releaseSigningPropertiesFile.isFile) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -68,8 +123,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         compose = true
@@ -134,6 +189,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.room.runtime)
+    implementation(libs.kotlinx.serialization.json)
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

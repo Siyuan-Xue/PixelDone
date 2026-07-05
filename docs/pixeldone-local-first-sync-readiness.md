@@ -1,6 +1,6 @@
 # PixelDone Local-First Sync Readiness
 
-This stage keeps PixelDone fully local. It does not add login UI, Supabase SDKs, server URLs, keys, environment files, Docker Compose files, workers, or real network synchronization.
+The previous stage kept PixelDone fully local. The current cloud-sync stage adds optional Supabase Auth and PostgREST sync while preserving local-first behavior when cloud configuration is absent. See `docs/pixeldone-supabase-sync-setup.md` for the active server setup notes.
 
 ## Current Boundary
 

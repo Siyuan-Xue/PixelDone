@@ -1,5 +1,6 @@
 package com.milesxue.pixeldone.ui.todo
 
+import com.milesxue.pixeldone.domain.sync.AuthSession
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.PixelDoneSettings
@@ -14,11 +15,21 @@ import com.milesxue.pixeldone.domain.todo.TodoChecklistState
 data class PixelDoneUiState(
     val checklistState: TodoChecklistState,
     val settings: PixelDoneSettings = PixelDoneSettings(),
+    val authSession: AuthSession = AuthSession(),
+    val authInput: AuthInputState = AuthInputState(),
     val syncStatus: SyncCoordinatorStatus = SyncCoordinatorStatus.LOCAL_ONLY,
     val sortMode: SortMode = SortMode.PRIORITY,
     val hideCompleted: Boolean = false,
     val showDeadlineCountdown: Boolean = false,
     val pendingSystemAction: PendingSystemAction? = null,
+)
+
+data class AuthInputState(
+    val email: String = "",
+    val password: String = "",
+    val busy: Boolean = false,
+    val message: String? = null,
+    val error: String? = null,
 )
 
 /**
@@ -41,5 +52,12 @@ sealed interface PixelDoneAction {
     data class SetDarkTheme(val enabled: Boolean) : PixelDoneAction
     data class SetDockConfig(val config: DockConfig) : PixelDoneAction
     data class SetShowUpdateDialogs(val showDialogs: Boolean) : PixelDoneAction
+    data class SetAuthEmail(val email: String) : PixelDoneAction
+    data class SetAuthPassword(val password: String) : PixelDoneAction
+    data object SignIn : PixelDoneAction
+    data object CancelSignIn : PixelDoneAction
+    data object SignOut : PixelDoneAction
+    data object SyncNow : PixelDoneAction
+    data object DismissAuthMessage : PixelDoneAction
     data object SystemActionConsumed : PixelDoneAction
 }

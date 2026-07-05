@@ -99,6 +99,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -146,6 +148,7 @@ import com.milesxue.pixeldone.data.update.AppUpdateDownloadResult
 import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
+import com.milesxue.pixeldone.domain.sync.AuthSession
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.todo.AllDockActions
 import com.milesxue.pixeldone.domain.todo.DefaultChecklistId
@@ -203,6 +206,7 @@ import com.milesxue.pixeldone.domain.todo.visibleTodos
 import com.milesxue.pixeldone.reminder.ActiveXHighAlarm
 import com.milesxue.pixeldone.reminder.XHighAlarmService
 import com.milesxue.pixeldone.ui.theme.PixelDoneColors
+import com.milesxue.pixeldone.ui.theme.PixelDonePalette
 internal const val CompletionSortDelayMillis = 2_000L
 private const val MinuteMillis = 60_000L
 private const val TodoHighlightFadeMillis = 180
@@ -335,6 +339,7 @@ private sealed interface EditorMode {
     data class EditTask(val id: String) : EditorMode
     data object NewChecklist : EditorMode
     data class EditChecklist(val id: String) : EditorMode
+    data object CloudSignIn : EditorMode
 }
 
 @Composable
@@ -352,6 +357,7 @@ internal fun PixelDoneApp() {
             todoRepository = todoRepository,
             reminderScheduler = reminderScheduler,
             settingsStore = appContainer.settingsStore,
+            authSessionRepository = appContainer.authSessionRepository,
             syncCoordinator = appContainer.syncCoordinator,
         )
     }
@@ -363,6 +369,8 @@ internal fun PixelDoneApp() {
     val dockConfig = settings.dockConfig
     val neverShowUpdateDialog = settings.neverShowUpdateDialog
     val syncStatusText = uiState.syncStatus.settingsLabel()
+    val authSession = uiState.authSession
+    val authInput = uiState.authInput
     var titleInput by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TodoPriority.MEDIUM) }
     var selectedReminderRepeat by remember { mutableStateOf(ReminderRepeat.NONE) }
@@ -435,6 +443,7 @@ internal fun PixelDoneApp() {
     val taskEditorVisible = editorMode is EditorMode.NewTask || editorMode is EditorMode.EditTask
     val checklistEditorVisible =
         editorMode is EditorMode.NewChecklist || editorMode is EditorMode.EditChecklist
+    val cloudSignInEditorVisible = editorMode is EditorMode.CloudSignIn
     val imagePreviewItem = todos.firstOrNull { it.id == imagePreviewTodoId }
 
     LaunchedEffect(darkTheme) {
@@ -494,6 +503,12 @@ internal fun PixelDoneApp() {
         if (updateUiState.shouldAutoRestore) {
             delay(UpdateStatusVisibleMillis)
             updateUiState = AppUpdateUiState()
+        }
+    }
+
+    LaunchedEffect(authSession.signedIn, authSession.cloudAvailable) {
+        if (cloudSignInEditorVisible && (authSession.signedIn || !authSession.cloudAvailable)) {
+            editorMode = EditorMode.None
         }
     }
 
@@ -1006,6 +1021,9 @@ internal fun PixelDoneApp() {
     }
 
     fun cancelEditing() {
+        if (editorMode is EditorMode.CloudSignIn) {
+            viewModel.onAction(PixelDoneAction.CancelSignIn)
+        }
         clearEditor()
         editorMode = EditorMode.None
     }
@@ -1045,6 +1063,10 @@ internal fun PixelDoneApp() {
         enabled = batchMoveMode == BatchMoveMode.IDLE && !batchDeleteActive && checklistBackNavigation != null,
     ) {
         navigateBackChecklist()
+    }
+
+    BackHandler(enabled = cloudSignInEditorVisible) {
+        cancelEditing()
     }
 
     fun toggleBatchDeleteMode() {
@@ -1177,6 +1199,43 @@ internal fun PixelDoneApp() {
 
     fun setDockConfigPreference(config: DockConfig) {
         viewModel.onAction(PixelDoneAction.SetDockConfig(config.normalized()))
+    }
+    fun setAuthEmail(email: String) {
+        viewModel.onAction(PixelDoneAction.SetAuthEmail(email))
+    }
+
+    fun setAuthPassword(password: String) {
+        viewModel.onAction(PixelDoneAction.SetAuthPassword(password))
+    }
+
+    fun openCloudSignInEditor() {
+        if (!isSettingsSelected || !authSession.cloudAvailable || authSession.signedIn) return
+        closeTransientControls()
+        clearEditor()
+        viewModel.onAction(PixelDoneAction.DismissAuthMessage)
+        editorMode = EditorMode.CloudSignIn
+    }
+
+    fun cancelCloudSignIn() {
+        viewModel.onAction(PixelDoneAction.CancelSignIn)
+        if (editorMode is EditorMode.CloudSignIn) {
+            editorMode = EditorMode.None
+        }
+    }
+
+    fun signInToCloud() {
+        viewModel.onAction(PixelDoneAction.SignIn)
+    }
+
+    fun signOutFromCloud() {
+        if (editorMode is EditorMode.CloudSignIn) {
+            editorMode = EditorMode.None
+        }
+        viewModel.onAction(PixelDoneAction.SignOut)
+    }
+
+    fun syncCloudNow() {
+        viewModel.onAction(PixelDoneAction.SyncNow)
     }
 
     fun dismissUpdatePromptDialog() {
@@ -1453,6 +1512,9 @@ internal fun PixelDoneApp() {
             checklistEditorError = checklistEditorError,
             canDeleteChecklist = isNormalChecklistSelected && normalChecklistCount(checklistState) > 1,
             onSubmitChecklist = ::submitChecklist,
+            cloudSignInEditorVisible = cloudSignInEditorVisible,
+            onOpenCloudSignIn = ::openCloudSignInEditor,
+            onCancelCloudSignIn = ::cancelCloudSignIn,
             onDeleteChecklist = {
                 editingChecklistId?.let { id ->
                     checklistState.lists
@@ -1560,6 +1622,14 @@ internal fun PixelDoneApp() {
             onShowUpdateDialogsChange = ::setShowUpdateDialogs,
             currentVersion = BuildConfig.VERSION_NAME,
             syncStatusText = syncStatusText,
+            syncStatus = uiState.syncStatus,
+            authSession = authSession,
+            authInput = authInput,
+            onAuthEmailChange = ::setAuthEmail,
+            onAuthPasswordChange = ::setAuthPassword,
+            onSignIn = ::signInToCloud,
+            onSignOut = ::signOutFromCloud,
+            onSyncNow = ::syncCloudNow,
             permissionSettingsState = permissionRefreshTick.let { currentPermissionSettingsState() },
             onRequestNotificationPermission = ::requestNotificationPermissionFromSettings,
             onRequestExactAlarmPermission = {
@@ -1647,6 +1717,9 @@ private fun PixelDoneScreen(
     checklistEditorError: String?,
     canDeleteChecklist: Boolean,
     onSubmitChecklist: () -> Boolean,
+    cloudSignInEditorVisible: Boolean,
+    onOpenCloudSignIn: () -> Unit,
+    onCancelCloudSignIn: () -> Unit,
     onDeleteChecklist: () -> Unit,
     sortMode: SortMode,
     onSortModeChange: (SortMode) -> Unit,
@@ -1687,6 +1760,14 @@ private fun PixelDoneScreen(
     onShowUpdateDialogsChange: (Boolean) -> Unit,
     currentVersion: String,
     syncStatusText: String,
+    syncStatus: SyncCoordinatorStatus,
+    authSession: AuthSession,
+    authInput: AuthInputState,
+    onAuthEmailChange: (String) -> Unit,
+    onAuthPasswordChange: (String) -> Unit,
+    onSignIn: () -> Unit,
+    onSignOut: () -> Unit,
+    onSyncNow: () -> Unit,
     permissionSettingsState: PermissionSettingsState,
     onRequestNotificationPermission: () -> Unit,
     onRequestExactAlarmPermission: () -> Unit,
@@ -1792,6 +1873,9 @@ private fun PixelDoneScreen(
                 canDeleteChecklist = canDeleteChecklist,
                 onSubmitChecklist = onSubmitChecklist,
                 onDeleteChecklist = onDeleteChecklist,
+                cloudSignInEditorVisible = cloudSignInEditorVisible,
+                onOpenCloudSignIn = onOpenCloudSignIn,
+                onCancelCloudSignIn = onCancelCloudSignIn,
                 updateUiState = updateUiState,
                 onUpdateClick = onUpdateClick,
                 darkTheme = darkTheme,
@@ -1800,6 +1884,14 @@ private fun PixelDoneScreen(
                 onShowUpdateDialogsChange = onShowUpdateDialogsChange,
                 currentVersion = currentVersion,
                 syncStatusText = syncStatusText,
+                syncStatus = syncStatus,
+                authSession = authSession,
+                authInput = authInput,
+                onAuthEmailChange = onAuthEmailChange,
+                onAuthPasswordChange = onAuthPasswordChange,
+                onSignIn = onSignIn,
+                onSignOut = onSignOut,
+                onSyncNow = onSyncNow,
                 permissionSettingsState = permissionSettingsState,
                 onRequestNotificationPermission = onRequestNotificationPermission,
                 onRequestExactAlarmPermission = onRequestExactAlarmPermission,
@@ -2087,6 +2179,9 @@ private fun TaskWorkspacePanel(
     canDeleteChecklist: Boolean,
     onSubmitChecklist: () -> Boolean,
     onDeleteChecklist: () -> Unit,
+    cloudSignInEditorVisible: Boolean,
+    onOpenCloudSignIn: () -> Unit,
+    onCancelCloudSignIn: () -> Unit,
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
     darkTheme: Boolean,
@@ -2095,6 +2190,14 @@ private fun TaskWorkspacePanel(
     onShowUpdateDialogsChange: (Boolean) -> Unit,
     currentVersion: String,
     syncStatusText: String,
+    syncStatus: SyncCoordinatorStatus,
+    authSession: AuthSession,
+    authInput: AuthInputState,
+    onAuthEmailChange: (String) -> Unit,
+    onAuthPasswordChange: (String) -> Unit,
+    onSignIn: () -> Unit,
+    onSignOut: () -> Unit,
+    onSyncNow: () -> Unit,
     permissionSettingsState: PermissionSettingsState,
     onRequestNotificationPermission: () -> Unit,
     onRequestExactAlarmPermission: () -> Unit,
@@ -2117,6 +2220,12 @@ private fun TaskWorkspacePanel(
                 onShowUpdateDialogsChange = onShowUpdateDialogsChange,
                 currentVersion = currentVersion,
                 syncStatusText = syncStatusText,
+                syncStatus = syncStatus,
+                authSession = authSession,
+                authInput = authInput,
+                onOpenCloudSignIn = onOpenCloudSignIn,
+                onSignOut = onSignOut,
+                onSyncNow = onSyncNow,
                 updateUiState = updateUiState,
                 onUpdateClick = onUpdateClick,
                 dockConfig = dockConfig,
@@ -2200,6 +2309,15 @@ private fun TaskWorkspacePanel(
                 onDeleteChecklist = onDeleteChecklist,
                 compactForKeyboard = compactForKeyboard,
             )
+        } else if (isSettingsSelected && cloudSignInEditorVisible) {
+            CloudSignInEditorPanel(
+                authInput = authInput,
+                onAuthEmailChange = onAuthEmailChange,
+                onAuthPasswordChange = onAuthPasswordChange,
+                onSignIn = onSignIn,
+                onCancelSignIn = onCancelCloudSignIn,
+                compactForKeyboard = compactForKeyboard,
+            )
         }
     }
 }
@@ -2212,6 +2330,12 @@ private fun SettingsPanel(
     onShowUpdateDialogsChange: (Boolean) -> Unit,
     currentVersion: String,
     syncStatusText: String,
+    syncStatus: SyncCoordinatorStatus,
+    authSession: AuthSession,
+    authInput: AuthInputState,
+    onOpenCloudSignIn: () -> Unit,
+    onSignOut: () -> Unit,
+    onSyncNow: () -> Unit,
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
     dockConfig: DockConfig,
@@ -2274,6 +2398,18 @@ private fun SettingsPanel(
                 )
             }
 
+
+            SettingsSection(title = "CLOUD") {
+                SettingsCloudPanel(
+                    authSession = authSession,
+                    authInput = authInput,
+                    syncStatusText = syncStatusText,
+                    syncStatus = syncStatus,
+                    onOpenCloudSignIn = onOpenCloudSignIn,
+                    onSignOut = onSignOut,
+                    onSyncNow = onSyncNow,
+                )
+            }
             SettingsSection(title = "UPDATES") {
                 SettingsSegmentedRow(
                     title = "UPDATE POPUP",
@@ -2338,6 +2474,134 @@ private fun SettingsPanel(
     }
 }
 
+@Composable
+private fun SettingsCloudPanel(
+    authSession: AuthSession,
+    authInput: AuthInputState,
+    syncStatusText: String,
+    syncStatus: SyncCoordinatorStatus,
+    onOpenCloudSignIn: () -> Unit,
+    onSignOut: () -> Unit,
+    onSyncNow: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val accountLabel = when {
+        !authSession.cloudAvailable -> "NEEDS SETUP"
+        authSession.signedIn -> authSession.userEmail ?: authSession.userId ?: "SIGNED IN"
+        else -> "SIGNED OUT"
+    }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surfaceSoft)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SettingsRowText(
+                title = "ACCOUNT",
+                value = accountLabel,
+                modifier = Modifier.weight(1f),
+            )
+            if (authSession.signedIn) {
+                PixelButton(
+                    text = "OUT",
+                    onClick = onSignOut,
+                    enabled = !authInput.busy,
+                    modifier = Modifier.width(72.dp),
+                    primary = false,
+                )
+            }
+        }
+
+        if (!authSession.cloudAvailable) {
+            Text(
+                text = authSession.configurationError ?: "Cloud sync is local only.",
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textSecondary,
+            )
+        } else if (authSession.signedIn) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsRowText(
+                    title = "SYNC",
+                    value = syncStatusText,
+                    modifier = Modifier.weight(1f),
+                )
+                PixelButton(
+                    text = if (syncStatus == SyncCoordinatorStatus.SYNCING) "..." else "SYNC",
+                    onClick = onSyncNow,
+                    enabled = syncStatus != SyncCoordinatorStatus.SYNCING && !authInput.busy,
+                    modifier = Modifier.width(72.dp),
+                    primary = false,
+                    selected = syncStatus == SyncCoordinatorStatus.ERROR,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsRowText(
+                    title = "SYNC",
+                    value = syncStatusText,
+                    modifier = Modifier.weight(1f),
+                )
+                PixelButton(
+                    text = if (authInput.busy) "..." else "SIGN IN",
+                    onClick = onOpenCloudSignIn,
+                    enabled = !authInput.busy,
+                    modifier = Modifier.width(88.dp),
+                    primary = false,
+                )
+            }
+        }
+
+        if (authSession.signedIn) authInput.error?.let { error ->
+            Text(
+                text = error,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.error,
+            )
+        }
+        authInput.message?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.success,
+            )
+        }
+    }
+}
+
+@Composable
+private fun settingsTextFieldColors(colors: PixelDonePalette) = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = colors.primary,
+    unfocusedBorderColor = colors.borderWeak,
+    focusedContainerColor = colors.surfaceSoft,
+    unfocusedContainerColor = colors.surfaceSoft,
+    errorBorderColor = colors.error,
+    errorContainerColor = colors.surfaceSoft,
+    disabledContainerColor = colors.surfaceSoft,
+    cursorColor = colors.primaryInteractive,
+    focusedLabelColor = colors.primaryInteractive,
+    unfocusedLabelColor = colors.textSecondary,
+    errorLabelColor = colors.error,
+    focusedTextColor = colors.textPrimary,
+    unfocusedTextColor = colors.textPrimary,
+    errorTextColor = colors.textPrimary,
+    disabledTextColor = colors.textSecondary,
+)
 @Composable
 private fun SettingsSection(
     title: String,
@@ -2780,6 +3044,12 @@ private fun Boolean.permissionLabel(): String =
 
 private fun SyncCoordinatorStatus.settingsLabel(): String = when (this) {
     SyncCoordinatorStatus.LOCAL_ONLY -> "LOCAL ONLY"
+    SyncCoordinatorStatus.NOT_CONFIGURED -> "NEEDS SETUP"
+    SyncCoordinatorStatus.SIGNED_OUT -> "SIGNED OUT"
+    SyncCoordinatorStatus.IDLE -> "READY"
+    SyncCoordinatorStatus.SYNCING -> "SYNCING"
+    SyncCoordinatorStatus.SYNCED -> "SYNCED"
+    SyncCoordinatorStatus.ERROR -> "ERROR"
 }
 
 @Composable
@@ -2958,6 +3228,118 @@ private fun TaskEditorPanel(
                         primary = false,
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CloudSignInEditorPanel(
+    authInput: AuthInputState,
+    onAuthEmailChange: (String) -> Unit,
+    onAuthPasswordChange: (String) -> Unit,
+    onSignIn: () -> Unit,
+    onCancelSignIn: () -> Unit,
+    compactForKeyboard: Boolean,
+) {
+    val focusManager = LocalFocusManager.current
+    val emailFocusRequester = remember { FocusRequester() }
+    val colors = PixelDoneColors.current
+    val verticalGap = if (compactForKeyboard) 8.dp else 12.dp
+
+    LaunchedEffect(Unit) {
+        emailFocusRequester.requestFocus()
+    }
+
+    PixelPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCancelSignIn() },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "SYNC SIGN IN",
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.textSecondary,
+            )
+            Text(
+                text = "CANCEL",
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.primaryInteractive,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            OutlinedTextField(
+                value = authInput.email,
+                onValueChange = onAuthEmailChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(emailFocusRequester),
+                singleLine = true,
+                shape = RectangleShape,
+                textStyle = MaterialTheme.typography.bodyLarge,
+                label = { Text("Email") },
+                enabled = !authInput.busy,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Next,
+                ),
+                colors = settingsTextFieldColors(colors),
+            )
+            Spacer(modifier = Modifier.height(verticalGap))
+            OutlinedTextField(
+                value = authInput.password,
+                onValueChange = onAuthPasswordChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = authInput.error != null,
+                shape = RectangleShape,
+                textStyle = MaterialTheme.typography.bodyLarge,
+                label = { Text("Password") },
+                enabled = !authInput.busy,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { onSignIn() }),
+                colors = settingsTextFieldColors(colors),
+            )
+            authInput.error?.let { error ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = error,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.error,
+                )
+            }
+            Spacer(modifier = Modifier.height(verticalGap))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PixelButton(
+                    text = if (authInput.busy) "SIGNING" else "SIGN IN",
+                    onClick = {
+                        onSignIn()
+                        focusManager.clearFocus()
+                    },
+                    enabled = !authInput.busy,
+                    modifier = Modifier.weight(1f),
+                    primary = true,
+                )
+                PixelButton(
+                    text = "CANCEL",
+                    onClick = {
+                        focusManager.clearFocus()
+                        onCancelSignIn()
+                    },
+                    modifier = Modifier.weight(1f),
+                    primary = false,
+                )
             }
         }
     }
@@ -4629,6 +5011,9 @@ private fun PhonePreview() {
             checklistEditorError = null,
             canDeleteChecklist = true,
             onSubmitChecklist = { true },
+            cloudSignInEditorVisible = false,
+            onOpenCloudSignIn = {},
+            onCancelCloudSignIn = {},
             onDeleteChecklist = {},
             sortMode = SortMode.PRIORITY,
             onSortModeChange = {},
@@ -4671,6 +5056,14 @@ private fun PhonePreview() {
             onShowUpdateDialogsChange = {},
             currentVersion = "2.9.0",
             syncStatusText = "LOCAL ONLY",
+            syncStatus = SyncCoordinatorStatus.LOCAL_ONLY,
+            authSession = AuthSession(),
+            authInput = AuthInputState(),
+            onAuthEmailChange = {},
+            onAuthPasswordChange = {},
+            onSignIn = {},
+            onSignOut = {},
+            onSyncNow = {},
             permissionSettingsState = previewPermissionSettingsState(),
             onRequestNotificationPermission = {},
             onRequestExactAlarmPermission = {},
@@ -4721,6 +5114,9 @@ private fun TabletPreview() {
             checklistEditorError = null,
             canDeleteChecklist = true,
             onSubmitChecklist = { true },
+            cloudSignInEditorVisible = false,
+            onOpenCloudSignIn = {},
+            onCancelCloudSignIn = {},
             onDeleteChecklist = {},
             sortMode = SortMode.TIME,
             onSortModeChange = {},
@@ -4763,6 +5159,14 @@ private fun TabletPreview() {
             onShowUpdateDialogsChange = {},
             currentVersion = "2.7.0",
             syncStatusText = "LOCAL ONLY",
+            syncStatus = SyncCoordinatorStatus.LOCAL_ONLY,
+            authSession = AuthSession(),
+            authInput = AuthInputState(),
+            onAuthEmailChange = {},
+            onAuthPasswordChange = {},
+            onSignIn = {},
+            onSignOut = {},
+            onSyncNow = {},
             permissionSettingsState = previewPermissionSettingsState(),
             onRequestNotificationPermission = {},
             onRequestExactAlarmPermission = {},

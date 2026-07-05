@@ -98,12 +98,12 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 
 - `MainActivity.kt`: Android entry point, system bars, and top-level Compose host only.
 - `PixelDoneApplication.kt`: owns the app-level dependency container.
-- `di/`: manual dependency injection for local storage, settings, sync placeholders, image storage, update service, reminder scheduler, and clock.
+- `di/`: manual dependency injection for local storage, settings, optional Supabase sync, image storage, update service, reminder scheduler, and clock.
 - `domain/todo/`: pure Kotlin todo, checklist, sorting, and reminder rules with no Android or Compose imports.
 - `data/todo/`: todo repository boundary and legacy SharedPreferences JSON migration reader.
 - `data/local/`: Room database, DAO, entities, and mappers for local-first todo/checklist storage.
 - `data/settings/`: DataStore-backed local settings for theme, Dock configuration, update prompts, and future sync toggle placeholder.
-- `data/sync/` and `domain/sync/`: local-only auth/sync seams plus pure Kotlin conflict-resolution placeholders for a future backend.
+- `data/sync/` and `domain/sync/`: backend-agnostic auth/sync seams, Supabase Auth/PostgREST implementations, and pure Kotlin conflict-resolution rules.
 - `data/image/`: private image-copying, safe file-path handling, and preview bitmap sampling.
 - `data/update/`: GitHub-first release checks, synced Gitee fallback, DownloadManager integration, and install-intent preparation.
 - `reminder/`: AlarmManager, notification, boot, receiver, foreground service, and XHigh full-screen alarm integration.
@@ -158,7 +158,7 @@ app/build/outputs/apk/release/PixelDone-2.9.3-release.apk
 The latest beta RC debug APK is:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.10.0-rc.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.10.0-rc.2-debug.apk
 ```
 
 ## Install
@@ -172,7 +172,7 @@ adb install -r app/build/outputs/apk/release/PixelDone-2.9.3-release.apk
 Install the beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.10.0-rc.1-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.10.0-rc.2-debug.apk
 ```
 
 The formal package name is:
@@ -189,4 +189,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.10.0-rc.1 beta RC for local-first Room/DataStore storage, ViewModel-owned settings, and future sync readiness. The latest formal signed release remains 2.9.3.
+2.10.0-rc.2 beta RC for local-first Room/DataStore storage, ViewModel-owned settings, and optional Supabase Auth/PostgREST sync behind the Settings cloud area. The latest formal signed release remains 2.9.3.

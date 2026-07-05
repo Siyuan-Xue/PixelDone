@@ -57,4 +57,14 @@ interface TodoDao {
         insertItems(entitySet.items)
         insertMetadata(entitySet.metadata)
     }
+
+    @Transaction
+    suspend fun getEntitySet(): TodoEntitySet? {
+        val metadata = getMetadata() ?: return null
+        return TodoEntitySet(
+            metadata = metadata,
+            checklists = getChecklists(),
+            items = getItems(),
+        )
+    }
 }

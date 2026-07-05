@@ -11,6 +11,7 @@ import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.domain.todo.TrashChecklistId
 import com.milesxue.pixeldone.domain.todo.createInitialChecklistState
 import com.milesxue.pixeldone.domain.todo.moveTodoItemToTrash
+import com.milesxue.pixeldone.domain.todo.updateChecklistItems
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -49,6 +50,49 @@ class TodoEntityMapperTest {
         assertEquals("image.jpg", trashItem.imageLocalName)
     }
 
+
+    @Test
+    fun localWritePreservesRemoteMetadataAndMarksOwnedRecordDirty() {
+        val initial = createInitialChecklistState(
+            items = listOf(
+                TodoItem(
+                    id = "todo-1",
+                    title = "One",
+                    priority = TodoPriority.HIGH,
+                    dueAtMillis = 2_000L,
+                    completed = false,
+                    createdAtMillis = 1_000L,
+                ),
+            ),
+            createdAtMillis = 1L,
+        )
+        val previousBase = initial.toTodoEntitySet(nowMillis = 2_000L)
+        val previous = previousBase.copy(
+            items = previousBase.items.map { item ->
+                item.copy(
+                    remoteId = "remote-todo-1",
+                    ownerUserId = "user-1",
+                    syncState = SyncRecordState.SYNCED.name,
+                    lastSyncedAtMillis = 2_100L,
+                    remoteVersion = 7L,
+                )
+            },
+        )
+        val updatedTodo = initial.lists.first().items.first().copy(title = "One updated")
+        val updatedState = updateChecklistItems(initial, initial.selectedListId, listOf(updatedTodo))!!
+
+        val saved = updatedState.toTodoEntitySet(
+            nowMillis = 3_000L,
+            previousEntitySet = previous,
+        )
+        val savedItem = saved.items.single { it.localId == "todo-1" }
+
+        assertEquals("remote-todo-1", savedItem.remoteId)
+        assertEquals("user-1", savedItem.ownerUserId)
+        assertEquals(SyncRecordState.NOT_SYNCED.name, savedItem.syncState)
+        assertEquals(2_100L, savedItem.lastSyncedAtMillis)
+        assertEquals(7L, savedItem.remoteVersion)
+    }
     @Test
     fun roundTripsEntitiesBackToNormalizedDomainState() {
         val state = TodoChecklistState(

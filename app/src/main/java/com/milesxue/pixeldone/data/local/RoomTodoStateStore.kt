@@ -32,7 +32,8 @@ class RoomTodoStateStore private constructor(
         val nowMillis = System.currentTimeMillis()
         runBlocking(Dispatchers.IO) {
             ensureMigrated(nowMillis)
-            dao.replaceState(state.toTodoEntitySet(nowMillis))
+            val previous = dao.getEntitySet()
+            dao.replaceState(state.toTodoEntitySet(nowMillis, previousEntitySet = previous))
         }
     }
 
@@ -48,6 +49,17 @@ class RoomTodoStateStore private constructor(
                 .collect { onChange() }
         }
         return { job.cancel() }
+    }
+
+    suspend fun loadEntitySetForSync(nowMillis: Long): TodoEntitySet {
+        ensureMigrated(nowMillis)
+        return dao.getEntitySet() ?: createInitialChecklistState(emptyList(), nowMillis)
+            .toTodoEntitySet(nowMillis)
+            .also { dao.replaceState(it) }
+    }
+
+    suspend fun replaceEntitySetFromSync(entitySet: TodoEntitySet) {
+        dao.replaceState(entitySet)
     }
 
     private suspend fun ensureMigrated(nowMillis: Long) {

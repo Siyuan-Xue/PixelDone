@@ -1,7 +1,7 @@
 package com.milesxue.pixeldone.domain.sync
 
 /**
- * Sync record state stored locally today and mappable to a future Supabase table later.
+ * Sync record state stored locally and mapped to the Supabase tables.
  */
 enum class SyncRecordState {
     LOCAL_ONLY,
@@ -13,12 +13,25 @@ enum class SyncRecordState {
 
 enum class SyncCoordinatorStatus {
     LOCAL_ONLY,
+    NOT_CONFIGURED,
+    SIGNED_OUT,
+    IDLE,
+    SYNCING,
+    SYNCED,
+    ERROR,
 }
 
 data class AuthSession(
     val signedIn: Boolean = false,
     val userId: String? = null,
+    val userEmail: String? = null,
     val displayLabel: String = "LOCAL ONLY",
+    val cloudAvailable: Boolean = false,
+    val accessToken: String? = null,
+    val refreshToken: String? = null,
+    val expiresAtMillis: Long? = null,
+    val configurationError: String? = null,
+    val insecureHttpAllowed: Boolean = false,
 )
 
 data class SyncRecordMetadata(
