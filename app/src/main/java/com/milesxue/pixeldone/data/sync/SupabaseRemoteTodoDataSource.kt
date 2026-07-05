@@ -7,9 +7,10 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
 internal class SupabaseRemoteTodoDataSource(
-    private val httpClient: SupabaseHttpClient,
+    private val httpClient: SupabaseRequestClient,
 ) : RemoteTodoDataSource {
-    private val json = Json { encodeDefaults = false; ignoreUnknownKeys = true }
+    private val responseJson = Json { encodeDefaults = false; ignoreUnknownKeys = true }
+    private val requestJson = Json { encodeDefaults = true }
 
     override suspend fun pullSnapshot(session: AuthSession): RemoteTodoSnapshot {
         val userId = requireNotNull(session.userId) { "Signed-in session requires a user id." }
@@ -35,11 +36,11 @@ internal class SupabaseRemoteTodoDataSource(
             ),
         )
         return RemoteTodoSnapshot(
-            checklists = json.decodeFromString(
+            checklists = responseJson.decodeFromString(
                 ListSerializer(SupabaseChecklistRow.serializer()),
                 checklistBody,
             ).map { it.toRemoteRecord() },
-            items = json.decodeFromString(
+            items = responseJson.decodeFromString(
                 ListSerializer(SupabaseTodoItemRow.serializer()),
                 itemBody,
             ).map { it.toRemoteRecord() },
@@ -54,9 +55,9 @@ internal class SupabaseRemoteTodoDataSource(
         val checklists = if (snapshot.checklists.isEmpty()) {
             emptyList()
         } else {
-            val body = json.encodeToString(
-                ListSerializer(SupabaseChecklistRow.serializer()),
-                snapshot.checklists.map { SupabaseChecklistRow.fromRemoteRecord(it) },
+            val body = requestJson.encodeToString(
+                ListSerializer(SupabaseChecklistUpsertRow.serializer()),
+                snapshot.checklists.map { SupabaseChecklistUpsertRow.fromRemoteRecord(it) },
             )
             val response = httpClient.request(
                 method = "POST",
@@ -66,7 +67,7 @@ internal class SupabaseRemoteTodoDataSource(
                 prefer = "resolution=merge-duplicates,return=representation",
                 body = body,
             )
-            json.decodeFromString(
+            responseJson.decodeFromString(
                 ListSerializer(SupabaseChecklistRow.serializer()),
                 response,
             ).map { it.toRemoteRecord() }
@@ -74,9 +75,9 @@ internal class SupabaseRemoteTodoDataSource(
         val items = if (snapshot.items.isEmpty()) {
             emptyList()
         } else {
-            val body = json.encodeToString(
-                ListSerializer(SupabaseTodoItemRow.serializer()),
-                snapshot.items.map { SupabaseTodoItemRow.fromRemoteRecord(it) },
+            val body = requestJson.encodeToString(
+                ListSerializer(SupabaseTodoItemUpsertRow.serializer()),
+                snapshot.items.map { SupabaseTodoItemUpsertRow.fromRemoteRecord(it) },
             )
             val response = httpClient.request(
                 method = "POST",
@@ -86,7 +87,7 @@ internal class SupabaseRemoteTodoDataSource(
                 prefer = "resolution=merge-duplicates,return=representation",
                 body = body,
             )
-            json.decodeFromString(
+            responseJson.decodeFromString(
                 ListSerializer(SupabaseTodoItemRow.serializer()),
                 response,
             ).map { it.toRemoteRecord() }
@@ -118,10 +119,21 @@ private data class SupabaseChecklistRow(
         deletedAtMillis = deletedAtMillis,
         remoteVersion = remoteVersion ?: updatedAtMillis,
     )
+}
 
+@Serializable
+private data class SupabaseChecklistUpsertRow(
+    @SerialName("owner_user_id") val ownerUserId: String,
+    @SerialName("local_id") val localId: String,
+    @SerialName("sort_index") val sortIndex: Int,
+    val name: String,
+    @SerialName("created_at_millis") val createdAtMillis: Long,
+    @SerialName("updated_at_millis") val updatedAtMillis: Long,
+    @SerialName("deleted_at_millis") val deletedAtMillis: Long?,
+    @SerialName("remote_version") val remoteVersion: Long,
+) {
     companion object {
-        fun fromRemoteRecord(record: RemoteChecklistRecord): SupabaseChecklistRow = SupabaseChecklistRow(
-            remoteId = record.remoteId,
+        fun fromRemoteRecord(record: RemoteChecklistRecord): SupabaseChecklistUpsertRow = SupabaseChecklistUpsertRow(
             ownerUserId = record.ownerUserId,
             localId = record.localId,
             sortIndex = record.sortIndex,
@@ -179,10 +191,32 @@ private data class SupabaseTodoItemRow(
         trashedAtMillis = trashedAtMillis,
         remoteVersion = remoteVersion ?: updatedAtMillis,
     )
+}
 
+@Serializable
+private data class SupabaseTodoItemUpsertRow(
+    @SerialName("owner_user_id") val ownerUserId: String,
+    @SerialName("local_id") val localId: String,
+    @SerialName("checklist_local_id") val checklistLocalId: String,
+    @SerialName("sort_index") val sortIndex: Int,
+    val title: String,
+    val priority: String,
+    @SerialName("due_at_millis") val dueAtMillis: Long,
+    val completed: Boolean,
+    @SerialName("created_at_millis") val createdAtMillis: Long,
+    @SerialName("updated_at_millis") val updatedAtMillis: Long,
+    @SerialName("deleted_at_millis") val deletedAtMillis: Long?,
+    @SerialName("reminder_repeat") val reminderRepeat: String,
+    @SerialName("image_local_name") val imageLocalName: String?,
+    @SerialName("image_remote_path") val imageRemotePath: String?,
+    @SerialName("image_sync_state") val imageSyncState: String,
+    @SerialName("trashed_from_checklist_id") val trashedFromChecklistId: String?,
+    @SerialName("trashed_from_checklist_name") val trashedFromChecklistName: String?,
+    @SerialName("trashed_at_millis") val trashedAtMillis: Long?,
+    @SerialName("remote_version") val remoteVersion: Long,
+) {
     companion object {
-        fun fromRemoteRecord(record: RemoteTodoItemRecord): SupabaseTodoItemRow = SupabaseTodoItemRow(
-            remoteId = record.remoteId,
+        fun fromRemoteRecord(record: RemoteTodoItemRecord): SupabaseTodoItemUpsertRow = SupabaseTodoItemUpsertRow(
             ownerUserId = record.ownerUserId,
             localId = record.localId,
             checklistLocalId = record.checklistLocalId,

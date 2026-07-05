@@ -7,9 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal class SupabaseHttpClient(
-    private val config: SupabaseConfig,
-) {
+internal interface SupabaseRequestClient {
     suspend fun request(
         method: String,
         path: String,
@@ -17,6 +15,19 @@ internal class SupabaseHttpClient(
         query: List<Pair<String, String>> = emptyList(),
         prefer: String? = null,
         body: String? = null,
+    ): String
+}
+
+internal class SupabaseHttpClient(
+    private val config: SupabaseConfig,
+) : SupabaseRequestClient {
+    override suspend fun request(
+        method: String,
+        path: String,
+        bearerToken: String?,
+        query: List<Pair<String, String>>,
+        prefer: String?,
+        body: String?,
     ): String = withContext(Dispatchers.IO) {
         config.configurationError()?.let { throw SyncConfigurationException(it) }
         val url = URL(config.normalizedBaseUrl + path + query.toQuerySuffix())

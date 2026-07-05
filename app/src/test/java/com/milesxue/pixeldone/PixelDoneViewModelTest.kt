@@ -169,6 +169,41 @@ class PixelDoneViewModelTest {
     }
 
     @Test
+    fun syncNowErrorWritesErrorInsteadOfSuccessMessage() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val syncCoordinator = FakeSyncCoordinator(SyncCoordinatorStatus.ERROR)
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            syncCoordinator = syncCoordinator,
+        )
+
+        viewModel.onAction(PixelDoneAction.SyncNow)
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals("Sync failed.", viewModel.uiState.value.authInput.error)
+        assertNull(viewModel.uiState.value.authInput.message)
+    }
+
+    @Test
+    fun syncNowSuccessWritesSuccessMessageInsteadOfError() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val syncCoordinator = FakeSyncCoordinator(SyncCoordinatorStatus.SYNCED)
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            syncCoordinator = syncCoordinator,
+        )
+
+        viewModel.onAction(PixelDoneAction.SyncNow)
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals("Synced.", viewModel.uiState.value.authInput.message)
+        assertNull(viewModel.uiState.value.authInput.error)
+    }
+    @Test
     fun cancelSignInClearsPasswordAndMessagesButKeepsEmail() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
@@ -268,8 +303,10 @@ private class FakeAuthSessionRepository(
         )
     }
 }
-private class FakeSyncCoordinator : SyncCoordinator {
-    private val mutableStatus = MutableStateFlow(SyncCoordinatorStatus.IDLE)
+private class FakeSyncCoordinator(
+    initialStatus: SyncCoordinatorStatus = SyncCoordinatorStatus.IDLE,
+) : SyncCoordinator {
+    private val mutableStatus = MutableStateFlow(initialStatus)
     override val status: StateFlow<SyncCoordinatorStatus> = mutableStatus.asStateFlow()
     var requestCount: Int = 0
 

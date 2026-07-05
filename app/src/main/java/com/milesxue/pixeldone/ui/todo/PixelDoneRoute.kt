@@ -2536,6 +2536,7 @@ private fun SettingsCloudPanel(
                     title = "SYNC",
                     value = syncStatusText,
                     modifier = Modifier.weight(1f),
+                    valueColor = syncStatus.settingsValueColor(colors),
                 )
                 PixelButton(
                     text = if (syncStatus == SyncCoordinatorStatus.SYNCING) "..." else "SYNC",
@@ -2543,7 +2544,6 @@ private fun SettingsCloudPanel(
                     enabled = syncStatus != SyncCoordinatorStatus.SYNCING && !authInput.busy,
                     modifier = Modifier.width(72.dp),
                     primary = false,
-                    selected = syncStatus == SyncCoordinatorStatus.ERROR,
                 )
             }
         } else {
@@ -2556,6 +2556,7 @@ private fun SettingsCloudPanel(
                     title = "SYNC",
                     value = syncStatusText,
                     modifier = Modifier.weight(1f),
+                    valueColor = syncStatus.settingsValueColor(colors),
                 )
                 PixelButton(
                     text = if (authInput.busy) "..." else "SIGN IN",
@@ -3050,6 +3051,12 @@ private fun SyncCoordinatorStatus.settingsLabel(): String = when (this) {
     SyncCoordinatorStatus.SYNCING -> "SYNCING"
     SyncCoordinatorStatus.SYNCED -> "SYNCED"
     SyncCoordinatorStatus.ERROR -> "ERROR"
+}
+
+internal fun SyncCoordinatorStatus.settingsValueColor(colors: PixelDonePalette): Color = when (this) {
+    SyncCoordinatorStatus.ERROR -> colors.error
+    SyncCoordinatorStatus.SYNCED -> colors.success
+    else -> colors.textSecondary
 }
 
 @Composable

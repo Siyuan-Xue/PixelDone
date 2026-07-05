@@ -9,6 +9,7 @@ import com.milesxue.pixeldone.data.sync.AuthSessionRepository
 import com.milesxue.pixeldone.data.sync.LocalOnlyAuthSessionRepository
 import com.milesxue.pixeldone.data.sync.LocalOnlySyncCoordinator
 import com.milesxue.pixeldone.data.sync.SyncCoordinator
+import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.data.todo.TodoRepository
 import com.milesxue.pixeldone.domain.todo.ReminderCapability
 import com.milesxue.pixeldone.domain.todo.TodoChecklistState
@@ -163,7 +164,14 @@ class PixelDoneViewModel(
         viewModelScope.launch {
             updateAuthInput { it.copy(error = null, message = null) }
             val status = syncCoordinator.syncNow()
-            updateAuthInput { it.copy(message = status.settingsMessage()) }
+            val message = status.settingsMessage()
+            updateAuthInput {
+                if (status == SyncCoordinatorStatus.ERROR) {
+                    it.copy(error = message, message = null)
+                } else {
+                    it.copy(error = null, message = message)
+                }
+            }
         }
     }
 
