@@ -2575,13 +2575,6 @@ private fun SettingsCloudPanel(
                 color = colors.error,
             )
         }
-        authInput.message?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.success,
-            )
-        }
     }
 }
 

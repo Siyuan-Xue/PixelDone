@@ -1,0 +1,168 @@
+package com.milesxue.pixeldone
+
+import com.milesxue.pixeldone.data.sync.AuthSessionStore
+import com.milesxue.pixeldone.data.sync.SupabaseAuthSessionRepository
+import com.milesxue.pixeldone.data.sync.SupabaseConfig
+import com.milesxue.pixeldone.data.sync.SupabaseRequestClient
+import com.milesxue.pixeldone.domain.sync.AuthSession
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class SupabaseAuthSessionRepositoryTest {
+    private val json = Json { ignoreUnknownKeys = true }
+
+    @Test
+    fun refreshSessionIfNeededRefreshesExpiredSessionAndPersistsRotatedToken() = runTest {
+        val expired = signedInSession(
+            accessToken = "old-access",
+            refreshToken = "old-refresh",
+            expiresAtMillis = 1_000L,
+        )
+        val store = InMemoryAuthSessionStore(expired)
+        val client = RecordingSessionRequestClient()
+        val repository = SupabaseAuthSessionRepository(
+            config = TestConfig,
+            httpClient = client,
+            sessionStore = store,
+        )
+
+        val refreshed = repository.refreshSessionIfNeeded(nowMillis = 2_000L)
+
+        assertEquals("new-access", refreshed.accessToken)
+        assertEquals("new-refresh", refreshed.refreshToken)
+        assertEquals(3_602_000L, refreshed.expiresAtMillis)
+        assertEquals(refreshed, store.savedSession)
+        assertEquals(refreshed, repository.session.value)
+
+        val request = client.requests.single()
+        assertEquals("POST", request.method)
+        assertEquals("/auth/v1/token", request.path)
+        assertEquals(listOf("grant_type" to "refresh_token"), request.query)
+        val body = json.parseToJsonElement(requireNotNull(request.body)).jsonObject
+        assertEquals("old-refresh", body.getValue("refresh_token").jsonPrimitive.content)
+    }
+
+    @Test
+    fun refreshSessionIfNeededKeepsFreshSessionWithoutNetwork() = runTest {
+        val fresh = signedInSession(expiresAtMillis = 10_000_000L)
+        val store = InMemoryAuthSessionStore(fresh)
+        val client = RecordingSessionRequestClient()
+        val repository = SupabaseAuthSessionRepository(
+            config = TestConfig,
+            httpClient = client,
+            sessionStore = store,
+        )
+
+        val result = repository.refreshSessionIfNeeded(nowMillis = 2_000L)
+
+        assertEquals(fresh, result)
+        assertTrue(client.requests.isEmpty())
+    }
+
+    @Test
+    fun forceRefreshRefreshesFreshSession() = runTest {
+        val fresh = signedInSession(expiresAtMillis = 10_000_000L)
+        val store = InMemoryAuthSessionStore(fresh)
+        val client = RecordingSessionRequestClient()
+        val repository = SupabaseAuthSessionRepository(
+            config = TestConfig,
+            httpClient = client,
+            sessionStore = store,
+        )
+
+        val refreshed = repository.refreshSessionIfNeeded(nowMillis = 2_000L, force = true)
+
+        assertEquals("new-access", refreshed.accessToken)
+        assertEquals(1, client.requests.size)
+    }
+
+    private fun signedInSession(
+        accessToken: String = "access-token",
+        refreshToken: String = "refresh-token",
+        expiresAtMillis: Long,
+    ): AuthSession = AuthSession(
+        signedIn = true,
+        userId = "user-1",
+        userEmail = "user@example.com",
+        displayLabel = "user@example.com",
+        cloudAvailable = true,
+        accessToken = accessToken,
+        refreshToken = refreshToken,
+        expiresAtMillis = expiresAtMillis,
+        insecureHttpAllowed = true,
+    )
+
+    private companion object {
+        val TestConfig = SupabaseConfig(
+            baseUrl = "http://127.0.0.1:8000",
+            publishableKey = "publishable-key",
+            allowInsecureHttp = true,
+        )
+    }
+}
+
+private data class RecordedSessionRequest(
+    val method: String,
+    val path: String,
+    val bearerToken: String?,
+    val query: List<Pair<String, String>>,
+    val prefer: String?,
+    val body: String?,
+)
+
+private class RecordingSessionRequestClient : SupabaseRequestClient {
+    val requests = mutableListOf<RecordedSessionRequest>()
+
+    override suspend fun request(
+        method: String,
+        path: String,
+        bearerToken: String?,
+        query: List<Pair<String, String>>,
+        prefer: String?,
+        body: String?,
+    ): String {
+        requests += RecordedSessionRequest(
+            method = method,
+            path = path,
+            bearerToken = bearerToken,
+            query = query,
+            prefer = prefer,
+            body = body,
+        )
+        return RefreshResponse
+    }
+
+    private companion object {
+        const val RefreshResponse = """
+            {
+              "access_token":"new-access",
+              "refresh_token":"new-refresh",
+              "expires_in":3600,
+              "user":{"id":"user-1","email":"user@example.com"}
+            }
+        """
+    }
+}
+
+private class InMemoryAuthSessionStore(initialSession: AuthSession?) : AuthSessionStore {
+    private var storedSession: AuthSession? = initialSession
+    var savedSession: AuthSession? = null
+        private set
+
+    override fun load(): AuthSession? = storedSession
+
+    override fun save(session: AuthSession) {
+        storedSession = session
+        savedSession = session
+    }
+
+    override fun clear() {
+        storedSession = null
+    }
+}

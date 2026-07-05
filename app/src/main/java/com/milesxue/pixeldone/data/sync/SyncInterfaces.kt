@@ -10,6 +10,7 @@ interface AuthSessionRepository {
     val session: StateFlow<AuthSession>
     suspend fun signIn(email: String, password: String): AuthSession
     suspend fun signOut()
+    suspend fun refreshSessionIfNeeded(nowMillis: Long, force: Boolean = false): AuthSession
 }
 
 class LocalOnlyAuthSessionRepository : AuthSessionRepository {
@@ -21,6 +22,8 @@ class LocalOnlyAuthSessionRepository : AuthSessionRepository {
     }
 
     override suspend fun signOut() = Unit
+
+    override suspend fun refreshSessionIfNeeded(nowMillis: Long, force: Boolean): AuthSession = localOnlySession.value
 }
 
 interface SyncCoordinator {

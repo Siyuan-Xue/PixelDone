@@ -158,7 +158,7 @@ app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
 The latest beta RC debug APK is:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.10.0-rc.3-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.10.1-rc.1-debug.apk
 ```
 
 ## Install
@@ -172,7 +172,7 @@ adb install -r app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
 Install the beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.10.0-rc.3-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.10.1-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -189,4 +189,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.10.0 formal signed release for local-first Room/DataStore storage, optional Settings-based Supabase Auth/PostgREST sync, stable todo item bulk upsert, and corrected sync error presentation. The latest beta RC debug build remains 2.10.0-rc.3.
+2.10.1-rc.1 beta RC for Supabase session refresh/retry during sync, based on Pixel 10A JWT-expired diagnostics. The latest formal signed release remains 2.10.0.

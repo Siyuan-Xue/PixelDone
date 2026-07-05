@@ -302,6 +302,8 @@ private class FakeAuthSessionRepository(
             accessToken = null,
         )
     }
+
+    override suspend fun refreshSessionIfNeeded(nowMillis: Long, force: Boolean): AuthSession = mutableSession.value
 }
 private class FakeSyncCoordinator(
     initialStatus: SyncCoordinatorStatus = SyncCoordinatorStatus.IDLE,

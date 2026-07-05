@@ -10,7 +10,7 @@ import kotlinx.serialization.json.Json
 
 internal class SupabaseAuthSessionRepository(
     private val config: SupabaseConfig,
-    private val httpClient: SupabaseHttpClient,
+    private val httpClient: SupabaseRequestClient,
     private val sessionStore: AuthSessionStore,
 ) : AuthSessionRepository {
     private val json = Json { encodeDefaults = false; ignoreUnknownKeys = true }
@@ -19,9 +19,10 @@ internal class SupabaseAuthSessionRepository(
 
     override suspend fun signIn(email: String, password: String): AuthSession {
         config.configurationError()?.let { throw SyncConfigurationException(it) }
+        val emailFallback = email.trim()
         val body = json.encodeToString(
             SignInRequest.serializer(),
-            SignInRequest(email = email.trim(), password = password),
+            SignInRequest(email = emailFallback, password = password),
         )
         val response = httpClient.request(
             method = "POST",
@@ -30,17 +31,11 @@ internal class SupabaseAuthSessionRepository(
             body = body,
         )
         val token = json.decodeFromString(TokenResponse.serializer(), response)
-        val nowMillis = System.currentTimeMillis()
-        val session = AuthSession(
-            signedIn = true,
-            userId = token.user.id,
-            userEmail = token.user.email ?: email.trim(),
-            displayLabel = token.user.email ?: email.trim(),
-            cloudAvailable = true,
-            accessToken = token.accessToken,
-            refreshToken = token.refreshToken,
-            expiresAtMillis = token.expiresInSeconds?.let { nowMillis + it * 1_000L },
-            insecureHttpAllowed = config.allowInsecureHttp,
+        val session = token.toSession(
+            nowMillis = System.currentTimeMillis(),
+            allowInsecureHttp = config.allowInsecureHttp,
+            emailFallback = emailFallback,
+            fallbackRefreshToken = null,
         )
         sessionStore.save(session)
         mutableSession.value = session
@@ -59,6 +54,37 @@ internal class SupabaseAuthSessionRepository(
         }
         sessionStore.clear()
         mutableSession.value = signedOutSession()
+    }
+
+    override suspend fun refreshSessionIfNeeded(nowMillis: Long, force: Boolean): AuthSession {
+        config.configurationError()?.let { throw SyncConfigurationException(it) }
+        val current = mutableSession.value
+        if (!current.signedIn) return current
+        val refreshToken = current.refreshToken ?: return current
+        val expiresAtMillis = current.expiresAtMillis
+        val isFresh = expiresAtMillis != null && expiresAtMillis - RefreshSkewMillis > nowMillis
+        if (!force && isFresh) return current
+
+        val body = json.encodeToString(
+            RefreshRequest.serializer(),
+            RefreshRequest(refreshToken = refreshToken),
+        )
+        val response = httpClient.request(
+            method = "POST",
+            path = "/auth/v1/token",
+            query = listOf("grant_type" to "refresh_token"),
+            body = body,
+        )
+        val token = json.decodeFromString(TokenResponse.serializer(), response)
+        val session = token.toSession(
+            nowMillis = nowMillis,
+            allowInsecureHttp = config.allowInsecureHttp,
+            emailFallback = current.userEmail ?: current.displayLabel.takeIf { it != "SIGNED IN" },
+            fallbackRefreshToken = refreshToken,
+        )
+        sessionStore.save(session)
+        mutableSession.value = session
+        return session
     }
 
     private fun initialSession(): AuthSession {
@@ -82,12 +108,41 @@ internal class SupabaseAuthSessionRepository(
         cloudAvailable = true,
         insecureHttpAllowed = config.allowInsecureHttp,
     )
+
+    private fun TokenResponse.toSession(
+        nowMillis: Long,
+        allowInsecureHttp: Boolean,
+        emailFallback: String?,
+        fallbackRefreshToken: String?,
+    ): AuthSession {
+        val email = user.email ?: emailFallback
+        return AuthSession(
+            signedIn = true,
+            userId = user.id,
+            userEmail = email,
+            displayLabel = email ?: "SIGNED IN",
+            cloudAvailable = true,
+            accessToken = accessToken,
+            refreshToken = refreshToken ?: fallbackRefreshToken,
+            expiresAtMillis = expiresInSeconds?.let { nowMillis + it * 1_000L },
+            insecureHttpAllowed = allowInsecureHttp,
+        )
+    }
+
+    private companion object {
+        const val RefreshSkewMillis = 60_000L
+    }
 }
 
 @Serializable
 private data class SignInRequest(
     val email: String,
     val password: String,
+)
+
+@Serializable
+private data class RefreshRequest(
+    @SerialName("refresh_token") val refreshToken: String,
 )
 
 @Serializable

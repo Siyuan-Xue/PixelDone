@@ -1,12 +1,10 @@
-PixelDone v2.10.0 is a formal signed release for local-first storage and optional Supabase cloud sync.
+PixelDone v2.10.1-rc.1 is a beta release candidate for Supabase sync reliability after the 2.10.0 cloud-sync launch.
 
 Highlights:
-- Keeps PixelDone local-first while moving task/checklist storage to Room and small settings to DataStore.
-- Keeps sign-in low in the Settings cloud area, with the same bottom-panel interaction language as todo and checklist editing.
-- Adds optional Supabase Auth/PostgREST sync seams for todos and checklists, preserving local ids, remote ids, owner ids, sync state, and sync errors.
-- Fixes Supabase `todo_items` bulk upsert payloads so mixed nullable item fields no longer trigger PostgREST `PGRST102`.
-- Shows failed manual sync as an error state in Settings instead of a green success-style message.
-- Keeps server-side Supabase secret keys out of the Android APK and repository; formal distributed builds require HTTPS cloud configuration for usable sync.
-- Documents the required Supabase SQL schema and RLS policies for `todo_checklists` and `todo_items`.
+- Fixes the Pixel 10A sync failure diagnosed from local sync metadata as Supabase `PGRST303` / `JWT expired`.
+- Refreshes expired Supabase access tokens before sync when a refresh token is available.
+- Retries a sync once after a server-side JWT-expired response, then stores the new rotated refresh token for future syncs.
+- Adds low-noise `PixelDoneSync` Logcat diagnostics for sync failures without logging bearer tokens.
+- Keeps the app local-first and does not change the Supabase table schema.
 
-Install note: this release asset is the signed APK, `PixelDone-2.10.0-release.apk`, for `com.milesxue.pixeldone`. Debug RC builds use the separate package `com.milesxue.pixeldone.debug` and can remain installed separately.
+Install note: this prerelease asset is the debug RC APK, `PixelDone-2.10.1-rc.1-debug.apk`, for `com.milesxue.pixeldone.debug`. It installs separately from the formal signed app `com.milesxue.pixeldone`; the latest formal signed release remains v2.10.0.

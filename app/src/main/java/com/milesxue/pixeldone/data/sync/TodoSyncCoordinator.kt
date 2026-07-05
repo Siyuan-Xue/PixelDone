@@ -1,5 +1,6 @@
 package com.milesxue.pixeldone.data.sync
 
+import android.util.Log
 import com.milesxue.pixeldone.data.local.RoomTodoStateStore
 import com.milesxue.pixeldone.data.local.TodoChecklistEntity
 import com.milesxue.pixeldone.data.local.TodoEntitySet
@@ -50,44 +51,64 @@ internal class TodoSyncCoordinator(
     }
 
     override suspend fun syncNow(): SyncCoordinatorStatus = syncMutex.withLock {
-        val session = authSessionRepository.session.value
-        val readyStatus = statusFor(session)
+        val startingSession = authSessionRepository.session.value
+        val readyStatus = statusFor(startingSession)
         if (readyStatus != SyncCoordinatorStatus.IDLE && readyStatus != SyncCoordinatorStatus.SYNCED) {
             mutableStatus.value = readyStatus
             return@withLock readyStatus
         }
-        val ownerUserId = requireNotNull(session.userId)
+        val ownerUserId = requireNotNull(startingSession.userId)
         mutableStatus.value = SyncCoordinatorStatus.SYNCING
-        val nowMillis = clockProvider.nowMillis()
         return@withLock try {
-            val local = localStore.loadEntitySetForSync(nowMillis).withOwnerAttached(ownerUserId)
-            val remote = remoteDataSource.pullSnapshot(session)
-            val merged = mergeSnapshots(
-                local = local,
-                remote = remote,
-                ownerUserId = ownerUserId,
-                syncedAtMillis = nowMillis,
-            )
-            localStore.replaceEntitySetFromSync(merged)
-            val dirtySnapshot = merged.toDirtyRemoteSnapshot(ownerUserId)
-            if (dirtySnapshot.checklists.isNotEmpty() || dirtySnapshot.items.isNotEmpty()) {
-                val pushed = remoteDataSource.pushSnapshot(session, dirtySnapshot)
-                localStore.replaceEntitySetFromSync(
-                    merged.withPushedRemoteMetadata(
-                        pushed = pushed,
-                        ownerUserId = ownerUserId,
-                        syncedAtMillis = clockProvider.nowMillis(),
-                    ),
-                )
-            }
+            runSyncWithRefreshRetry(ownerUserId)
             mutableStatus.value = SyncCoordinatorStatus.SYNCED
             SyncCoordinatorStatus.SYNCED
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
+            Log.w(LogTag, "PixelDone sync failed: ${error.safeLogMessage()}")
             markSyncError(ownerUserId, error.message ?: "Sync failed.")
             mutableStatus.value = SyncCoordinatorStatus.ERROR
             SyncCoordinatorStatus.ERROR
+        }
+    }
+
+    private suspend fun runSyncWithRefreshRetry(ownerUserId: String) {
+        val session = authSessionRepository.refreshSessionIfNeeded(clockProvider.nowMillis())
+        try {
+            runSync(session, ownerUserId)
+        } catch (error: SyncRemoteException) {
+            if (!error.isExpiredJwt()) throw error
+            Log.i(LogTag, "Supabase access token expired during sync; refreshing and retrying once.")
+            val refreshed = authSessionRepository.refreshSessionIfNeeded(
+                nowMillis = clockProvider.nowMillis(),
+                force = true,
+            )
+            runSync(refreshed, ownerUserId)
+        }
+    }
+
+    private suspend fun runSync(session: AuthSession, ownerUserId: String) {
+        val nowMillis = clockProvider.nowMillis()
+        val local = localStore.loadEntitySetForSync(nowMillis).withOwnerAttached(ownerUserId)
+        val remote = remoteDataSource.pullSnapshot(session)
+        val merged = mergeSnapshots(
+            local = local,
+            remote = remote,
+            ownerUserId = ownerUserId,
+            syncedAtMillis = nowMillis,
+        )
+        localStore.replaceEntitySetFromSync(merged)
+        val dirtySnapshot = merged.toDirtyRemoteSnapshot(ownerUserId)
+        if (dirtySnapshot.checklists.isNotEmpty() || dirtySnapshot.items.isNotEmpty()) {
+            val pushed = remoteDataSource.pushSnapshot(session, dirtySnapshot)
+            localStore.replaceEntitySetFromSync(
+                merged.withPushedRemoteMetadata(
+                    pushed = pushed,
+                    ownerUserId = ownerUserId,
+                    syncedAtMillis = clockProvider.nowMillis(),
+                ),
+            )
         }
     }
 
@@ -121,7 +142,18 @@ internal class TodoSyncCoordinator(
         else -> SyncCoordinatorStatus.IDLE
     }
 
+    private fun SyncRemoteException.isExpiredJwt(): Boolean =
+        statusCode == 401 ||
+            message?.contains("JWT expired", ignoreCase = true) == true ||
+            message?.contains("PGRST303", ignoreCase = true) == true
+
+    private fun Throwable.safeLogMessage(): String = message
+        ?.replace(Regex("Bearer\\s+[^\\s\"]+"), "Bearer <redacted>")
+        ?.take(MaxSyncErrorLength)
+        ?: this::class.java.simpleName
+
     companion object {
+        private const val LogTag = "PixelDoneSync"
         private const val MaxSyncErrorLength = 280
     }
 }
