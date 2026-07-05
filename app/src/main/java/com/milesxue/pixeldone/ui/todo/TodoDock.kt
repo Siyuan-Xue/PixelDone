@@ -1,6 +1,7 @@
 package com.milesxue.pixeldone.ui.todo
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,9 +9,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -37,9 +38,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.milesxue.pixeldone.domain.todo.DockAction
 import com.milesxue.pixeldone.domain.todo.DockConfig
+import com.milesxue.pixeldone.domain.todo.DockItem
 import com.milesxue.pixeldone.domain.todo.DockPlusPlacement
 import com.milesxue.pixeldone.domain.todo.SortMode
-import com.milesxue.pixeldone.domain.todo.centerDockActionSlots
+import com.milesxue.pixeldone.domain.todo.centerDockActionSides
+import com.milesxue.pixeldone.domain.todo.orderedDockItems
 import com.milesxue.pixeldone.ui.theme.PixelDoneColors
 import com.milesxue.pixeldone.ui.todo.components.FloatingNewTaskButton
 import kotlin.math.min
@@ -91,91 +94,105 @@ internal fun BottomActionDock(
     modifier: Modifier = Modifier,
 ) {
     val normalizedConfig = config.normalized()
+    if (
+        normalizedConfig.plusPlacement == DockPlusPlacement.CENTER &&
+        normalizedConfig.actions.size <= 4
+    ) {
+        val sides = centerDockActionSides(normalizedConfig.actions)
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(DockHeight),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.BottomEnd,
+            ) {
+                DockActionGroup(
+                    actions = sides.left,
+                    actionState = actionState,
+                    onActionClick = onActionClick,
+                    modifier = Modifier.padding(end = 18.dp),
+                )
+            }
+            FloatingNewTaskButton(
+                onClick = onAddClick,
+                onLongClick = onAddLongClick,
+                modifier = Modifier.width(AddButtonWidth),
+            )
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.BottomStart,
+            ) {
+                DockActionGroup(
+                    actions = sides.right,
+                    actionState = actionState,
+                    onActionClick = onActionClick,
+                    modifier = Modifier.padding(start = 18.dp),
+                )
+            }
+        }
+        return
+    }
+
+    val items = orderedDockItems(normalizedConfig)
+    val spacing = if (normalizedConfig.actions.size >= 5) 5.dp else 18.dp
+    val alignment = when (normalizedConfig.plusPlacement) {
+        DockPlusPlacement.CENTER -> Alignment.CenterHorizontally
+        DockPlusPlacement.LEFT_EDGE -> Alignment.Start
+        DockPlusPlacement.RIGHT_EDGE -> Alignment.End
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(DockHeight),
+        horizontalArrangement = Arrangement.spacedBy(spacing, alignment),
         verticalAlignment = Alignment.Bottom,
     ) {
-        when (normalizedConfig.plusPlacement) {
-            DockPlusPlacement.CENTER -> {
-                val slots = centerDockActionSlots(normalizedConfig.actions)
-                DockActionSlotRow(
-                    actions = slots.left,
-                    actionState = actionState,
-                    onActionClick = onActionClick,
-                    modifier = Modifier.weight(1f),
-                )
-                FloatingNewTaskButton(
-                    onClick = onAddClick,
-                    onLongClick = onAddLongClick,
-                    modifier = Modifier.width(AddButtonWidth),
-                )
-                DockActionSlotRow(
-                    actions = slots.right,
-                    actionState = actionState,
-                    onActionClick = onActionClick,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            DockPlusPlacement.LEFT_EDGE -> {
-                FloatingNewTaskButton(
-                    onClick = onAddClick,
-                    onLongClick = onAddLongClick,
-                    modifier = Modifier.width(AddButtonWidth),
-                )
-                DockActionSlotRow(
-                    actions = normalizedConfig.actions,
-                    actionState = actionState,
-                    onActionClick = onActionClick,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            DockPlusPlacement.RIGHT_EDGE -> {
-                DockActionSlotRow(
-                    actions = normalizedConfig.actions,
-                    actionState = actionState,
-                    onActionClick = onActionClick,
-                    modifier = Modifier.weight(1f),
-                )
-                FloatingNewTaskButton(
-                    onClick = onAddClick,
-                    onLongClick = onAddLongClick,
-                    modifier = Modifier.width(AddButtonWidth),
-                )
+        items.forEach { item ->
+            when (item) {
+                DockItem.Add -> {
+                    FloatingNewTaskButton(
+                        onClick = onAddClick,
+                        onLongClick = onAddLongClick,
+                    )
+                }
+                is DockItem.Action -> {
+                    val state = actionState[item.action] ?: DockActionUiState(active = false)
+                    DockIconButton(
+                        action = item.action,
+                        active = state.active,
+                        enabled = state.enabled,
+                        onClick = { onActionClick(item.action) },
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun DockActionSlotRow(
-    actions: List<DockAction?>,
+private fun DockActionGroup(
+    actions: List<DockAction>,
     actionState: Map<DockAction, DockActionUiState>,
     onActionClick: (DockAction) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.fillMaxHeight(),
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
         actions.forEach { action ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
-                contentAlignment = Alignment.BottomCenter,
-            ) {
-                if (action != null) {
-                    val state = actionState[action] ?: DockActionUiState(active = false)
-                    DockIconButton(
-                        action = action,
-                        active = state.active,
-                        enabled = state.enabled,
-                        onClick = { onActionClick(action) },
-                    )
-                }
-            }
+            val state = actionState[action] ?: DockActionUiState(active = false)
+            DockIconButton(
+                action = action,
+                active = state.active,
+                enabled = state.enabled,
+                onClick = { onActionClick(action) },
+            )
         }
     }
 }

@@ -72,7 +72,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Use five atomic dock functions for `SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, and `QUICK DELETE`.
 - Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph and a line-drawn trash can for `QUICK DELETE`.
 - Select up to four dock function buttons; selecting a fifth function replaces the first selected function.
-- Distribute dock function buttons evenly across the available dock area for left, center, and right add-button placements.
+- Space dock function buttons from the `+` anchor with fixed gaps; centered odd button counts keep one extra function on the left.
 - Keep the default dock centered as `SORT`, `+`, and `DDL`.
 - Keep `TRASH` and `SETTINGS` free of the normal-checklist dock.
 - Show settings permission state with clickable status glyphs instead of larger config buttons.
@@ -153,7 +153,7 @@ app/build/outputs/apk/release/PixelDone-2.9.2-release.apk
 The current local debug RC build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.3-rc.3-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.3-rc.4-debug.apk
 ```
 
 ## Install
@@ -161,7 +161,7 @@ app/build/outputs/apk/debug/PixelDone-2.9.3-rc.3-debug.apk
 Install the current local debug RC build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.9.3-rc.3-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.9.3-rc.4-debug.apk
 ```
 
 The formal package name is:
@@ -178,4 +178,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.3-rc.3 debug RC for the refined Dock layout, quick-delete icon, and architecture review.
+2.9.3-rc.4 debug RC for the restored anchored Dock spacing, quick-delete icon, and architecture review.

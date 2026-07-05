@@ -6,7 +6,6 @@ import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.DockItem
 import com.milesxue.pixeldone.domain.todo.DockPlusPlacement
 import com.milesxue.pixeldone.domain.todo.MaxDockActions
-import com.milesxue.pixeldone.domain.todo.centerDockActionSlots
 import com.milesxue.pixeldone.domain.todo.centerDockActionSides
 import com.milesxue.pixeldone.domain.todo.normalizeDockActions
 import com.milesxue.pixeldone.domain.todo.orderedDockItems
@@ -44,7 +43,7 @@ class DockRulesTest {
     }
 
     @Test
-    fun centeredDockOrderKeepsOddExtraActionBeforeAdd() {
+    fun centeredDockSidesKeepOddExtraActionBeforeAdd() {
         val sides = centerDockActionSides(
             listOf(
                 DockAction.SORT,
@@ -58,32 +57,27 @@ class DockRulesTest {
     }
 
     @Test
-    fun centeredDockMirrorsOddActionSlots() {
-        val slots = centerDockActionSlots(
-            listOf(
-                DockAction.SORT,
-                DockAction.DEADLINE,
-                DockAction.HIDE_DONE,
+    fun centeredDockItemsPlaceOddExtraActionBeforeAdd() {
+        val items = orderedDockItems(
+            DockConfig(
+                plusPlacement = DockPlusPlacement.CENTER,
+                actions = listOf(
+                    DockAction.SORT,
+                    DockAction.DEADLINE,
+                    DockAction.HIDE_DONE,
+                ),
             ),
         )
 
-        assertEquals(listOf(DockAction.SORT, DockAction.DEADLINE), slots.left)
-        assertEquals(listOf(DockAction.HIDE_DONE, null), slots.right)
-    }
-
-    @Test
-    fun centeredDockUsesEvenActionSlotsWithoutPlaceholders() {
-        val slots = centerDockActionSlots(
+        assertEquals(
             listOf(
-                DockAction.SORT,
-                DockAction.DEADLINE,
-                DockAction.HIDE_DONE,
-                DockAction.DELETE_DONE,
+                DockItem.Action(DockAction.SORT),
+                DockItem.Action(DockAction.DEADLINE),
+                DockItem.Add,
+                DockItem.Action(DockAction.HIDE_DONE),
             ),
+            items,
         )
-
-        assertEquals(listOf(DockAction.SORT, DockAction.DEADLINE), slots.left)
-        assertEquals(listOf(DockAction.HIDE_DONE, DockAction.DELETE_DONE), slots.right)
     }
 
     @Test
