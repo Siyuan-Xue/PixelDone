@@ -29,7 +29,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Tap a todo row to edit it in the bottom editor.
 - Attach one local image to each todo with the row image button.
 - Show completed todos in a compact row that hides subtitles and image actions.
-- Enable the `DELETE MODE` dock function to replace row image slots with direct-to-`TRASH` delete buttons.
+- Enable the `QUICK DELETE` dock function to replace row image slots with direct-to-`TRASH` delete buttons.
 - Preview, replace, or remove a todo image without requesting broad photo-library permission.
 - Decode todo image previews safely for large camera images while preserving the original attachment file.
 - Delete an edited todo from the task editor, matching the checklist editor delete flow.
@@ -69,9 +69,10 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
-- Use five atomic dock functions for `SORT`, `DDL`, `HIDE/UNHIDE`, `DELETE DONE`, and `DELETE MODE`.
-- Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph.
+- Use five atomic dock functions for `SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, and `QUICK DELETE`.
+- Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph and a line-drawn trash can for `QUICK DELETE`.
 - Select up to four dock function buttons; selecting a fifth function replaces the first selected function.
+- Distribute dock function buttons evenly across the available dock area for left, center, and right add-button placements.
 - Keep the default dock centered as `SORT`, `+`, and `DDL`.
 - Keep `TRASH` and `SETTINGS` free of the normal-checklist dock.
 - Show settings permission state with clickable status glyphs instead of larger config buttons.
@@ -101,7 +102,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - `data/image/`: private image-copying, safe file-path handling, and preview bitmap sampling.
 - `data/update/`: GitHub-first release checks, synced Gitee fallback, DownloadManager integration, and install-intent preparation.
 - `reminder/`: AlarmManager, notification, boot, receiver, foreground service, and XHigh full-screen alarm integration.
-- `ui/todo/`: screen route, UI state holder, and ViewModel teaching entry point.
+- `ui/todo/`: screen route, Dock presentation, update/permission presentation rules, UI state holder, and ViewModel teaching entry point.
 - `ui/todo/components/`: reusable pixel-style Compose controls and icons.
 - `ui/theme/`: PixelDone Material theme and Claude/Anthropic-inspired color tokens.
 
@@ -152,7 +153,7 @@ app/build/outputs/apk/release/PixelDone-2.9.2-release.apk
 The current local debug RC build, if assembled, is copied to:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.9.3-rc.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-2.9.3-rc.3-debug.apk
 ```
 
 ## Install
@@ -160,7 +161,7 @@ app/build/outputs/apk/debug/PixelDone-2.9.3-rc.2-debug.apk
 Install the current local debug RC build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.9.3-rc.2-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-2.9.3-rc.3-debug.apk
 ```
 
 The formal package name is:
@@ -177,4 +178,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.9.3-rc.2 debug RC for the clarified Priority/Time dock toggle.
+2.9.3-rc.3 debug RC for the refined Dock layout, quick-delete icon, and architecture review.

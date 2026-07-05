@@ -16,10 +16,10 @@ import com.milesxue.pixeldone.reminder.AndroidReminderScheduler
 import com.milesxue.pixeldone.reminder.ReminderScheduler
 
 /**
- * 手动依赖注入容器。
+ * Manual dependency container.
  *
- * 初学者可以把它理解成“对象工厂”：负责创建 Repository、Store、Scheduler 等长期对象。
- * Activity 和 ViewModel 只使用这些对象，不再关心它们如何构造，从而降低耦合。
+ * This small app does not need Hilt yet. The container creates long-lived repositories,
+ * stores, schedulers, and update services behind a single construction boundary.
  */
 internal class PixelDoneAppContainer(context: Context) {
     private val appContext = context.applicationContext

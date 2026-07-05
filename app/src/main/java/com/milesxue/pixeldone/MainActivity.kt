@@ -11,10 +11,10 @@ import com.milesxue.pixeldone.ui.theme.ClaudeSlateDark
 import com.milesxue.pixeldone.ui.todo.PixelDoneApp
 
 /**
- * Android 应用入口。
+ * Android entry point.
  *
- * 教学说明：Activity 只负责连接 Android 生命周期、系统栏设置和顶层 Compose 内容。
- * 存储、提醒、更新下载等依赖都放到 Application/DI package 中，避免入口类变成“万能类”。
+ * MainActivity owns lifecycle setup, system bars, and the top-level Compose host only.
+ * Storage, reminders, and update dependencies are created by the Application/DI layer.
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

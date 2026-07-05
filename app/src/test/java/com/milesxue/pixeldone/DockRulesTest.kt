@@ -6,6 +6,7 @@ import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.DockItem
 import com.milesxue.pixeldone.domain.todo.DockPlusPlacement
 import com.milesxue.pixeldone.domain.todo.MaxDockActions
+import com.milesxue.pixeldone.domain.todo.centerDockActionSlots
 import com.milesxue.pixeldone.domain.todo.centerDockActionSides
 import com.milesxue.pixeldone.domain.todo.normalizeDockActions
 import com.milesxue.pixeldone.domain.todo.orderedDockItems
@@ -43,7 +44,7 @@ class DockRulesTest {
     }
 
     @Test
-    fun centeredDockGivesOddExtraActionToLeftSide() {
+    fun centeredDockOrderKeepsOddExtraActionBeforeAdd() {
         val sides = centerDockActionSides(
             listOf(
                 DockAction.SORT,
@@ -54,6 +55,35 @@ class DockRulesTest {
 
         assertEquals(listOf(DockAction.SORT, DockAction.DEADLINE), sides.left)
         assertEquals(listOf(DockAction.HIDE_DONE), sides.right)
+    }
+
+    @Test
+    fun centeredDockMirrorsOddActionSlots() {
+        val slots = centerDockActionSlots(
+            listOf(
+                DockAction.SORT,
+                DockAction.DEADLINE,
+                DockAction.HIDE_DONE,
+            ),
+        )
+
+        assertEquals(listOf(DockAction.SORT, DockAction.DEADLINE), slots.left)
+        assertEquals(listOf(DockAction.HIDE_DONE, null), slots.right)
+    }
+
+    @Test
+    fun centeredDockUsesEvenActionSlotsWithoutPlaceholders() {
+        val slots = centerDockActionSlots(
+            listOf(
+                DockAction.SORT,
+                DockAction.DEADLINE,
+                DockAction.HIDE_DONE,
+                DockAction.DELETE_DONE,
+            ),
+        )
+
+        assertEquals(listOf(DockAction.SORT, DockAction.DEADLINE), slots.left)
+        assertEquals(listOf(DockAction.HIDE_DONE, DockAction.DELETE_DONE), slots.right)
     }
 
     @Test

@@ -4,10 +4,10 @@ import android.app.Application
 import com.milesxue.pixeldone.di.PixelDoneAppContainer
 
 /**
- * PixelDone 的应用级入口。
+ * Application-level entry point.
  *
- * 教学说明：Android 会先创建 Application，再创建 Activity、Receiver、Service。
- * 我们把全局依赖容器放在这里，让不同 Android 组件拿到同一套数据层与系统服务封装。
+ * Android creates the Application before activities, receivers, and services.
+ * PixelDone keeps its long-lived dependency container here so every boundary uses the same data layer.
  */
 class PixelDoneApplication : Application() {
     internal lateinit var appContainer: PixelDoneAppContainer

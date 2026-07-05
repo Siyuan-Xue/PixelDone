@@ -22,11 +22,10 @@ import com.milesxue.pixeldone.domain.todo.shouldCancelUnschedulableTodoAlarm
 import com.milesxue.pixeldone.domain.todo.shouldScheduleTodoAlarm
 
 /**
- * Android AlarmManager 适配器。
+ * Android AlarmManager adapter.
  *
- * 教学说明：领域层的 ReminderRules 只计算“下一次什么时候提醒、提醒模式是什么”。
- * 这个对象才负责把结果翻译成 PendingIntent / AlarmClock / inexact alarm。
- * 这样单元测试可以覆盖核心规则，而 Android 系统 API 被集中在一个边界里。
+ * Domain reminder rules decide when and how a reminder should fire. This adapter translates those
+ * decisions into PendingIntent, AlarmClock, or inexact alarm calls at the Android boundary.
  */
 object TodoAlarmScheduler {
     const val EXTRA_TODO_ID = "com.milesxue.pixeldone.extra.TODO_ID"

@@ -11,13 +11,13 @@ import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.createInitialChecklistState
 
 /**
- * SharedPreferences 版本的本地 Todo 存储。
+ * SharedPreferences-backed local todo store.
  *
- * 教学说明：Repository 依赖的是 [TodoStateStore] 接口，真正的 Android 存储细节藏在这里。
- * 本轮重构刻意不迁移 DataStore/Room，因为格式迁移会带来用户数据风险；先用边界隔离旧实现。
+ * The repository depends on [TodoStateStore]; Android storage details stay inside this adapter.
+ * This iteration keeps the existing format to avoid migration risk while preserving a clear boundary.
  *
- * 兼容规则：旧版本只保存 `todos` 数组，新版本保存 `checklist_state`。
- * 如果用户从旧 APK 升级，会在第一次读取时把旧 todos 包装进默认 MAIN 清单并立即保存新状态。
+ * Compatibility rule: older builds stored only a `todos` array. Newer builds store `checklist_state`.
+ * On first read after an upgrade, legacy todos are wrapped into the default MAIN checklist.
  */
 class TodoPreferences(private val sharedPreferences: SharedPreferences) : TodoStateStore {
     override fun loadTodoState(nowMillis: Long): TodoChecklistState {

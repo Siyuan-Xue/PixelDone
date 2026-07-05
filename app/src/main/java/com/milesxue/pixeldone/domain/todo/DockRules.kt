@@ -26,6 +26,11 @@ data class CenterDockActionSides(
     val right: List<DockAction>,
 )
 
+data class CenterDockActionSlots(
+    val left: List<DockAction?>,
+    val right: List<DockAction?>,
+)
+
 sealed interface DockItem {
     data object Add : DockItem
     data class Action(val action: DockAction) : DockItem
@@ -69,6 +74,23 @@ fun centerDockActionSides(actions: List<DockAction>): CenterDockActionSides {
         left = normalizedActions.take(leftCount),
         right = normalizedActions.drop(leftCount),
     )
+}
+
+fun centerDockActionSlots(actions: List<DockAction>): CenterDockActionSlots {
+    val normalizedActions = normalizeDockActions(actions)
+    if (normalizedActions.isEmpty()) {
+        return CenterDockActionSlots(left = emptyList(), right = emptyList())
+    }
+    val slotsPerSide = (normalizedActions.size + 1) / 2
+    return CenterDockActionSlots(
+        left = normalizedActions.take(slotsPerSide).padDockSlots(slotsPerSide),
+        right = normalizedActions.drop(slotsPerSide).padDockSlots(slotsPerSide),
+    )
+}
+
+private fun List<DockAction>.padDockSlots(size: Int): List<DockAction?> {
+    return this.map<DockAction, DockAction?> { action -> action } +
+        List(size - this.size) { null }
 }
 
 fun orderedDockItems(config: DockConfig): List<DockItem> {

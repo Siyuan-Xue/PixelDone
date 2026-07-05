@@ -1,12 +1,10 @@
-PixelDone v2.9.3-rc.2 is a debug RC for the clarified Priority/Time dock toggle.
+PixelDone v2.9.3-rc.3 is a debug RC for the refined Dock layout, quick-delete icon, and architecture review.
 
 Highlights:
-- Replaces the compound `PRI/TIME` icon with a direct `P` or `T` state glyph.
-- Adds explicit accessibility state for the current sort mode: `PRIORITY` or `TIME`.
-- Clarifies the dock settings copy for the sort control.
-- Keeps the existing sort behavior, dock actions, ordering rules, and settings persistence.
-- Keeps this build on the debug beta channel for local RC validation.
+- Rebalances Dock action distribution so left, center, and right add-button placements use the available Dock width evenly.
+- Keeps the center add button geometrically centered while using mirrored action slots for odd button counts.
+- Redraws the quick-delete Dock icon with a clearer line-style trash can.
+- Splits Dock and update/permission presentation code out of the main route for a cleaner teaching architecture.
+- Adds a Google Play readiness review covering permission, privacy, robustness, and Dock function boundaries.
 
-Install note: use the local debug RC APK, `PixelDone-2.9.3-rc.2-debug.apk`, for direct installation or update of `com.milesxue.pixeldone.debug`. Existing `com.milesxue.pixeldone` formal installs remain separate.
-
-CODEX & XUE
+Install note: use the local debug RC APK, `PixelDone-2.9.3-rc.3-debug.apk`, for direct installation or update of `com.milesxue.pixeldone.debug`. Existing `com.milesxue.pixeldone` formal installs remain separate.

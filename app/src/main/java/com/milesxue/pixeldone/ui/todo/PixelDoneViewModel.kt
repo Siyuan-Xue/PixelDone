@@ -12,10 +12,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * PixelDone 的屏幕级状态持有者。
+ * Screen-level state holder.
  *
- * 教学说明：ViewModel 位于 UI 层，但不应该包含 Compose 代码。
- * 它负责把用户意图转换为 repository 更新和提醒调度，再把新的不可变 UI state 暴露给界面。
+ * The ViewModel belongs to the UI layer but contains no Compose code. It translates
+ * user intent into repository updates and reminder scheduling, then exposes immutable state.
  */
 class PixelDoneViewModel(
     private val todoRepository: TodoRepository,

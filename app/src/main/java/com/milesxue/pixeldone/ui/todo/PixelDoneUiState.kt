@@ -4,10 +4,9 @@ import com.milesxue.pixeldone.domain.todo.SortMode
 import com.milesxue.pixeldone.domain.todo.TodoChecklistState
 
 /**
- * PixelDone 屏幕状态。
+ * Immutable state rendered by the PixelDone screen.
  *
- * 教学说明：现代 Android 推荐 UI 渲染“不可变状态”，用户操作再通过 action 回到 ViewModel。
- * 这个 data class 只描述屏幕需要知道的事实，不负责读写磁盘或调用 Android 系统服务。
+ * This data class describes facts the screen needs. It does not read storage or call Android APIs.
  */
 data class PixelDoneUiState(
     val checklistState: TodoChecklistState,
@@ -18,10 +17,9 @@ data class PixelDoneUiState(
 )
 
 /**
- * 一次性系统动作。
+ * One-shot system work that must be consumed once by the UI boundary.
  *
- * 教学说明：请求权限、打开设置页、打开安装界面这类动作不能直接存在普通 state 中反复执行。
- * 因此用明确类型表达“下一次 UI 需要消费的外部动作”，消费后由 ViewModel 清空。
+ * Permission requests, settings screens, and install prompts should not run repeatedly from plain state.
  */
 sealed interface PendingSystemAction {
     data object RequestNotificationPermission : PendingSystemAction

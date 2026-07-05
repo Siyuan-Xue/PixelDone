@@ -78,12 +78,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -116,7 +112,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
-import com.milesxue.pixeldone.ui.todo.components.FloatingNewTaskButton
 import com.milesxue.pixeldone.ui.todo.components.PixelAlarmIcon
 import com.milesxue.pixeldone.ui.todo.components.PixelButton
 import com.milesxue.pixeldone.ui.todo.components.PixelItemDeleteButton
@@ -135,7 +130,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
-import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -152,7 +146,59 @@ import com.milesxue.pixeldone.data.update.AppUpdateDownloadResult
 import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
-import com.milesxue.pixeldone.domain.todo.*
+import com.milesxue.pixeldone.domain.todo.AllDockActions
+import com.milesxue.pixeldone.domain.todo.DefaultChecklistId
+import com.milesxue.pixeldone.domain.todo.DefaultChecklistName
+import com.milesxue.pixeldone.domain.todo.DockAction
+import com.milesxue.pixeldone.domain.todo.DockConfig
+import com.milesxue.pixeldone.domain.todo.DockPlusPlacement
+import com.milesxue.pixeldone.domain.todo.MaxDockActions
+import com.milesxue.pixeldone.domain.todo.ReminderCapability
+import com.milesxue.pixeldone.domain.todo.ReminderRepeat
+import com.milesxue.pixeldone.domain.todo.SettingsChecklistId
+import com.milesxue.pixeldone.domain.todo.SettingsChecklistName
+import com.milesxue.pixeldone.domain.todo.SortMode
+import com.milesxue.pixeldone.domain.todo.TodoChecklist
+import com.milesxue.pixeldone.domain.todo.TodoChecklistState
+import com.milesxue.pixeldone.domain.todo.TodoItem
+import com.milesxue.pixeldone.domain.todo.TodoPriority
+import com.milesxue.pixeldone.domain.todo.TrashChecklistId
+import com.milesxue.pixeldone.domain.todo.TrashChecklistName
+import com.milesxue.pixeldone.domain.todo.activeTodoCount
+import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodoAfterReminder
+import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodosAfterReminder
+import com.milesxue.pixeldone.domain.todo.completedTodoCount
+import com.milesxue.pixeldone.domain.todo.createTodoChecklist
+import com.milesxue.pixeldone.domain.todo.createTodoItem
+import com.milesxue.pixeldone.domain.todo.deleteAllTrashTodos
+import com.milesxue.pixeldone.domain.todo.deleteTodoChecklist
+import com.milesxue.pixeldone.domain.todo.isChecklistNameAvailable
+import com.milesxue.pixeldone.domain.todo.isNormalChecklist
+import com.milesxue.pixeldone.domain.todo.isSettingsChecklist
+import com.milesxue.pixeldone.domain.todo.isSettingsChecklistId
+import com.milesxue.pixeldone.domain.todo.isSpecialChecklistId
+import com.milesxue.pixeldone.domain.todo.isTrashChecklist
+import com.milesxue.pixeldone.domain.todo.moveCompletedTodosToTrash
+import com.milesxue.pixeldone.domain.todo.moveTodoItemToTrash
+import com.milesxue.pixeldone.domain.todo.moveTodoItemsToChecklist
+import com.milesxue.pixeldone.domain.todo.normalChecklistCount
+import com.milesxue.pixeldone.domain.todo.normalTodos
+import com.milesxue.pixeldone.domain.todo.normalizeDockActions
+import com.milesxue.pixeldone.domain.todo.normalizeRepeatingDueAtMillis
+import com.milesxue.pixeldone.domain.todo.renameTodoChecklist
+import com.milesxue.pixeldone.domain.todo.requiredReminderCapabilities
+import com.milesxue.pixeldone.domain.todo.restoreTodoFromTrash
+import com.milesxue.pixeldone.domain.todo.selectTodoChecklist
+import com.milesxue.pixeldone.domain.todo.selectedChecklistOf
+import com.milesxue.pixeldone.domain.todo.snoozeTodoAfterReminder
+import com.milesxue.pixeldone.domain.todo.snoozeTodosAfterReminder
+import com.milesxue.pixeldone.domain.todo.toggleDockActionSelection
+import com.milesxue.pixeldone.domain.todo.toggleTodoCompletion
+import com.milesxue.pixeldone.domain.todo.trashTodos
+import com.milesxue.pixeldone.domain.todo.updateChecklistItems
+import com.milesxue.pixeldone.domain.todo.updateTodoImageFileName
+import com.milesxue.pixeldone.domain.todo.updateTodoItem
+import com.milesxue.pixeldone.domain.todo.visibleTodos
 import com.milesxue.pixeldone.reminder.ActiveXHighAlarm
 import com.milesxue.pixeldone.reminder.XHighAlarmService
 import com.milesxue.pixeldone.ui.theme.PixelDoneColors
@@ -165,124 +211,8 @@ private val PixelReadTopBarContentHeight = 36.dp
 private val PixelReadFrameInset = 8.dp
 private val PixelDoneFooterHeight = 24.dp
 private val DialogActionMinHeight = 44.dp
-private const val InitialUpdateCheckDelayMillis = 600L
-private const val UpdateStatusVisibleMillis = 3_000L
 private const val MinPreviewScale = 1f
 private const val MaxPreviewScale = 6f
-private const val BytesPerMegabyte = 1024.0 * 1024.0
-
-private enum class UpdateUiStatus {
-    Idle,
-    Checking,
-    Latest,
-    Available,
-    Offline,
-    Downloading,
-    Installing,
-}
-
-private data class AppUpdateUiState(
-    val status: UpdateUiStatus = UpdateUiStatus.Idle,
-    val info: AppUpdateInfo? = null,
-    val message: String? = null,
-    val progress: AppUpdateDownloadProgress = AppUpdateDownloadProgress(),
-) {
-    val contentDescription: String
-        get() = when (status) {
-            UpdateUiStatus.Idle -> "CHECK UPDATE"
-            UpdateUiStatus.Checking -> "CHECKING UPDATE"
-            UpdateUiStatus.Latest -> "LATEST VERSION"
-            UpdateUiStatus.Available -> "GET UPDATE"
-            UpdateUiStatus.Offline -> "UPDATE CHECK UNAVAILABLE"
-            UpdateUiStatus.Downloading -> "DOWNLOADING UPDATE"
-            UpdateUiStatus.Installing -> "INSTALLING UPDATE"
-        }
-
-    val shouldAutoRestore: Boolean
-        get() = status == UpdateUiStatus.Latest ||
-            status == UpdateUiStatus.Offline ||
-            status == UpdateUiStatus.Installing
-}
-
-internal fun formatUpdateDownloadMessage(
-    version: String,
-    progress: AppUpdateDownloadProgress = AppUpdateDownloadProgress(),
-): String {
-    val base = "downloading: v$version"
-    progress.percent?.let { percent ->
-        return "$base $percent%"
-    }
-    return if (progress.bytesDownloaded > 0L) {
-        "$base ${formatDownloadedMegabytes(progress.bytesDownloaded)}"
-    } else {
-        base
-    }
-}
-
-internal fun formatDownloadedMegabytes(bytes: Long): String {
-    return String.format(
-        Locale.US,
-        "%.1fMB",
-        bytes.coerceAtLeast(0L) / BytesPerMegabyte,
-    )
-}
-
-internal fun shouldShowAvailableUpdateDialog(
-    neverShowUpdateDialog: Boolean,
-    hasActiveUpdateDownload: Boolean,
-): Boolean = !neverShowUpdateDialog && !hasActiveUpdateDownload
-
-internal fun shouldShowUpdatePromptSetting(neverShowUpdateDialog: Boolean): Boolean =
-    !neverShowUpdateDialog
-
-internal enum class UpdateInstallPermissionAction {
-    OpenInstaller,
-    RequestInstallPermission,
-}
-
-internal fun updateInstallPermissionAction(hasInstallUpdatePermission: Boolean): UpdateInstallPermissionAction {
-    return if (hasInstallUpdatePermission) {
-        UpdateInstallPermissionAction.OpenInstaller
-    } else {
-        UpdateInstallPermissionAction.RequestInstallPermission
-    }
-}
-
-internal fun hasFullScreenIntentAccessForSdk(
-    sdkInt: Int,
-    canUseFullScreenIntent: Boolean,
-): Boolean = sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || canUseFullScreenIntent
-
-internal enum class SystemReminderPermissionTarget {
-    EXACT_ALARM,
-    FULL_SCREEN_INTENT,
-}
-
-internal data class SystemReminderPermissionDecision(
-    val target: SystemReminderPermissionTarget,
-    val queueFullScreenFollowUp: Boolean,
-)
-
-internal fun systemReminderPermissionDecision(
-    missingCapabilities: Set<ReminderCapability>,
-): SystemReminderPermissionDecision? {
-    return when {
-        ReminderCapability.EXACT_ALARM_ACCESS in missingCapabilities -> {
-            SystemReminderPermissionDecision(
-                target = SystemReminderPermissionTarget.EXACT_ALARM,
-                queueFullScreenFollowUp =
-                    ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities,
-            )
-        }
-        ReminderCapability.FULL_SCREEN_INTENT_ACCESS in missingCapabilities -> {
-            SystemReminderPermissionDecision(
-                target = SystemReminderPermissionTarget.FULL_SCREEN_INTENT,
-                queueFullScreenFollowUp = false,
-            )
-        }
-        else -> null
-    }
-}
 
 private data class PermissionSettingsState(
     val notificationsGranted: Boolean,
@@ -2613,30 +2543,6 @@ private fun DockPlusPlacement.settingsLabel(): String = when (this) {
     DockPlusPlacement.RIGHT_EDGE -> "RIGHT"
 }
 
-private fun DockAction.settingsTitle(): String = when (this) {
-    DockAction.SORT -> "SORT"
-    DockAction.DEADLINE -> "DDL"
-    DockAction.HIDE_DONE -> "HIDE/UNHIDE"
-    DockAction.DELETE_DONE -> "DELETE DONE"
-    DockAction.BATCH_DELETE -> "DELETE MODE"
-}
-
-private fun DockAction.settingsValue(): String = when (this) {
-    DockAction.SORT -> "priority / time"
-    DockAction.DEADLINE -> "deadline countdown"
-    DockAction.HIDE_DONE -> "done visibility"
-    DockAction.DELETE_DONE -> "completed cleanup"
-    DockAction.BATCH_DELETE -> "row quick delete"
-}
-
-private fun DockAction.contentDescription(): String = when (this) {
-    DockAction.SORT -> "TOGGLE SORT"
-    DockAction.DEADLINE -> "TOGGLE DEADLINE"
-    DockAction.HIDE_DONE -> "TOGGLE DONE VISIBILITY"
-    DockAction.DELETE_DONE -> "DELETE COMPLETED TASKS"
-    DockAction.BATCH_DELETE -> "TOGGLE QUICK DELETE"
-}
-
 @Composable
 private fun SettingsSectionTitle(text: String) {
     val colors = PixelDoneColors.current
@@ -3563,332 +3469,6 @@ internal fun PendingTodoToggleFeedback.recordTodoToggle(
         initialCompletedById = initialStates,
         latestCompletedById = latestCompletedById + (id to checked),
     )
-}
-
-private data class DockActionUiState(
-    val active: Boolean,
-    val enabled: Boolean = true,
-)
-
-private fun dockActionState(
-    sortMode: SortMode,
-    hideCompleted: Boolean,
-    showDeadlineCountdown: Boolean,
-    completedCount: Int,
-    totalCount: Int,
-    batchDeleteActive: Boolean,
-): Map<DockAction, DockActionUiState> = mapOf(
-    DockAction.SORT to DockActionUiState(active = sortMode == SortMode.TIME),
-    DockAction.DEADLINE to DockActionUiState(active = showDeadlineCountdown),
-    DockAction.HIDE_DONE to DockActionUiState(active = hideCompleted),
-    DockAction.DELETE_DONE to DockActionUiState(
-        active = false,
-        enabled = completedCount > 0,
-    ),
-    DockAction.BATCH_DELETE to DockActionUiState(
-        active = batchDeleteActive,
-        enabled = totalCount > 0,
-    ),
-)
-
-private fun previewDockActionState(): Map<DockAction, DockActionUiState> = mapOf(
-    DockAction.SORT to DockActionUiState(active = false),
-    DockAction.DEADLINE to DockActionUiState(active = false),
-    DockAction.HIDE_DONE to DockActionUiState(active = false),
-    DockAction.DELETE_DONE to DockActionUiState(active = false),
-    DockAction.BATCH_DELETE to DockActionUiState(active = false),
-)
-
-@Composable
-private fun BottomActionDock(
-    config: DockConfig,
-    actionState: Map<DockAction, DockActionUiState>,
-    onActionClick: (DockAction) -> Unit,
-    onAddClick: () -> Unit,
-    onAddLongClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val normalizedConfig = config.normalized()
-    if (
-        normalizedConfig.plusPlacement == DockPlusPlacement.CENTER &&
-        normalizedConfig.actions.size <= 4
-    ) {
-        val sides = centerDockActionSides(normalizedConfig.actions)
-        Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .height(64.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.BottomEnd,
-            ) {
-                DockActionGroup(
-                    actions = sides.left,
-                    actionState = actionState,
-                    onActionClick = onActionClick,
-                    modifier = Modifier.padding(end = 18.dp),
-                )
-            }
-            FloatingNewTaskButton(
-                onClick = onAddClick,
-                onLongClick = onAddLongClick,
-                modifier = Modifier.width(56.dp),
-            )
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.BottomStart,
-            ) {
-                DockActionGroup(
-                    actions = sides.right,
-                    actionState = actionState,
-                    onActionClick = onActionClick,
-                    modifier = Modifier.padding(start = 18.dp),
-                )
-            }
-        }
-        return
-    }
-
-    val items = orderedDockItems(normalizedConfig)
-    val spacing = if (normalizedConfig.actions.size >= 5) 5.dp else 18.dp
-    val alignment = when (normalizedConfig.plusPlacement) {
-        DockPlusPlacement.CENTER -> Alignment.CenterHorizontally
-        DockPlusPlacement.LEFT_EDGE -> Alignment.Start
-        DockPlusPlacement.RIGHT_EDGE -> Alignment.End
-    }
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(64.dp),
-        horizontalArrangement = Arrangement.spacedBy(spacing, alignment),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        items.forEach { item ->
-            when (item) {
-                DockItem.Add -> {
-                    FloatingNewTaskButton(
-                        onClick = onAddClick,
-                        onLongClick = onAddLongClick,
-                    )
-                }
-                is DockItem.Action -> {
-                    val state = actionState[item.action] ?: DockActionUiState(active = false)
-                    DockIconButton(
-                        action = item.action,
-                        active = state.active,
-                        enabled = state.enabled,
-                        onClick = { onActionClick(item.action) },
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DockActionGroup(
-    actions: List<DockAction>,
-    actionState: Map<DockAction, DockActionUiState>,
-    onActionClick: (DockAction) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        actions.forEach { action ->
-            val state = actionState[action] ?: DockActionUiState(active = false)
-            DockIconButton(
-                action = action,
-                active = state.active,
-                enabled = state.enabled,
-                onClick = { onActionClick(action) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun DockIconButton(
-    action: DockAction,
-    active: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val colors = PixelDoneColors.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val iconColor = when {
-        !enabled -> colors.disabledText
-        active -> colors.primary
-        else -> colors.textPrimary
-    }
-    val borderColor = when {
-        !enabled -> colors.borderWeak
-        active -> colors.primary
-        else -> colors.textPrimary
-    }
-    val backgroundColor = when {
-        !enabled -> colors.disabledSurface
-        pressed -> colors.surfaceRaised
-        else -> colors.selectedSurface
-    }
-
-    Box(
-        modifier = modifier
-            .size(44.dp)
-            .background(backgroundColor, RectangleShape)
-            .border(2.dp, borderColor, RectangleShape)
-            .clickable(
-                enabled = enabled,
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            )
-            .semantics {
-                contentDescription = action.contentDescription()
-                if (action == DockAction.SORT) {
-                    stateDescription = if (active) "TIME" else "PRIORITY"
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        DockActionIcon(action = action, color = iconColor, active = active)
-    }
-}
-
-@Composable
-private fun DockActionIcon(
-    action: DockAction,
-    color: Color,
-    modifier: Modifier = Modifier.size(22.dp),
-    active: Boolean = false,
-) {
-    if (action == DockAction.SORT) {
-        Box(
-            modifier = modifier,
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = if (active) "T" else "P",
-                color = color,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.sp,
-                maxLines = 1,
-                textAlign = TextAlign.Center,
-            )
-        }
-        return
-    }
-
-    Canvas(modifier = modifier) {
-        val iconSize = min(size.width, size.height)
-        val left = (size.width - iconSize) / 2f
-        val top = (size.height - iconSize) / 2f
-        fun x(value: Float): Float = left + iconSize * value / 22f
-        fun y(value: Float): Float = top + iconSize * value / 22f
-        fun offset(rawX: Float, rawY: Float): Offset = Offset(x(rawX), y(rawY))
-        val strokeWidth = iconSize * 2.2f / 22f
-        val thinStrokeWidth = iconSize * 1.6f / 22f
-        val heavyStrokeWidth = iconSize * 2.8f / 22f
-        val iconStroke = Stroke(
-            width = strokeWidth,
-            cap = StrokeCap.Square,
-            join = StrokeJoin.Miter,
-        )
-        fun rect(
-            left: Float,
-            top: Float,
-            right: Float,
-            bottom: Float,
-            width: Float = strokeWidth,
-        ) {
-            drawRect(
-                color = color,
-                topLeft = offset(left, top),
-                size = Size(x(right) - x(left), y(bottom) - y(top)),
-                style = Stroke(
-                    width = width,
-                    cap = StrokeCap.Square,
-                    join = StrokeJoin.Miter,
-                ),
-            )
-        }
-        fun line(
-            startX: Float,
-            startY: Float,
-            endX: Float,
-            endY: Float,
-            width: Float = strokeWidth,
-        ) {
-            drawLine(
-                color = color,
-                start = offset(startX, startY),
-                end = offset(endX, endY),
-                strokeWidth = width,
-                cap = StrokeCap.Square,
-            )
-        }
-        when (action) {
-            DockAction.SORT -> Unit
-            DockAction.DEADLINE -> {
-                rect(4f, 5.5f, 18f, 18f, strokeWidth)
-                line(4f, 9f, 18f, 9f, thinStrokeWidth)
-                line(7f, 3.5f, 7f, 7.5f, heavyStrokeWidth)
-                line(15f, 3.5f, 15f, 7.5f, heavyStrokeWidth)
-                drawCircle(
-                    color = color,
-                    radius = iconSize * 3f / 22f,
-                    center = offset(11f, 13.6f),
-                    style = Stroke(
-                        width = thinStrokeWidth,
-                        cap = StrokeCap.Square,
-                        join = StrokeJoin.Miter,
-                    ),
-                )
-                line(11f, 13.6f, 11f, 11.7f, thinStrokeWidth)
-                line(11f, 13.6f, 13.2f, 14.8f, thinStrokeWidth)
-            }
-            DockAction.HIDE_DONE -> {
-                val eyePath = Path().apply {
-                    moveTo(x(3f), y(11f))
-                    lineTo(x(7.5f), y(6.5f))
-                    lineTo(x(14.5f), y(6.5f))
-                    lineTo(x(19f), y(11f))
-                    lineTo(x(14.5f), y(15.5f))
-                    lineTo(x(7.5f), y(15.5f))
-                    close()
-                }
-                drawPath(color = color, path = eyePath, style = iconStroke)
-                rect(9f, 9f, 13f, 13f, thinStrokeWidth)
-                line(5f, 4.5f, 17f, 17.5f, heavyStrokeWidth)
-            }
-            DockAction.DELETE_DONE -> {
-                line(5f, 6f, 17f, 6f, heavyStrokeWidth)
-                line(8.5f, 3.5f, 13.5f, 3.5f, heavyStrokeWidth)
-                rect(6f, 8f, 16f, 18f, strokeWidth)
-                line(8.3f, 13.4f, 10.1f, 15.2f, thinStrokeWidth)
-                line(10.1f, 15.2f, 14f, 10.8f, thinStrokeWidth)
-            }
-            DockAction.BATCH_DELETE -> {
-                line(3.5f, 5f, 12f, 5f, strokeWidth)
-                line(3.5f, 10f, 12f, 10f, strokeWidth)
-                line(3.5f, 15f, 12f, 15f, strokeWidth)
-                line(14f, 7f, 20f, 7f, heavyStrokeWidth)
-                line(15.7f, 5f, 18.3f, 5f, heavyStrokeWidth)
-                rect(14.8f, 9f, 19.2f, 17f, strokeWidth)
-                line(16.2f, 10.5f, 16.2f, 15.5f, thinStrokeWidth)
-                line(17.8f, 10.5f, 17.8f, 15.5f, thinStrokeWidth)
-            }
-        }
-    }
 }
 
 @Composable
