@@ -98,7 +98,9 @@ class PixelDoneViewModel(
             }
             is PixelDoneAction.SetAuthEmail -> updateAuthInput { it.copy(email = action.email, error = null, message = null) }
             is PixelDoneAction.SetAuthPassword -> updateAuthInput { it.copy(password = action.password, error = null, message = null) }
+            is PixelDoneAction.SetCloudAuthMode -> updateAuthInput { it.copy(mode = action.mode, error = null, message = null) }
             PixelDoneAction.SignIn -> signIn()
+            PixelDoneAction.SignUp -> signUp()
             PixelDoneAction.CancelSignIn -> cancelSignIn()
             PixelDoneAction.SignOut -> signOut()
             PixelDoneAction.SyncNow -> syncNow()
@@ -120,6 +122,28 @@ class PixelDoneViewModel(
     }
 
     private fun signIn() {
+        submitAuth(
+            successMessage = "Signed in.",
+            defaultError = "Sign in failed.",
+        ) { email, password ->
+            authSessionRepository.signIn(email, password)
+        }
+    }
+
+    private fun signUp() {
+        submitAuth(
+            successMessage = "Signed up.",
+            defaultError = "Sign up failed.",
+        ) { email, password ->
+            authSessionRepository.signUp(email, password)
+        }
+    }
+
+    private fun submitAuth(
+        successMessage: String,
+        defaultError: String,
+        submit: suspend (email: String, password: String) -> Any?,
+    ) {
         val input = _uiState.value.authInput
         val email = input.email.trim()
         if (email.isBlank() || input.password.isBlank()) {
@@ -129,14 +153,14 @@ class PixelDoneViewModel(
         viewModelScope.launch {
             updateAuthInput { it.copy(busy = true, error = null, message = null) }
             try {
-                authSessionRepository.signIn(email, input.password)
-                updateAuthInput { it.copy(password = "", busy = false, error = null, message = "Signed in.") }
+                submit(email, input.password)
+                updateAuthInput { it.copy(password = "", busy = false, error = null, message = successMessage) }
                 syncCoordinator.requestSync()
             } catch (error: Exception) {
                 updateAuthInput {
                     it.copy(
                         busy = false,
-                        error = error.message ?: "Sign in failed.",
+                        error = error.message ?: defaultError,
                         message = null,
                     )
                 }

@@ -67,7 +67,8 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep Android 14+ full-screen intent permission checks tied to the system grant and preserve STOP/SNOOZE access when Android denies full-screen launch.
 - Treat a direct return from Android's Full Screen access page as no grant instead of repeatedly reopening the permission page.
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
-- Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control update prompts, reconfigure permissions, check for updates, and view the current version.
+- Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control cloud sync, control update prompts, reconfigure permissions, check for updates, and view the current version.
+- Sign up, sign in, sign out, and manually sync todos/checklists through the low-key Settings `CLOUD` area.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
 - Use five atomic dock functions for `SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, and `QUICK DELETE`.
 - Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph and a line-drawn trash can for `QUICK DELETE`.
@@ -93,6 +94,8 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - SharedPreferences legacy migration reader
 - AlarmManager notifications
 - Manual dependency injection
+- Supabase Auth and PostgREST via native Android HTTP
+- Android Keystore-backed session storage
 
 ## Architecture Map
 
@@ -133,6 +136,17 @@ macOS/Linux:
 
 Release signing is configured through the local, untracked `signing/release-signing.properties` file for formal releases.
 
+Cloud-enabled builds receive public Supabase client configuration at build time through Gradle properties, environment variables, or untracked `local.properties` entries:
+
+```properties
+pixeldone.supabaseUrl=http://SERVER_IP:8000
+pixeldone.supabasePublishableKey=YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY
+pixeldone.requireCloudConfig=true
+pixeldone.allowInsecureSupabaseHttp=true
+```
+
+`pixeldone.allowInsecureSupabaseHttp=true` is only for the current direct-IP HTTP server phase. Remove it after the service moves to `pixeldone.com` with HTTPS.
+
 ## Release And Update Source
 
 Code pushes, tags, formal releases, and beta RC prereleases stay on GitHub:
@@ -158,7 +172,7 @@ app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
 The latest beta RC debug APK is:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-2.10.1-rc.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-3.0.0-rc.1-debug.apk
 ```
 
 ## Install
@@ -172,7 +186,7 @@ adb install -r app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
 Install the beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-2.10.1-rc.1-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-3.0.0-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -189,4 +203,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-2.10.1-rc.1 beta RC for Supabase session refresh/retry during sync, based on Pixel 10A JWT-expired diagnostics. The latest formal signed release remains 2.10.0.
+3.0.0-rc.1 beta RC for Settings-scoped Supabase sign-up/sign-in and local-first todo/checklist sync. The latest formal signed release remains 2.10.0 until RC validation is complete.

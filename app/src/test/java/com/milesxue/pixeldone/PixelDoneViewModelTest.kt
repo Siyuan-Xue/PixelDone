@@ -17,6 +17,7 @@ import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.domain.todo.createInitialChecklistState
 import com.milesxue.pixeldone.domain.todo.updateChecklistItems
 import com.milesxue.pixeldone.reminder.ReminderScheduler
+import com.milesxue.pixeldone.ui.todo.CloudAuthMode
 import com.milesxue.pixeldone.ui.todo.PixelDoneAction
 import com.milesxue.pixeldone.ui.todo.PixelDoneViewModel
 import kotlinx.coroutines.Dispatchers
@@ -169,6 +170,84 @@ class PixelDoneViewModelTest {
     }
 
     @Test
+    fun signUpSuccessClearsPasswordAndRequestsSync() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val authRepository = FakeAuthSessionRepository()
+        val syncCoordinator = FakeSyncCoordinator()
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            authSessionRepository = authRepository,
+            syncCoordinator = syncCoordinator,
+        )
+
+        viewModel.onAction(PixelDoneAction.SetCloudAuthMode(CloudAuthMode.SIGN_UP))
+        viewModel.onAction(PixelDoneAction.SetAuthEmail("new@example.com"))
+        viewModel.onAction(PixelDoneAction.SetAuthPassword("secret"))
+        viewModel.onAction(PixelDoneAction.SignUp)
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals(listOf("new@example.com" to "secret"), authRepository.signUpRequests)
+        assertEquals(true, viewModel.uiState.value.authSession.signedIn)
+        assertEquals("new@example.com", viewModel.uiState.value.authSession.userEmail)
+        assertEquals("", viewModel.uiState.value.authInput.password)
+        assertEquals(CloudAuthMode.SIGN_UP, viewModel.uiState.value.authInput.mode)
+        assertEquals("Signed up.", viewModel.uiState.value.authInput.message)
+        assertNull(viewModel.uiState.value.authInput.error)
+        assertEquals(1, syncCoordinator.requestCount)
+    }
+
+    @Test
+    fun signUpFailureKeepsPanelStateAndShowsError() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val authRepository = FakeAuthSessionRepository(signUpFailure = IllegalStateException("Email already registered"))
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            authSessionRepository = authRepository,
+        )
+
+        viewModel.onAction(PixelDoneAction.SetCloudAuthMode(CloudAuthMode.SIGN_UP))
+        viewModel.onAction(PixelDoneAction.SetAuthEmail("new@example.com"))
+        viewModel.onAction(PixelDoneAction.SetAuthPassword("secret"))
+        viewModel.onAction(PixelDoneAction.SignUp)
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals(false, viewModel.uiState.value.authSession.signedIn)
+        assertEquals("secret", viewModel.uiState.value.authInput.password)
+        assertEquals(CloudAuthMode.SIGN_UP, viewModel.uiState.value.authInput.mode)
+        assertEquals("Email already registered", viewModel.uiState.value.authInput.error)
+        assertNull(viewModel.uiState.value.authInput.message)
+    }
+
+    @Test
+    fun cloudAuthModeChangeClearsMessagesWithoutClearingCredentials() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val authRepository = FakeAuthSessionRepository(signInFailure = IllegalStateException("Wrong password"))
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            authSessionRepository = authRepository,
+        )
+
+        viewModel.onAction(PixelDoneAction.SetAuthEmail("person@example.com"))
+        viewModel.onAction(PixelDoneAction.SetAuthPassword("secret"))
+        viewModel.onAction(PixelDoneAction.SignIn)
+        mainDispatcherRule.advanceUntilIdle()
+        viewModel.onAction(PixelDoneAction.SetCloudAuthMode(CloudAuthMode.SIGN_UP))
+
+        val input = viewModel.uiState.value.authInput
+        assertEquals("person@example.com", input.email)
+        assertEquals("secret", input.password)
+        assertEquals(CloudAuthMode.SIGN_UP, input.mode)
+        assertNull(input.error)
+        assertNull(input.message)
+    }
+
+    @Test
     fun syncNowErrorWritesErrorInsteadOfSuccessMessage() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
@@ -271,6 +350,7 @@ private class FakeReminderScheduler : ReminderScheduler {
 
 private class FakeAuthSessionRepository(
     private val signInFailure: Exception? = null,
+    private val signUpFailure: Exception? = null,
 ) : AuthSessionRepository {
     private val mutableSession = MutableStateFlow(
         AuthSession(
@@ -280,10 +360,26 @@ private class FakeAuthSessionRepository(
     )
     override val session: StateFlow<AuthSession> = mutableSession.asStateFlow()
     var signInRequests: List<Pair<String, String>> = emptyList()
+    var signUpRequests: List<Pair<String, String>> = emptyList()
 
     override suspend fun signIn(email: String, password: String): AuthSession {
         signInRequests = signInRequests + (email to password)
         signInFailure?.let { throw it }
+        val signedInSession = AuthSession(
+            signedIn = true,
+            userId = "user-1",
+            userEmail = email,
+            displayLabel = email,
+            cloudAvailable = true,
+            accessToken = "access-token",
+        )
+        mutableSession.value = signedInSession
+        return signedInSession
+    }
+
+    override suspend fun signUp(email: String, password: String): AuthSession {
+        signUpRequests = signUpRequests + (email to password)
+        signUpFailure?.let { throw it }
         val signedInSession = AuthSession(
             signedIn = true,
             userId = "user-1",

@@ -1208,6 +1208,10 @@ internal fun PixelDoneApp() {
         viewModel.onAction(PixelDoneAction.SetAuthPassword(password))
     }
 
+    fun setCloudAuthMode(mode: CloudAuthMode) {
+        viewModel.onAction(PixelDoneAction.SetCloudAuthMode(mode))
+    }
+
     fun openCloudSignInEditor() {
         if (!isSettingsSelected || !authSession.cloudAvailable || authSession.signedIn) return
         closeTransientControls()
@@ -1225,6 +1229,10 @@ internal fun PixelDoneApp() {
 
     fun signInToCloud() {
         viewModel.onAction(PixelDoneAction.SignIn)
+    }
+
+    fun signUpToCloud() {
+        viewModel.onAction(PixelDoneAction.SignUp)
     }
 
     fun signOutFromCloud() {
@@ -1627,7 +1635,9 @@ internal fun PixelDoneApp() {
             authInput = authInput,
             onAuthEmailChange = ::setAuthEmail,
             onAuthPasswordChange = ::setAuthPassword,
+            onAuthModeChange = ::setCloudAuthMode,
             onSignIn = ::signInToCloud,
+            onSignUp = ::signUpToCloud,
             onSignOut = ::signOutFromCloud,
             onSyncNow = ::syncCloudNow,
             permissionSettingsState = permissionRefreshTick.let { currentPermissionSettingsState() },
@@ -1765,7 +1775,9 @@ private fun PixelDoneScreen(
     authInput: AuthInputState,
     onAuthEmailChange: (String) -> Unit,
     onAuthPasswordChange: (String) -> Unit,
+    onAuthModeChange: (CloudAuthMode) -> Unit,
     onSignIn: () -> Unit,
+    onSignUp: () -> Unit,
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     permissionSettingsState: PermissionSettingsState,
@@ -1889,7 +1901,9 @@ private fun PixelDoneScreen(
                 authInput = authInput,
                 onAuthEmailChange = onAuthEmailChange,
                 onAuthPasswordChange = onAuthPasswordChange,
+                onAuthModeChange = onAuthModeChange,
                 onSignIn = onSignIn,
+                onSignUp = onSignUp,
                 onSignOut = onSignOut,
                 onSyncNow = onSyncNow,
                 permissionSettingsState = permissionSettingsState,
@@ -2195,7 +2209,9 @@ private fun TaskWorkspacePanel(
     authInput: AuthInputState,
     onAuthEmailChange: (String) -> Unit,
     onAuthPasswordChange: (String) -> Unit,
+    onAuthModeChange: (CloudAuthMode) -> Unit,
     onSignIn: () -> Unit,
+    onSignUp: () -> Unit,
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     permissionSettingsState: PermissionSettingsState,
@@ -2310,12 +2326,14 @@ private fun TaskWorkspacePanel(
                 compactForKeyboard = compactForKeyboard,
             )
         } else if (isSettingsSelected && cloudSignInEditorVisible) {
-            CloudSignInEditorPanel(
+            CloudAuthEditorPanel(
                 authInput = authInput,
                 onAuthEmailChange = onAuthEmailChange,
                 onAuthPasswordChange = onAuthPasswordChange,
+                onAuthModeChange = onAuthModeChange,
                 onSignIn = onSignIn,
-                onCancelSignIn = onCancelCloudSignIn,
+                onSignUp = onSignUp,
+                onCancelAuth = onCancelCloudSignIn,
                 compactForKeyboard = compactForKeyboard,
             )
         }
@@ -3234,18 +3252,27 @@ private fun TaskEditorPanel(
 }
 
 @Composable
-private fun CloudSignInEditorPanel(
+private fun CloudAuthEditorPanel(
     authInput: AuthInputState,
     onAuthEmailChange: (String) -> Unit,
     onAuthPasswordChange: (String) -> Unit,
+    onAuthModeChange: (CloudAuthMode) -> Unit,
     onSignIn: () -> Unit,
-    onCancelSignIn: () -> Unit,
+    onSignUp: () -> Unit,
+    onCancelAuth: () -> Unit,
     compactForKeyboard: Boolean,
 ) {
     val focusManager = LocalFocusManager.current
     val emailFocusRequester = remember { FocusRequester() }
     val colors = PixelDoneColors.current
     val verticalGap = if (compactForKeyboard) 8.dp else 12.dp
+    val submitAuth = if (authInput.mode == CloudAuthMode.SIGN_UP) onSignUp else onSignIn
+    val submitText = when {
+        authInput.busy && authInput.mode == CloudAuthMode.SIGN_UP -> "SIGNING UP"
+        authInput.busy -> "SIGNING"
+        authInput.mode == CloudAuthMode.SIGN_UP -> "SIGN UP"
+        else -> "SIGN IN"
+    }
 
     LaunchedEffect(Unit) {
         emailFocusRequester.requestFocus()
@@ -3255,12 +3282,12 @@ private fun CloudSignInEditorPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onCancelSignIn() },
+                .clickable { onCancelAuth() },
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "SYNC SIGN IN",
+                text = authInput.mode.cloudAuthTitle(),
                 style = MaterialTheme.typography.labelLarge,
                 color = colors.textSecondary,
             )
@@ -3272,6 +3299,15 @@ private fun CloudSignInEditorPanel(
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+        PixelSegmentedControl(
+            options = listOf(CloudAuthMode.SIGN_IN, CloudAuthMode.SIGN_UP),
+            selected = authInput.mode,
+            label = { it.cloudAuthLabel() },
+            onSelected = { mode ->
+                if (!authInput.busy) onAuthModeChange(mode)
+            },
+        )
+        Spacer(modifier = Modifier.height(verticalGap))
         Column(
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -3308,7 +3344,7 @@ private fun CloudSignInEditorPanel(
                     keyboardType = KeyboardType.Password,
                     imeAction = ImeAction.Done,
                 ),
-                keyboardActions = KeyboardActions(onDone = { onSignIn() }),
+                keyboardActions = KeyboardActions(onDone = { submitAuth() }),
                 colors = settingsTextFieldColors(colors),
             )
             authInput.error?.let { error ->
@@ -3322,9 +3358,9 @@ private fun CloudSignInEditorPanel(
             Spacer(modifier = Modifier.height(verticalGap))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PixelButton(
-                    text = if (authInput.busy) "SIGNING" else "SIGN IN",
+                    text = submitText,
                     onClick = {
-                        onSignIn()
+                        submitAuth()
                         focusManager.clearFocus()
                     },
                     enabled = !authInput.busy,
@@ -3335,7 +3371,7 @@ private fun CloudSignInEditorPanel(
                     text = "CANCEL",
                     onClick = {
                         focusManager.clearFocus()
-                        onCancelSignIn()
+                        onCancelAuth()
                     },
                     modifier = Modifier.weight(1f),
                     primary = false,
@@ -3345,6 +3381,15 @@ private fun CloudSignInEditorPanel(
     }
 }
 
+private fun CloudAuthMode.cloudAuthLabel(): String = when (this) {
+    CloudAuthMode.SIGN_IN -> "SIGN IN"
+    CloudAuthMode.SIGN_UP -> "SIGN UP"
+}
+
+private fun CloudAuthMode.cloudAuthTitle(): String = when (this) {
+    CloudAuthMode.SIGN_IN -> "SYNC SIGN IN"
+    CloudAuthMode.SIGN_UP -> "SYNC SIGN UP"
+}
 @Composable
 private fun ChecklistEditorPanel(
     nameInput: String,
@@ -5061,7 +5106,9 @@ private fun PhonePreview() {
             authInput = AuthInputState(),
             onAuthEmailChange = {},
             onAuthPasswordChange = {},
+            onAuthModeChange = {},
             onSignIn = {},
+            onSignUp = {},
             onSignOut = {},
             onSyncNow = {},
             permissionSettingsState = previewPermissionSettingsState(),
@@ -5164,7 +5211,9 @@ private fun TabletPreview() {
             authInput = AuthInputState(),
             onAuthEmailChange = {},
             onAuthPasswordChange = {},
+            onAuthModeChange = {},
             onSignIn = {},
+            onSignUp = {},
             onSignOut = {},
             onSyncNow = {},
             permissionSettingsState = previewPermissionSettingsState(),

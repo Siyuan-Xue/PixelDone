@@ -58,6 +58,10 @@ val requireCloudConfig = pixelDoneBooleanConfigValue(
     "PIXELDONE_REQUIRE_CLOUD_CONFIG",
     "pixeldone.requireCloudConfig",
 )
+val allowInsecureSupabaseHttp = pixelDoneBooleanConfigValue(
+    "PIXELDONE_ALLOW_INSECURE_SUPABASE_HTTP",
+    "pixeldone.allowInsecureSupabaseHttp",
+)
 
 if (requireCloudConfig && (supabaseUrl.isBlank() || supabasePublishableKey.isBlank())) {
     throw org.gradle.api.GradleException(
@@ -65,8 +69,15 @@ if (requireCloudConfig && (supabaseUrl.isBlank() || supabasePublishableKey.isBla
     )
 }
 
-if (requireCloudConfig && releaseSigningRequested && supabaseUrl.trim().startsWith("http://", ignoreCase = true)) {
-    throw org.gradle.api.GradleException("Cloud-enabled release builds require an HTTPS Supabase URL.")
+if (
+    requireCloudConfig &&
+    releaseSigningRequested &&
+    supabaseUrl.trim().startsWith("http://", ignoreCase = true) &&
+    !allowInsecureSupabaseHttp
+) {
+    throw org.gradle.api.GradleException(
+        "Cloud-enabled release builds require HTTPS unless PIXELDONE_ALLOW_INSECURE_SUPABASE_HTTP=true."
+    )
 }
 
 android {
@@ -77,8 +88,8 @@ android {
         applicationId = "com.milesxue.pixeldone"
         minSdk = 26
         targetSdk = 37
-        versionCode = 68
-        versionName = "2.10.1-rc.1"
+        versionCode = 69
+        versionName = "3.0.0-rc.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(
@@ -109,11 +120,13 @@ android {
             applicationIdSuffix = ".debug"
             buildConfigField("String", "UPDATE_CHANNEL", "\"beta\"")
             buildConfigField("Boolean", "ALLOW_INSECURE_SUPABASE_HTTP", "true")
+            resValue("bool", "allow_insecure_supabase_http", "true")
         }
         release {
             isDebuggable = false
             buildConfigField("String", "UPDATE_CHANNEL", "\"formal\"")
-            buildConfigField("Boolean", "ALLOW_INSECURE_SUPABASE_HTTP", "false")
+            buildConfigField("Boolean", "ALLOW_INSECURE_SUPABASE_HTTP", allowInsecureSupabaseHttp.toString())
+            resValue("bool", "allow_insecure_supabase_http", allowInsecureSupabaseHttp.toString())
             if (releaseSigningPropertiesFile.isFile) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -129,6 +142,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 }
 

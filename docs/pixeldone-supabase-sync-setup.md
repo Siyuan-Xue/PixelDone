@@ -1,6 +1,6 @@
 # PixelDone Supabase Sync Setup
 
-PixelDone now has a local-first cloud sync implementation for todos and checklists. The app still works without any cloud configuration. When Supabase configuration is present, the Settings screen exposes email/password sign-in and manual sync, and local todo edits request background sync through the app container.
+PixelDone now has a local-first cloud sync implementation for todos and checklists. The app still works without any cloud configuration. When Supabase configuration is present, the Settings screen exposes email/password sign-up, sign-in, sign-out, and manual sync. Local todo edits request background sync through the app container.
 
 ## Runtime Configuration
 
@@ -16,15 +16,17 @@ Example `local.properties` entries:
 ```properties
 pixeldone.supabaseUrl=http://SERVER_IP:8000
 pixeldone.supabasePublishableKey=YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY
+pixeldone.requireCloudConfig=true
+pixeldone.allowInsecureSupabaseHttp=true
 ```
 
 `local.properties`, signing files, and CI secret values must not be committed. Release APKs do not receive a runtime `.env` file from users; the developer or CI injects the public Supabase URL and publishable/anon key at build time. These values are client configuration and can be extracted from an APK, so do not place service-role keys, secret keys, database passwords, signing keys, or signing passwords in the Android app.
 
-Debug builds allow cleartext HTTP so a direct IP Supabase endpoint can be tested before DNS, ICP filing, TLS, and reverse proxy work are finished. Release builds keep cleartext HTTP blocked at runtime. When building a cloud-enabled release, set `PIXELDONE_REQUIRE_CLOUD_CONFIG=true` or `pixeldone.requireCloudConfig=true` to fail the build if the Supabase URL/key is missing or the release URL is HTTP. A formal cloud-enabled release should use HTTPS.
+Debug builds allow cleartext HTTP so a direct IP Supabase endpoint can be tested before DNS, ICP filing, TLS, and reverse proxy work are finished. Release builds keep cleartext HTTP blocked by default. During the current personal beta/direct-IP phase, a cloud-enabled release may explicitly set `PIXELDONE_ALLOW_INSECURE_SUPABASE_HTTP=true` or `pixeldone.allowInsecureSupabaseHttp=true` to allow HTTP. Keep `PIXELDONE_REQUIRE_CLOUD_CONFIG=true` or `pixeldone.requireCloudConfig=true` for cloud release builds so missing URL/key values fail the build. Remove the insecure HTTP flag after moving to `pixeldone.com` with HTTPS.
 
 ## Supabase Auth
 
-The first implementation uses Supabase Auth email/password sign-in. The app does not include sign-up UI yet. Create test users in Supabase Studio or add sign-up later as a separate product decision.
+PixelDone uses Supabase Auth email/password sign-up and sign-in inside the Settings `CLOUD` bottom panel. Sign-up expects the self-hosted Supabase Auth service to auto-confirm email accounts, so the app receives a session immediately after registration. Configure the server with `ENABLE_EMAIL_SIGNUP=true`, `ENABLE_EMAIL_AUTOCONFIRM=true`, and `DISABLE_SIGNUP=false`, then restart the Auth service. Do not implement auto-confirm in the Android app and never ship a service-role key in the APK.
 
 Access tokens are stored with Android Keystore-backed AES-GCM encryption in private app storage. Passwords are never persisted.
 
@@ -112,21 +114,20 @@ create policy "Users can update their todo items"
 
 Included now:
 
-- Email/password sign-in and sign-out.
+- Email/password sign-up, sign-in, and sign-out.
 - Local-first todo/checklist sync through Supabase Auth and PostgREST.
 - Last-write-wins merge based on `updated_at_millis` and `deleted_at_millis`.
 - Local Room metadata preservation for `remoteId`, `ownerUserId`, `syncState`, `lastSyncedAtMillis`, `remoteVersion`, and `lastSyncError`.
-- Debug-only cleartext HTTP support for direct IP testing.
+- Debug cleartext HTTP support for direct IP testing, plus an explicit release opt-in for the current personal beta HTTP phase.
 
 Not included yet:
 
-- Sign-up UI.
 - Password reset UI.
 - Image upload or Supabase Storage sync.
 - Settings sync.
 - Push/realtime sync.
 - Background WorkManager scheduling.
-- Formal release support for cleartext HTTP.
+
 
 ## Android Networking And CORS
 
@@ -136,4 +137,4 @@ The relevant Android controls are the `INTERNET` permission, network security co
 
 ## Operational Notes
 
-Use the publishable key, or a legacy anon key when that is what the self-hosted Supabase deployment exposes, in the Android app. Never use the service role key in Android code, `local.properties`, release assets, or public CI logs. RLS must be enabled before using a shared server. If the Supabase instance is exposed over HTTP, only use debug builds and trusted networks. Move to HTTPS before any broader distribution.
+Use the publishable key, or a legacy anon key when that is what the self-hosted Supabase deployment exposes, in the Android app. Never use the service role key in Android code, `local.properties`, release assets, or public CI logs. RLS must be enabled before using a shared server. If the Supabase instance is exposed over HTTP, use trusted networks and set the explicit insecure HTTP build flag only for the current personal beta/direct-IP phase. Move to HTTPS before any broader distribution.

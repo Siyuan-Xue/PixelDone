@@ -27,10 +27,16 @@ data class PixelDoneUiState(
 data class AuthInputState(
     val email: String = "",
     val password: String = "",
+    val mode: CloudAuthMode = CloudAuthMode.SIGN_IN,
     val busy: Boolean = false,
     val message: String? = null,
     val error: String? = null,
 )
+
+enum class CloudAuthMode {
+    SIGN_IN,
+    SIGN_UP,
+}
 
 /**
  * One-shot system work that must be consumed once by the UI boundary.
@@ -54,7 +60,9 @@ sealed interface PixelDoneAction {
     data class SetShowUpdateDialogs(val showDialogs: Boolean) : PixelDoneAction
     data class SetAuthEmail(val email: String) : PixelDoneAction
     data class SetAuthPassword(val password: String) : PixelDoneAction
+    data class SetCloudAuthMode(val mode: CloudAuthMode) : PixelDoneAction
     data object SignIn : PixelDoneAction
+    data object SignUp : PixelDoneAction
     data object CancelSignIn : PixelDoneAction
     data object SignOut : PixelDoneAction
     data object SyncNow : PixelDoneAction

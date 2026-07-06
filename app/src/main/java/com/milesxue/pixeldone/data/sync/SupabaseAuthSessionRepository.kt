@@ -21,8 +21,8 @@ internal class SupabaseAuthSessionRepository(
         config.configurationError()?.let { throw SyncConfigurationException(it) }
         val emailFallback = email.trim()
         val body = json.encodeToString(
-            SignInRequest.serializer(),
-            SignInRequest(email = emailFallback, password = password),
+            EmailPasswordRequest.serializer(),
+            EmailPasswordRequest(email = emailFallback, password = password),
         )
         val response = httpClient.request(
             method = "POST",
@@ -36,6 +36,32 @@ internal class SupabaseAuthSessionRepository(
             allowInsecureHttp = config.allowInsecureHttp,
             emailFallback = emailFallback,
             fallbackRefreshToken = null,
+            missingSessionMessage = "Supabase sign in did not return a session.",
+        )
+        sessionStore.save(session)
+        mutableSession.value = session
+        return session
+    }
+
+    override suspend fun signUp(email: String, password: String): AuthSession {
+        config.configurationError()?.let { throw SyncConfigurationException(it) }
+        val emailFallback = email.trim()
+        val body = json.encodeToString(
+            EmailPasswordRequest.serializer(),
+            EmailPasswordRequest(email = emailFallback, password = password),
+        )
+        val response = httpClient.request(
+            method = "POST",
+            path = "/auth/v1/signup",
+            body = body,
+        )
+        val token = json.decodeFromString(TokenResponse.serializer(), response)
+        val session = token.toSession(
+            nowMillis = System.currentTimeMillis(),
+            allowInsecureHttp = config.allowInsecureHttp,
+            emailFallback = emailFallback,
+            fallbackRefreshToken = null,
+            missingSessionMessage = "Sign up did not return a session. Enable Supabase email autoconfirm.",
         )
         sessionStore.save(session)
         mutableSession.value = session
@@ -81,6 +107,7 @@ internal class SupabaseAuthSessionRepository(
             allowInsecureHttp = config.allowInsecureHttp,
             emailFallback = current.userEmail ?: current.displayLabel.takeIf { it != "SIGNED IN" },
             fallbackRefreshToken = refreshToken,
+            missingSessionMessage = "Supabase refresh did not return a session.",
         )
         sessionStore.save(session)
         mutableSession.value = session
@@ -114,7 +141,9 @@ internal class SupabaseAuthSessionRepository(
         allowInsecureHttp: Boolean,
         emailFallback: String?,
         fallbackRefreshToken: String?,
+        missingSessionMessage: String,
     ): AuthSession {
+        val sessionAccessToken = accessToken ?: throw SyncRemoteException(missingSessionMessage)
         val email = user.email ?: emailFallback
         return AuthSession(
             signedIn = true,
@@ -122,7 +151,7 @@ internal class SupabaseAuthSessionRepository(
             userEmail = email,
             displayLabel = email ?: "SIGNED IN",
             cloudAvailable = true,
-            accessToken = accessToken,
+            accessToken = sessionAccessToken,
             refreshToken = refreshToken ?: fallbackRefreshToken,
             expiresAtMillis = expiresInSeconds?.let { nowMillis + it * 1_000L },
             insecureHttpAllowed = allowInsecureHttp,
@@ -135,7 +164,7 @@ internal class SupabaseAuthSessionRepository(
 }
 
 @Serializable
-private data class SignInRequest(
+private data class EmailPasswordRequest(
     val email: String,
     val password: String,
 )
@@ -147,7 +176,7 @@ private data class RefreshRequest(
 
 @Serializable
 private data class TokenResponse(
-    @SerialName("access_token") val accessToken: String,
+    @SerialName("access_token") val accessToken: String? = null,
     @SerialName("refresh_token") val refreshToken: String? = null,
     @SerialName("expires_in") val expiresInSeconds: Long? = null,
     val user: TokenUser,

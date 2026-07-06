@@ -3,6 +3,7 @@ package com.milesxue.pixeldone
 import com.milesxue.pixeldone.data.sync.AuthSessionStore
 import com.milesxue.pixeldone.data.sync.SupabaseAuthSessionRepository
 import com.milesxue.pixeldone.data.sync.SupabaseConfig
+import com.milesxue.pixeldone.data.sync.SyncRemoteException
 import com.milesxue.pixeldone.data.sync.SupabaseRequestClient
 import com.milesxue.pixeldone.domain.sync.AuthSession
 import kotlinx.coroutines.test.runTest
@@ -10,6 +11,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -82,6 +84,53 @@ class SupabaseAuthSessionRepositoryTest {
         assertEquals(1, client.requests.size)
     }
 
+    @Test
+    fun signUpPostsSignupRequestAndPersistsReturnedSession() = runTest {
+        val store = InMemoryAuthSessionStore(null)
+        val client = RecordingSessionRequestClient(SignUpResponse)
+        val repository = SupabaseAuthSessionRepository(
+            config = TestConfig,
+            httpClient = client,
+            sessionStore = store,
+        )
+
+        val session = repository.signUp(" new@example.com ", "secret")
+
+        assertEquals(true, session.signedIn)
+        assertEquals("signup-access", session.accessToken)
+        assertEquals("signup-refresh", session.refreshToken)
+        assertEquals("new@example.com", session.userEmail)
+        assertEquals(session, store.savedSession)
+        assertEquals(session, repository.session.value)
+
+        val request = client.requests.single()
+        assertEquals("POST", request.method)
+        assertEquals("/auth/v1/signup", request.path)
+        assertEquals(emptyList<Pair<String, String>>(), request.query)
+        val body = json.parseToJsonElement(requireNotNull(request.body)).jsonObject
+        assertEquals("new@example.com", body.getValue("email").jsonPrimitive.content)
+        assertEquals("secret", body.getValue("password").jsonPrimitive.content)
+    }
+
+    @Test
+    fun signUpWithoutAutoconfirmSessionFailsClearly() = runTest {
+        val store = InMemoryAuthSessionStore(null)
+        val client = RecordingSessionRequestClient(SignUpWithoutSessionResponse)
+        val repository = SupabaseAuthSessionRepository(
+            config = TestConfig,
+            httpClient = client,
+            sessionStore = store,
+        )
+
+        val error = runCatching {
+            repository.signUp("new@example.com", "secret")
+        }.exceptionOrNull()
+
+        assertTrue(error is SyncRemoteException)
+        assertEquals("Sign up did not return a session. Enable Supabase email autoconfirm.", error?.message)
+        assertNull(store.savedSession)
+    }
+
     private fun signedInSession(
         accessToken: String = "access-token",
         refreshToken: String = "refresh-token",
@@ -104,6 +153,19 @@ class SupabaseAuthSessionRepositoryTest {
             publishableKey = "publishable-key",
             allowInsecureHttp = true,
         )
+        const val SignUpResponse = """
+            {
+              "access_token":"signup-access",
+              "refresh_token":"signup-refresh",
+              "expires_in":3600,
+              "user":{"id":"user-2","email":"new@example.com"}
+            }
+        """
+        const val SignUpWithoutSessionResponse = """
+            {
+              "user":{"id":"user-2","email":"new@example.com"}
+            }
+        """
     }
 }
 
@@ -116,7 +178,9 @@ private data class RecordedSessionRequest(
     val body: String?,
 )
 
-private class RecordingSessionRequestClient : SupabaseRequestClient {
+private class RecordingSessionRequestClient(
+    private val responseBody: String = RefreshResponse,
+) : SupabaseRequestClient {
     val requests = mutableListOf<RecordedSessionRequest>()
 
     override suspend fun request(
@@ -135,7 +199,7 @@ private class RecordingSessionRequestClient : SupabaseRequestClient {
             prefer = prefer,
             body = body,
         )
-        return RefreshResponse
+        return responseBody
     }
 
     private companion object {

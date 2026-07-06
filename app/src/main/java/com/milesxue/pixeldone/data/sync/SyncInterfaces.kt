@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 interface AuthSessionRepository {
     val session: StateFlow<AuthSession>
     suspend fun signIn(email: String, password: String): AuthSession
+    suspend fun signUp(email: String, password: String): AuthSession
     suspend fun signOut()
     suspend fun refreshSessionIfNeeded(nowMillis: Long, force: Boolean = false): AuthSession
 }
@@ -18,6 +19,10 @@ class LocalOnlyAuthSessionRepository : AuthSessionRepository {
     override val session: StateFlow<AuthSession> = localOnlySession.asStateFlow()
 
     override suspend fun signIn(email: String, password: String): AuthSession {
+        throw SyncConfigurationException("Cloud sync is not configured.")
+    }
+
+    override suspend fun signUp(email: String, password: String): AuthSession {
         throw SyncConfigurationException("Cloud sync is not configured.")
     }
 
