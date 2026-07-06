@@ -166,7 +166,7 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The latest formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
+app/build/outputs/apk/release/PixelDone-3.0.0-release.apk
 ```
 
 The latest beta RC debug APK is:
@@ -180,7 +180,7 @@ app/build/outputs/apk/debug/PixelDone-3.0.0-rc.2-debug.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.0.0-release.apk
 ```
 
 Install the beta RC debug build with:
@@ -203,4 +203,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.0.0-rc.2 beta RC refines the Settings CLOUD entry, password visibility, and cloud-sync action hierarchy on top of the Settings-scoped Supabase sign-up/sign-in flow. The latest formal signed release remains 2.10.0 until RC validation is complete.
+3.0.0 formal signed release for Settings-scoped Supabase sign-up/sign-in, local-first todo/checklist sync, the refined Settings CLOUD entry, and password visibility in the cloud auth panel.
