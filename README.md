@@ -46,7 +46,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Hide completed todos.
 - Move deleted tasks, completed-task batches, and deleted-list tasks into `TRASH`.
 - Restore tasks from `TRASH` without changing their completed state, recreating the original list if needed.
-- Permanently delete all tasks from `TRASH` and clean their image files.
+- Permanently delete all visible tasks from `TRASH`, while retaining cloud tombstones locally when needed so deletion facts can finish syncing.
 - Schedule a local alarm notification for each active future todo.
 - Set reminder repeat per todo: none, daily, or weekly.
 - Advance daily and weekly repeating todos to the next reminder time after a notification fires.
@@ -69,6 +69,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
 - Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control cloud sync, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Sign up, sign in, sign out, and manually sync todos/checklists through the low-key Settings `CLOUD` area.
+- Debounce automatic todo/checklist sync requests and protect local edits/deletes from stale remote merge write-back during active sync.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
 - Use five atomic dock functions for `SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, and `QUICK DELETE`.
 - Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph and a line-drawn trash can for `QUICK DELETE`.
@@ -166,7 +167,7 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The latest formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.0.0-release.apk
+app/build/outputs/apk/release/PixelDone-3.0.1-release.apk
 ```
 
 The latest beta RC debug APK is:
@@ -180,7 +181,7 @@ app/build/outputs/apk/debug/PixelDone-3.0.0-rc.2-debug.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.0.0-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.0.1-release.apk
 ```
 
 Install the beta RC debug build with:
@@ -203,4 +204,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.0.0 formal signed release for Settings-scoped Supabase sign-up/sign-in, local-first todo/checklist sync, the refined Settings CLOUD entry, and password visibility in the cloud auth panel.
+3.0.1 formal signed patch release for cloud sync stability, quick-delete tombstone propagation, and automatic sync debounce/coalescing.

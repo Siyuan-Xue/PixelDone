@@ -84,17 +84,14 @@ class PixelDoneViewModel(
             is PixelDoneAction.SetDarkTheme -> {
                 settingsStore.saveDarkTheme(action.enabled)
                 refreshSettingsState()
-                syncCoordinator.requestSync()
             }
             is PixelDoneAction.SetDockConfig -> {
                 settingsStore.saveDockConfig(action.config)
                 refreshSettingsState()
-                syncCoordinator.requestSync()
             }
             is PixelDoneAction.SetShowUpdateDialogs -> {
                 settingsStore.saveNeverShowUpdateDialog(!action.showDialogs)
                 refreshSettingsState()
-                syncCoordinator.requestSync()
             }
             is PixelDoneAction.SetAuthEmail -> updateAuthInput { it.copy(email = action.email, error = null, message = null) }
             is PixelDoneAction.SetAuthPassword -> updateAuthInput { it.copy(password = action.password, error = null, message = null) }
@@ -112,12 +109,15 @@ class PixelDoneViewModel(
     }
 
     fun replaceChecklistState(updatedState: TodoChecklistState): Set<ReminderCapability> {
-        val previousTodos = normalTodos(_uiState.value.checklistState)
+        val previousState = _uiState.value.checklistState
+        val previousTodos = normalTodos(previousState)
         val updatedTodos = normalTodos(updatedState)
         todoRepository.saveTodoState(updatedState)
         val missingCapabilities = reminderScheduler.sync(previousTodos, updatedTodos)
         _uiState.value = _uiState.value.copy(checklistState = updatedState)
-        syncCoordinator.requestSync()
+        if (previousState.lists != updatedState.lists) {
+            syncCoordinator.requestSync()
+        }
         return missingCapabilities
     }
 
@@ -155,7 +155,6 @@ class PixelDoneViewModel(
             try {
                 submit(email, input.password)
                 updateAuthInput { it.copy(password = "", busy = false, error = null, message = successMessage) }
-                syncCoordinator.requestSync()
             } catch (error: Exception) {
                 updateAuthInput {
                     it.copy(

@@ -1,5 +1,6 @@
 package com.milesxue.pixeldone.data.sync
 
+import com.milesxue.pixeldone.data.local.TodoEntitySet
 import com.milesxue.pixeldone.domain.sync.AuthSession
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +36,15 @@ interface SyncCoordinator {
     val status: StateFlow<SyncCoordinatorStatus>
     suspend fun syncNow(): SyncCoordinatorStatus
     fun requestSync()
+}
+
+internal interface TodoSyncLocalStore {
+    suspend fun loadEntitySetForSync(nowMillis: Long): TodoEntitySet
+    suspend fun replaceEntitySetFromSync(entitySet: TodoEntitySet)
+    suspend fun updateEntitySetFromSync(
+        nowMillis: Long,
+        transform: (TodoEntitySet) -> TodoEntitySet,
+    ): TodoEntitySet
 }
 
 class LocalOnlySyncCoordinator : SyncCoordinator {

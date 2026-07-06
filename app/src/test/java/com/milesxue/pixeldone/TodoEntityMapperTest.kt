@@ -10,6 +10,7 @@ import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.domain.todo.TrashChecklistId
 import com.milesxue.pixeldone.domain.todo.createInitialChecklistState
+import com.milesxue.pixeldone.domain.todo.deleteAllTrashTodos
 import com.milesxue.pixeldone.domain.todo.moveTodoItemToTrash
 import com.milesxue.pixeldone.domain.todo.updateChecklistItems
 import org.junit.Assert.assertEquals
@@ -49,7 +50,6 @@ class TodoEntityMapperTest {
         assertEquals(TrashChecklistId, trashItem.checklistLocalId)
         assertEquals("image.jpg", trashItem.imageLocalName)
     }
-
 
     @Test
     fun localWritePreservesRemoteMetadataAndMarksOwnedRecordDirty() {
@@ -93,6 +93,56 @@ class TodoEntityMapperTest {
         assertEquals(2_100L, savedItem.lastSyncedAtMillis)
         assertEquals(7L, savedItem.remoteVersion)
     }
+
+    @Test
+    fun clearingTrashRetainsCloudTombstoneButHidesItFromDomainState() {
+        val initial = createInitialChecklistState(
+            items = listOf(
+                TodoItem(
+                    id = "todo-1",
+                    title = "One",
+                    priority = TodoPriority.HIGH,
+                    dueAtMillis = 2_000L,
+                    completed = false,
+                    createdAtMillis = 1_000L,
+                ),
+            ),
+            createdAtMillis = 1L,
+        )
+        val withTrash = moveTodoItemToTrash(initial, DefaultChecklistId, "todo-1", 3_000L)!!
+        val previousBase = withTrash.toTodoEntitySet(nowMillis = 4_000L)
+        val previous = previousBase.copy(
+            items = previousBase.items.map { item ->
+                item.copy(
+                    ownerUserId = "user-1",
+                    remoteId = "remote-todo-1",
+                    syncState = SyncRecordState.NOT_SYNCED.name,
+                    lastSyncedAtMillis = 2_000L,
+                    remoteVersion = 2_000L,
+                )
+            },
+        )
+        val cleared = deleteAllTrashTodos(withTrash)
+
+        val saved = cleared.toTodoEntitySet(
+            nowMillis = 5_000L,
+            previousEntitySet = previous,
+        )
+        val hiddenTombstone = saved.items.single { it.localId == "todo-1" }
+        val restored = todoEntitiesToState(
+            metadata = saved.metadata,
+            checklists = saved.checklists,
+            items = saved.items,
+            fallbackCreatedAtMillis = 5_000L,
+        )!!
+
+        assertEquals(3_000L, hiddenTombstone.deletedAtMillis)
+        assertEquals(3_000L, hiddenTombstone.trashedAtMillis)
+        assertEquals(5_000L, hiddenTombstone.locallyPurgedAtMillis)
+        assertEquals(SyncRecordState.NOT_SYNCED.name, hiddenTombstone.syncState)
+        assertEquals(emptyList<TodoItem>(), restored.lists.first { it.id == TrashChecklistId }.items)
+    }
+
     @Test
     fun roundTripsEntitiesBackToNormalizedDomainState() {
         val state = TodoChecklistState(

@@ -14,6 +14,7 @@ import com.milesxue.pixeldone.domain.todo.SettingsChecklistId
 import com.milesxue.pixeldone.domain.todo.SortMode
 import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.TodoPriority
+import com.milesxue.pixeldone.domain.todo.TrashChecklistId
 import com.milesxue.pixeldone.domain.todo.createInitialChecklistState
 import com.milesxue.pixeldone.domain.todo.updateChecklistItems
 import com.milesxue.pixeldone.reminder.ReminderScheduler
@@ -76,6 +77,23 @@ class PixelDoneViewModelTest {
     }
 
     @Test
+    fun replaceChecklistStateDoesNotRequestCloudSyncForSelectionOnly() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val syncCoordinator = FakeSyncCoordinator()
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            syncCoordinator = syncCoordinator,
+        )
+        val selectedTrash = initial.copy(selectedListId = TrashChecklistId)
+
+        viewModel.onAction(PixelDoneAction.ReplaceChecklistState(selectedTrash))
+
+        assertEquals(0, syncCoordinator.requestCount)
+    }
+
+    @Test
     fun replaceChecklistStateExcludesSettingsItemsFromReminderSync() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
@@ -120,10 +138,12 @@ class PixelDoneViewModelTest {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
         val settingsStore = InMemoryPixelDoneSettingsStore()
+        val syncCoordinator = FakeSyncCoordinator()
         val viewModel = PixelDoneViewModel(
             todoRepository = repository,
             reminderScheduler = FakeReminderScheduler(),
             settingsStore = settingsStore,
+            syncCoordinator = syncCoordinator,
         )
         val dockConfig = DockConfig(
             plusPlacement = DockPlusPlacement.LEFT_EDGE,
@@ -140,10 +160,11 @@ class PixelDoneViewModelTest {
         assertEquals(false, settingsStore.loadSettings().showUpdateDialogs)
         assertEquals(settingsStore.loadSettings(), viewModel.uiState.value.settings)
         assertEquals(initial, repository.state.value)
+        assertEquals(0, syncCoordinator.requestCount)
     }
 
     @Test
-    fun signInSuccessClearsPasswordAndRequestsSync() {
+    fun signInSuccessClearsPasswordWithoutRequestingDuplicateSync() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
         val authRepository = FakeAuthSessionRepository()
@@ -166,11 +187,11 @@ class PixelDoneViewModelTest {
         assertEquals("", viewModel.uiState.value.authInput.password)
         assertEquals("Signed in.", viewModel.uiState.value.authInput.message)
         assertNull(viewModel.uiState.value.authInput.error)
-        assertEquals(1, syncCoordinator.requestCount)
+        assertEquals(0, syncCoordinator.requestCount)
     }
 
     @Test
-    fun signUpSuccessClearsPasswordAndRequestsSync() {
+    fun signUpSuccessClearsPasswordWithoutRequestingDuplicateSync() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
         val authRepository = FakeAuthSessionRepository()
@@ -195,7 +216,7 @@ class PixelDoneViewModelTest {
         assertEquals(CloudAuthMode.SIGN_UP, viewModel.uiState.value.authInput.mode)
         assertEquals("Signed up.", viewModel.uiState.value.authInput.message)
         assertNull(viewModel.uiState.value.authInput.error)
-        assertEquals(1, syncCoordinator.requestCount)
+        assertEquals(0, syncCoordinator.requestCount)
     }
 
     @Test
@@ -282,6 +303,7 @@ class PixelDoneViewModelTest {
         assertEquals("Synced.", viewModel.uiState.value.authInput.message)
         assertNull(viewModel.uiState.value.authInput.error)
     }
+
     @Test
     fun cancelSignInClearsPasswordAndMessagesButKeepsEmail() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)

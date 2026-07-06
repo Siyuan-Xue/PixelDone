@@ -43,7 +43,8 @@ fun TodoChecklistState.toTodoEntitySet(
             lastSyncError = if (changed) null else previous?.lastSyncError,
         )
     }
-    val itemEntities = lists.flatMap { checklist ->
+    val visibleItemIds = lists.flatMap { it.items }.mapTo(mutableSetOf()) { it.id }
+    val visibleItemEntities = lists.flatMap { checklist ->
         checklist.items.mapIndexed { index, item ->
             val previous = previousItemsById[item.id]
             val changed = previous?.matches(item, checklist.id, index) != true
@@ -68,6 +69,7 @@ fun TodoChecklistState.toTodoEntitySet(
                 trashedFromChecklistId = item.trashedFromChecklistId,
                 trashedFromChecklistName = item.trashedFromChecklistName,
                 trashedAtMillis = item.trashedAtMillis,
+                locallyPurgedAtMillis = null,
                 syncState = syncStateAfterLocalWrite(
                     previousSyncState = previous?.syncState,
                     ownerUserId = ownerUserId,
@@ -79,6 +81,10 @@ fun TodoChecklistState.toTodoEntitySet(
             )
         }
     }
+    val retainedCloudTombstones = previousEntitySet?.items.orEmpty()
+        .filter { it.shouldRetainCloudTombstoneAfterLocalPurge(visibleItemIds) }
+        .map { item -> item.copy(locallyPurgedAtMillis = item.locallyPurgedAtMillis ?: nowMillis) }
+    val itemEntities = visibleItemEntities + retainedCloudTombstones
     return TodoEntitySet(
         metadata = TodoStateMetadataEntity(
             selectedListLocalId = selectedListId,
@@ -96,7 +102,8 @@ fun todoEntitiesToState(
     fallbackCreatedAtMillis: Long,
 ): TodoChecklistState? {
     if (checklists.isEmpty()) return null
-    val itemsByChecklist = items.groupBy { it.checklistLocalId }
+    val visibleItems = items.filter { it.locallyPurgedAtMillis == null }
+    val itemsByChecklist = visibleItems.groupBy { it.checklistLocalId }
     val lists = checklists.map { checklist ->
         TodoChecklist(
             id = checklist.localId,
@@ -145,7 +152,13 @@ private fun TodoItemEntity.matches(item: TodoItem, checklistLocalId: String, sor
         imageLocalName == item.imageFileName &&
         trashedFromChecklistId == item.trashedFromChecklistId &&
         trashedFromChecklistName == item.trashedFromChecklistName &&
-        trashedAtMillis == item.trashedAtMillis
+        trashedAtMillis == item.trashedAtMillis &&
+        locallyPurgedAtMillis == null
+
+private fun TodoItemEntity.shouldRetainCloudTombstoneAfterLocalPurge(currentItemIds: Set<String>): Boolean =
+    localId !in currentItemIds &&
+        ownerUserId != null &&
+        deletedAtMillis != null
 
 private fun TodoItemEntity.toDomainTodoItem(): TodoItem? {
     val priority = TodoPriority.entries.firstOrNull { it.name == priority } ?: return null

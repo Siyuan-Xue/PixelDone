@@ -52,6 +52,7 @@ data class TodoItemEntity(
     val trashedFromChecklistId: String? = null,
     val trashedFromChecklistName: String? = null,
     val trashedAtMillis: Long? = null,
+    val locallyPurgedAtMillis: Long? = null,
     val syncState: String = SyncRecordState.LOCAL_ONLY.name,
     val lastSyncedAtMillis: Long? = null,
     val remoteVersion: Long? = null,

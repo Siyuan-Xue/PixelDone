@@ -1,14 +1,11 @@
-PixelDone v3.0.0 is the formal signed release for account-based Supabase sync.
+PixelDone v3.0.1 is the formal signed patch release for cloud sync stability.
 
 Highlights:
-- Adds Settings-scoped email/password sign-up, sign-in, sign-out, and manual sync without making login an app entry gate.
-- Syncs local-first checklists and todos through the self-hosted Supabase backend while keeping PixelDone fully usable offline and locally.
-- Moves the Settings CLOUD section to the top so account and sync state are easy to find.
-- Keeps account actions low-emphasis: SIGN IN and OUT live on the ACCOUNT row as borderless text actions, while SYNC remains the only bordered cloud action.
-- Adds SHOW/HIDE password visibility in the cloud auth bottom panel.
-- Keeps Supabase integration lightweight through native Auth/PostgREST HTTP calls, without adding the Supabase SDK or service-role keys.
-- Uses the formal `com.milesxue.pixeldone` package and a signed release APK for direct installation and in-app updates.
+- Fixes todo rebound after quickly deleting multiple items while cloud sync is running.
+- Re-reads the latest local Room state before applying pulled remote data, so stale sync snapshots no longer overwrite newer local deletes or edits.
+- Applies pushed remote metadata only when the local record still matches what was pushed; edits made during push stay `NOT_SYNCED` for the next sync.
+- Adds a 2-second trailing debounce for automatic sync requests and coalesces requests that arrive during an active sync into at most one follow-up sync.
+- Removes noisy todo-sync triggers from Settings-only changes, checklist selection changes, and duplicate ViewModel auth-success handling.
+- Preserves locally hidden cloud tombstones after clearing `TRASH`, so deletion facts can continue propagating without reappearing in the UI.
 
-Server note: sign-up expects the self-hosted Supabase Auth service to allow email sign-up and auto-confirm email accounts, for example `ENABLE_EMAIL_SIGNUP=true`, `ENABLE_EMAIL_AUTOCONFIRM=true`, and `DISABLE_SIGNUP=false`.
-
-Install note: this release asset is the signed APK `PixelDone-3.0.0-release.apk` for `com.milesxue.pixeldone`. Debug RC builds use the separate package `com.milesxue.pixeldone.debug` and can remain installed separately.
+Install note: this release asset is the signed APK `PixelDone-3.0.1-release.apk` for `com.milesxue.pixeldone`. Debug RC builds use the separate package `com.milesxue.pixeldone.debug` and can remain installed separately.
