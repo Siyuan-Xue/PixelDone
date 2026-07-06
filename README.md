@@ -172,7 +172,7 @@ app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
 The latest beta RC debug APK is:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-3.0.0-rc.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-3.0.0-rc.2-debug.apk
 ```
 
 ## Install
@@ -186,7 +186,7 @@ adb install -r app/build/outputs/apk/release/PixelDone-2.10.0-release.apk
 Install the beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-3.0.0-rc.1-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-3.0.0-rc.2-debug.apk
 ```
 
 The formal package name is:
@@ -203,4 +203,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.0.0-rc.1 beta RC for Settings-scoped Supabase sign-up/sign-in and local-first todo/checklist sync. The latest formal signed release remains 2.10.0 until RC validation is complete.
+3.0.0-rc.2 beta RC refines the Settings CLOUD entry, password visibility, and cloud-sync action hierarchy on top of the Settings-scoped Supabase sign-up/sign-in flow. The latest formal signed release remains 2.10.0 until RC validation is complete.

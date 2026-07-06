@@ -101,6 +101,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -2385,6 +2386,17 @@ private fun SettingsPanel(
                 .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(32.dp),
         ) {
+            SettingsSection(title = "CLOUD") {
+                SettingsCloudPanel(
+                    authSession = authSession,
+                    authInput = authInput,
+                    syncStatusText = syncStatusText,
+                    syncStatus = syncStatus,
+                    onOpenCloudSignIn = onOpenCloudSignIn,
+                    onSignOut = onSignOut,
+                    onSyncNow = onSyncNow,
+                )
+            }
             SettingsSection(title = "DISPLAY") {
                 SettingsSegmentedRow(
                     title = "THEME",
@@ -2417,17 +2429,6 @@ private fun SettingsPanel(
             }
 
 
-            SettingsSection(title = "CLOUD") {
-                SettingsCloudPanel(
-                    authSession = authSession,
-                    authInput = authInput,
-                    syncStatusText = syncStatusText,
-                    syncStatus = syncStatus,
-                    onOpenCloudSignIn = onOpenCloudSignIn,
-                    onSignOut = onSignOut,
-                    onSyncNow = onSyncNow,
-                )
-            }
             SettingsSection(title = "UPDATES") {
                 SettingsSegmentedRow(
                     title = "UPDATE POPUP",
@@ -2527,13 +2528,18 @@ private fun SettingsCloudPanel(
                 value = accountLabel,
                 modifier = Modifier.weight(1f),
             )
-            if (authSession.signedIn) {
-                PixelButton(
+            when {
+                authSession.signedIn -> SettingsTextAction(
                     text = "OUT",
                     onClick = onSignOut,
                     enabled = !authInput.busy,
                     modifier = Modifier.width(72.dp),
-                    primary = false,
+                )
+                authSession.cloudAvailable -> SettingsTextAction(
+                    text = if (authInput.busy) "..." else "SIGN IN",
+                    onClick = onOpenCloudSignIn,
+                    enabled = !authInput.busy,
+                    modifier = Modifier.width(88.dp),
                 )
             }
         }
@@ -2544,26 +2550,6 @@ private fun SettingsCloudPanel(
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textSecondary,
             )
-        } else if (authSession.signedIn) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SettingsRowText(
-                    title = "SYNC",
-                    value = syncStatusText,
-                    modifier = Modifier.weight(1f),
-                    valueColor = syncStatus.settingsValueColor(colors),
-                )
-                PixelButton(
-                    text = if (syncStatus == SyncCoordinatorStatus.SYNCING) "..." else "SYNC",
-                    onClick = onSyncNow,
-                    enabled = syncStatus != SyncCoordinatorStatus.SYNCING && !authInput.busy,
-                    modifier = Modifier.width(72.dp),
-                    primary = false,
-                )
-            }
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2576,13 +2562,15 @@ private fun SettingsCloudPanel(
                     modifier = Modifier.weight(1f),
                     valueColor = syncStatus.settingsValueColor(colors),
                 )
-                PixelButton(
-                    text = if (authInput.busy) "..." else "SIGN IN",
-                    onClick = onOpenCloudSignIn,
-                    enabled = !authInput.busy,
-                    modifier = Modifier.width(88.dp),
-                    primary = false,
-                )
+                if (authSession.signedIn) {
+                    PixelButton(
+                        text = if (syncStatus == SyncCoordinatorStatus.SYNCING) "..." else "SYNC",
+                        onClick = onSyncNow,
+                        enabled = syncStatus != SyncCoordinatorStatus.SYNCING && !authInput.busy,
+                        modifier = Modifier.width(72.dp),
+                        primary = false,
+                    )
+                }
             }
         }
 
@@ -2596,6 +2584,40 @@ private fun SettingsCloudPanel(
     }
 }
 
+@Composable
+private fun SettingsTextAction(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val colors = PixelDoneColors.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val backgroundColor = if (pressed && enabled) colors.selectedSurface else Color.Transparent
+    Box(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .background(backgroundColor, RectangleShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .semantics { contentDescription = text }
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (enabled) colors.primaryInteractive else colors.disabledText,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
 @Composable
 private fun settingsTextFieldColors(colors: PixelDonePalette) = OutlinedTextFieldDefaults.colors(
     focusedBorderColor = colors.primary,
@@ -3273,6 +3295,8 @@ private fun CloudAuthEditorPanel(
         authInput.mode == CloudAuthMode.SIGN_UP -> "SIGN UP"
         else -> "SIGN IN"
     }
+    var passwordVisible by remember { mutableStateOf(false) }
+    val passwordTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation()
 
     LaunchedEffect(Unit) {
         emailFocusRequester.requestFocus()
@@ -3339,7 +3363,15 @@ private fun CloudAuthEditorPanel(
                 textStyle = MaterialTheme.typography.bodyLarge,
                 label = { Text("Password") },
                 enabled = !authInput.busy,
-                visualTransformation = PasswordVisualTransformation(),
+                visualTransformation = passwordTransformation,
+                trailingIcon = {
+                    SettingsTextAction(
+                        text = if (passwordVisible) "HIDE" else "SHOW",
+                        onClick = { passwordVisible = !passwordVisible },
+                        enabled = !authInput.busy,
+                        modifier = Modifier.width(56.dp),
+                    )
+                },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Password,
                     imeAction = ImeAction.Done,
