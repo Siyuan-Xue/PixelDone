@@ -1,7 +1,8 @@
-﻿package com.milesxue.pixeldone.data.local
+package com.milesxue.pixeldone.data.local
 
 import android.content.Context
 import androidx.room.Room
+import com.milesxue.pixeldone.data.sync.LocalSyncConflictRecord
 import com.milesxue.pixeldone.data.sync.RemoteChecklistRecord
 import com.milesxue.pixeldone.data.sync.RemoteTodoItemRecord
 import com.milesxue.pixeldone.data.sync.RemoteTodoSnapshot
@@ -20,6 +21,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 class RoomTodoStateStore private constructor(
@@ -181,6 +184,40 @@ class RoomTodoStateStore private constructor(
         writeMutex.withLock { dao.deleteSyncMutation(ownerUserId, mutationUuid) }
     }
 
+    override suspend fun recordConflict(ownerUserId: String, conflict: LocalSyncConflictRecord) {
+        writeMutex.withLock {
+            dao.insertSyncConflict(
+                SyncConflictRecordEntity(
+                    ownerUserId = ownerUserId,
+                    recordType = conflict.recordType,
+                    localId = conflict.localId,
+                    localPayloadJson = conflict.localPayloadJson,
+                    remotePayloadJson = conflict.remotePayloadJson,
+                    fieldsJson = syncJson.encodeToString(ListSerializer(String.serializer()), conflict.fields),
+                    message = conflict.message,
+                    remoteVersion = conflict.remoteVersion,
+                    createdAtMillis = conflict.createdAtMillis,
+                ),
+            )
+        }
+    }
+
+    override suspend fun loadConflicts(ownerUserId: String): List<LocalSyncConflictRecord> = writeMutex.withLock {
+        dao.getSyncConflicts(ownerUserId).map { it.toLocalSyncConflictRecord() }
+    }
+
+    override suspend fun loadConflict(
+        ownerUserId: String,
+        recordType: String,
+        localId: String,
+    ): LocalSyncConflictRecord? = writeMutex.withLock {
+        dao.getSyncConflict(ownerUserId, recordType, localId)?.toLocalSyncConflictRecord()
+    }
+
+    override suspend fun clearConflict(ownerUserId: String, recordType: String, localId: String) {
+        writeMutex.withLock { dao.deleteSyncConflict(ownerUserId, recordType, localId) }
+    }
+
     private suspend fun ensureMigrated(nowMillis: Long) {
         if (dao.metadataCount() > 0) return
         val legacyState = legacyPreferences.loadTodoState(nowMillis)
@@ -196,6 +233,19 @@ class RoomTodoStateStore private constructor(
         )
     }
 
+    private fun SyncConflictRecordEntity.toLocalSyncConflictRecord(): LocalSyncConflictRecord = LocalSyncConflictRecord(
+        recordType = recordType,
+        localId = localId,
+        localPayloadJson = localPayloadJson,
+        remotePayloadJson = remotePayloadJson,
+        fields = runCatching {
+            syncJson.decodeFromString(ListSerializer(String.serializer()), fieldsJson)
+        }.getOrDefault(emptyList()),
+        message = message,
+        remoteVersion = remoteVersion,
+        createdAtMillis = createdAtMillis,
+    )
+
     companion object {
         private const val DatabaseName = "pixel_done_local.db"
 
@@ -207,6 +257,7 @@ class RoomTodoStateStore private constructor(
             ).addMigrations(
                 PixelDoneMigrations.Migration1To2,
                 PixelDoneMigrations.Migration2To3,
+                PixelDoneMigrations.Migration3To4,
             ).build()
             return RoomTodoStateStore(database, legacyPreferences)
         }

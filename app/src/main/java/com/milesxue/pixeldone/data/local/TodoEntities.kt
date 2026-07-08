@@ -1,4 +1,4 @@
-﻿package com.milesxue.pixeldone.data.local
+package com.milesxue.pixeldone.data.local
 
 import androidx.room.Entity
 import androidx.room.Index
@@ -77,6 +77,22 @@ data class SyncPristineRecordEntity(
     val payloadJson: String,
     val remoteVersion: Long?,
     val updatedAtMillis: Long,
+)
+
+@Entity(
+    tableName = "sync_conflict_records",
+    primaryKeys = ["ownerUserId", "recordType", "localId"],
+)
+data class SyncConflictRecordEntity(
+    val ownerUserId: String,
+    val recordType: String,
+    val localId: String,
+    val localPayloadJson: String,
+    val remotePayloadJson: String,
+    val fieldsJson: String,
+    val message: String,
+    val remoteVersion: Long?,
+    val createdAtMillis: Long,
 )
 
 @Entity(

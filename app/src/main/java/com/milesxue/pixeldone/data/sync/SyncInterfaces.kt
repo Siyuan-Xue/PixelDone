@@ -2,6 +2,8 @@ package com.milesxue.pixeldone.data.sync
 
 import com.milesxue.pixeldone.data.local.TodoEntitySet
 import com.milesxue.pixeldone.domain.sync.AuthSession
+import com.milesxue.pixeldone.domain.sync.ConflictResolutionChoice
+import com.milesxue.pixeldone.domain.sync.SyncConflictEntry
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncRunState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +43,8 @@ interface SyncCoordinator {
     val status: StateFlow<SyncCoordinatorStatus>
     val runState: StateFlow<SyncRunState>
     suspend fun syncNow(): SyncCoordinatorStatus
+    suspend fun loadConflicts(): List<SyncConflictEntry>
+    suspend fun resolveConflict(recordType: String, localId: String, choice: ConflictResolutionChoice): SyncCoordinatorStatus
     fun requestSync()
 }
 
@@ -68,6 +72,10 @@ internal interface TodoSyncLocalStore {
     suspend fun loadPendingMutations(ownerUserId: String): List<SyncMutationRecord>
     suspend fun recordPendingMutation(ownerUserId: String, mutation: SyncMutationRecord)
     suspend fun clearPendingMutation(ownerUserId: String, mutationUuid: String)
+    suspend fun recordConflict(ownerUserId: String, conflict: LocalSyncConflictRecord)
+    suspend fun loadConflicts(ownerUserId: String): List<LocalSyncConflictRecord>
+    suspend fun loadConflict(ownerUserId: String, recordType: String, localId: String): LocalSyncConflictRecord?
+    suspend fun clearConflict(ownerUserId: String, recordType: String, localId: String)
 }
 
 internal interface SettingsSyncLocalStore {
@@ -83,6 +91,12 @@ class LocalOnlySyncCoordinator : SyncCoordinator {
     override val status: StateFlow<SyncCoordinatorStatus> = MutableStateFlow(SyncCoordinatorStatus.LOCAL_ONLY).asStateFlow()
 
     override suspend fun syncNow(): SyncCoordinatorStatus = SyncCoordinatorStatus.LOCAL_ONLY
+    override suspend fun loadConflicts(): List<SyncConflictEntry> = emptyList()
+    override suspend fun resolveConflict(
+        recordType: String,
+        localId: String,
+        choice: ConflictResolutionChoice,
+    ): SyncCoordinatorStatus = SyncCoordinatorStatus.LOCAL_ONLY
     override fun requestSync() = Unit
 }
 
@@ -127,6 +141,18 @@ data class SyncMutationRecord(
     val createdAtMillis: Long,
     val attempts: Int = 0,
     val lastError: String? = null,
+)
+
+@Serializable
+data class LocalSyncConflictRecord(
+    val recordType: String,
+    val localId: String,
+    val localPayloadJson: String,
+    val remotePayloadJson: String,
+    val fields: List<String>,
+    val message: String,
+    val remoteVersion: Long? = null,
+    val createdAtMillis: Long,
 )
 
 @Serializable

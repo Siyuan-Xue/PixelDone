@@ -1,12 +1,17 @@
 package com.milesxue.pixeldone.data.sync
 
 import android.util.Log
+import com.milesxue.pixeldone.data.local.SyncRecordTypeChecklist
+import com.milesxue.pixeldone.data.local.SyncRecordTypeItem
 import com.milesxue.pixeldone.data.local.TodoChecklistEntity
 import com.milesxue.pixeldone.data.local.TodoEntitySet
 import com.milesxue.pixeldone.data.local.TodoItemEntity
 import com.milesxue.pixeldone.domain.sync.AuthSession
+import com.milesxue.pixeldone.domain.sync.ConflictResolutionChoice
 import com.milesxue.pixeldone.domain.sync.ConflictResolutionSource
 import com.milesxue.pixeldone.domain.sync.ConflictResolver
+import com.milesxue.pixeldone.domain.sync.SyncConflictEntry
+import com.milesxue.pixeldone.domain.sync.SyncConflictValue
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncMergeCandidate
 import com.milesxue.pixeldone.domain.sync.SyncRecordState
@@ -14,6 +19,9 @@ import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.ClockProvider
 import com.milesxue.pixeldone.domain.todo.TrashChecklistId
 import com.milesxue.pixeldone.domain.todo.TrashChecklistName
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +36,9 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 internal class TodoSyncCoordinator(
     private val authSessionRepository: AuthSessionRepository,
@@ -73,6 +84,51 @@ internal class TodoSyncCoordinator(
     }
 
     override suspend fun syncNow(): SyncCoordinatorStatus = syncNowInternal(cancelScheduledSync = true)
+
+    override suspend fun loadConflicts(): List<SyncConflictEntry> {
+        val session = authSessionRepository.session.value
+        val ownerUserId = session.userId.takeIf { session.signedIn } ?: return emptyList()
+        return localStore.loadConflicts(ownerUserId).mapNotNull { it.toSyncConflictEntry() }
+    }
+
+    override suspend fun resolveConflict(
+        recordType: String,
+        localId: String,
+        choice: ConflictResolutionChoice,
+    ): SyncCoordinatorStatus {
+        val session = authSessionRepository.session.value
+        val ownerUserId = session.userId.takeIf { session.signedIn }
+            ?: return statusFor(session).also { setRunState(mutableRunState.value.copy(status = it)) }
+        val needsUpload = syncMutex.withLock {
+            val conflict = localStore.loadConflict(ownerUserId, recordType, localId)
+                ?: return@withLock false
+            val nowMillis = clockProvider.nowMillis()
+            val applied = when (choice) {
+                ConflictResolutionChoice.KEEP_LOCAL -> applyLocalConflictVersion(
+                    ownerUserId = ownerUserId,
+                    conflict = conflict,
+                    syncedAtMillis = nowMillis,
+                )
+                ConflictResolutionChoice.KEEP_CLOUD -> applyCloudConflictVersion(
+                    ownerUserId = ownerUserId,
+                    conflict = conflict,
+                    syncedAtMillis = nowMillis,
+                )
+            }
+            if (applied) {
+                localStore.clearConflict(ownerUserId, recordType, localId)
+            }
+            if (choice == ConflictResolutionChoice.KEEP_CLOUD && applied) {
+                savePristineFromCurrentSyncedRecords(ownerUserId, nowMillis)
+            }
+            choice == ConflictResolutionChoice.KEEP_LOCAL && applied
+        }
+        return if (needsUpload) {
+            syncNowInternal(cancelScheduledSync = true)
+        } else {
+            refreshResolvedConflictRunState(ownerUserId)
+        }
+    }
 
     private suspend fun runScheduledSync(): SyncCoordinatorStatus {
         requestMutex.withLock { scheduledSyncJob = null }
@@ -191,6 +247,9 @@ internal class TodoSyncCoordinator(
                 mergeResult = mergeResult,
             )
         }
+        mergeResult.conflicts.forEach { conflict ->
+            localStore.recordConflict(ownerUserId, conflict)
+        }
         applyRemoteSettingsIfNeeded(remoteChanges.settings, mergeNowMillis)
 
         val pendingBeforeNew = localStore.loadPendingMutations(ownerUserId)
@@ -232,6 +291,108 @@ internal class TodoSyncCoordinator(
         val pendingCount = localStore.loadPendingMutations(ownerUserId).size
         val conflictCount = latest.conflictCount()
         return SyncResult(pendingCount = pendingCount, conflictCount = conflictCount)
+    }
+
+    private suspend fun applyLocalConflictVersion(
+        ownerUserId: String,
+        conflict: LocalSyncConflictRecord,
+        syncedAtMillis: Long,
+    ): Boolean = when (conflict.recordType) {
+        SyncRecordTypeChecklist -> {
+            val record = conflict.decodeLocalChecklist() ?: return false
+            localStore.updateEntitySetFromSync(syncedAtMillis) { latest ->
+                latest.copy(
+                    checklists = latest.checklists.map { checklist ->
+                        if (checklist.ownerUserId == ownerUserId && checklist.localId == conflict.localId) {
+                            record.toEntityForResolution(syncedAtMillis, SyncRecordState.NOT_SYNCED)
+                        } else {
+                            checklist
+                        }
+                    },
+                )
+            }
+            true
+        }
+        SyncRecordTypeItem -> {
+            val record = conflict.decodeLocalItem() ?: return false
+            localStore.updateEntitySetFromSync(syncedAtMillis) { latest ->
+                latest.copy(
+                    items = latest.items.map { item ->
+                        if (item.ownerUserId == ownerUserId && item.localId == conflict.localId) {
+                            record.toEntityForResolution(syncedAtMillis, SyncRecordState.NOT_SYNCED)
+                        } else {
+                            item
+                        }
+                    },
+                )
+            }
+            true
+        }
+        else -> false
+    }
+
+    private suspend fun applyCloudConflictVersion(
+        ownerUserId: String,
+        conflict: LocalSyncConflictRecord,
+        syncedAtMillis: Long,
+    ): Boolean = when (conflict.recordType) {
+        SyncRecordTypeChecklist -> {
+            val record = conflict.decodeRemoteChecklist() ?: return false
+            localStore.updateEntitySetFromSync(syncedAtMillis) { latest ->
+                latest.copy(
+                    checklists = latest.checklists.map { checklist ->
+                        if (checklist.ownerUserId == ownerUserId && checklist.localId == conflict.localId) {
+                            record.toEntityForResolution(syncedAtMillis, SyncRecordState.SYNCED)
+                        } else {
+                            checklist
+                        }
+                    },
+                )
+            }
+            true
+        }
+        SyncRecordTypeItem -> {
+            val record = conflict.decodeRemoteItem() ?: return false
+            localStore.updateEntitySetFromSync(syncedAtMillis) { latest ->
+                latest.copy(
+                    items = latest.items.map { item ->
+                        if (item.ownerUserId == ownerUserId && item.localId == conflict.localId) {
+                            record.toEntityForResolution(syncedAtMillis, SyncRecordState.SYNCED)
+                        } else {
+                            item
+                        }
+                    },
+                )
+            }
+            true
+        }
+        else -> false
+    }
+
+    private suspend fun savePristineFromCurrentSyncedRecords(ownerUserId: String, syncedAtMillis: Long) {
+        val latest = localStore.loadEntitySetForSync(syncedAtMillis).withOwnerAttached(ownerUserId)
+        localStore.savePristineSnapshot(
+            ownerUserId = ownerUserId,
+            snapshot = latest.toRemoteSnapshotForPristine(ownerUserId),
+            syncedAtMillis = syncedAtMillis,
+        )
+    }
+
+    private suspend fun refreshResolvedConflictRunState(ownerUserId: String): SyncCoordinatorStatus {
+        val nowMillis = clockProvider.nowMillis()
+        val latest = localStore.loadEntitySetForSync(nowMillis).withOwnerAttached(ownerUserId)
+        val pendingCount = localStore.loadPendingMutations(ownerUserId).size
+        val conflictCount = latest.conflictCount()
+        val finalStatus = if (conflictCount > 0) SyncCoordinatorStatus.CONFLICT else SyncCoordinatorStatus.SYNCED
+        setRunState(
+            mutableRunState.value.copy(
+                status = finalStatus,
+                pendingCount = pendingCount,
+                conflictCount = conflictCount,
+                lastError = null,
+            ),
+        )
+        return finalStatus
     }
 
     private suspend fun applyRemoteSettingsIfNeeded(remote: RemoteUserSettingsRecord?, syncedAtMillis: Long) {
@@ -322,6 +483,7 @@ private data class SyncResult(
 
 private class MergeAccumulator {
     var conflictCount: Int = 0
+    val conflicts = mutableListOf<LocalSyncConflictRecord>()
 }
 
 private fun RemoteChangeBatch.toSnapshot(): RemoteTodoSnapshot = RemoteTodoSnapshot(
@@ -416,12 +578,23 @@ private fun mergeChecklist(
             emptySet()
         }
         if (conflictFields.isNotEmpty()) {
+            val sortedFields = conflictFields.sorted()
             mergeResult.conflictCount += 1
+            mergeResult.conflicts += LocalSyncConflictRecord(
+                recordType = SyncRecordTypeChecklist,
+                localId = ownedLocal.localId,
+                localPayloadJson = SyncPayloadJson.encodeToString(ownedLocal.toRemoteRecord(ownerUserId)),
+                remotePayloadJson = SyncPayloadJson.encodeToString(remote),
+                fields = sortedFields,
+                message = "Conflict: ${sortedFields.joinToString(",")}",
+                remoteVersion = remote.remoteVersion,
+                createdAtMillis = syncedAtMillis,
+            )
             ownedLocal.copy(
                 remoteId = remote.remoteId ?: ownedLocal.remoteId,
                 remoteVersion = remote.remoteVersion ?: ownedLocal.remoteVersion,
                 syncState = SyncRecordState.CONFLICT.name,
-                lastSyncError = "Conflict: ${conflictFields.sorted().joinToString(",")}",
+                lastSyncError = "Conflict: ${sortedFields.joinToString(",")}",
             )
         } else {
             val resolution = ConflictResolver.resolveLastWriteWins(
@@ -474,13 +647,25 @@ private fun mergeItem(
         } else {
             emptySet()
         }
-        if (conflictFields.isNotEmpty() || ownedLocal.hasDeleteEditConflict(remote)) {
+        val hasDeleteEditConflict = ownedLocal.hasDeleteEditConflict(remote)
+        if (conflictFields.isNotEmpty() || hasDeleteEditConflict) {
+            val sortedFields = (conflictFields + listOfNotNull("delete".takeIf { hasDeleteEditConflict })).sorted()
             mergeResult.conflictCount += 1
+            mergeResult.conflicts += LocalSyncConflictRecord(
+                recordType = SyncRecordTypeItem,
+                localId = ownedLocal.localId,
+                localPayloadJson = SyncPayloadJson.encodeToString(ownedLocal.toRemoteRecord(ownerUserId)),
+                remotePayloadJson = SyncPayloadJson.encodeToString(remote),
+                fields = sortedFields,
+                message = "Conflict: ${sortedFields.joinToString(",")}",
+                remoteVersion = remote.remoteVersion,
+                createdAtMillis = syncedAtMillis,
+            )
             ownedLocal.moveToTrashForRemoteDelete(remote).copy(
                 remoteId = remote.remoteId ?: ownedLocal.remoteId,
                 remoteVersion = remote.remoteVersion ?: ownedLocal.remoteVersion,
                 syncState = SyncRecordState.CONFLICT.name,
-                lastSyncError = "Conflict: ${(conflictFields + "delete").sorted().joinToString(",")}",
+                lastSyncError = "Conflict: ${sortedFields.joinToString(",")}",
             )
         } else {
             val resolution = ConflictResolver.resolveLastWriteWins(
@@ -767,3 +952,100 @@ private fun RemoteTodoItemRecord.recordClock(): Long = deletedAtMillis?.coerceAt
 
 private fun String.isUploadableSettingsState(): Boolean =
     this == SyncRecordState.LOCAL_ONLY.name || this == SyncRecordState.NOT_SYNCED.name || this == SyncRecordState.ERROR.name
+
+private val SyncPayloadJson = Json {
+    encodeDefaults = true
+    ignoreUnknownKeys = true
+}
+
+private val ConflictDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
+private fun LocalSyncConflictRecord.decodeLocalChecklist(): RemoteChecklistRecord? =
+    runCatching { SyncPayloadJson.decodeFromString<RemoteChecklistRecord>(localPayloadJson) }.getOrNull()
+
+private fun LocalSyncConflictRecord.decodeRemoteChecklist(): RemoteChecklistRecord? =
+    runCatching { SyncPayloadJson.decodeFromString<RemoteChecklistRecord>(remotePayloadJson) }.getOrNull()
+
+private fun LocalSyncConflictRecord.decodeLocalItem(): RemoteTodoItemRecord? =
+    runCatching { SyncPayloadJson.decodeFromString<RemoteTodoItemRecord>(localPayloadJson) }.getOrNull()
+
+private fun LocalSyncConflictRecord.decodeRemoteItem(): RemoteTodoItemRecord? =
+    runCatching { SyncPayloadJson.decodeFromString<RemoteTodoItemRecord>(remotePayloadJson) }.getOrNull()
+
+private fun LocalSyncConflictRecord.toSyncConflictEntry(): SyncConflictEntry? = when (recordType) {
+    SyncRecordTypeChecklist -> {
+        val local = decodeLocalChecklist() ?: return null
+        val remote = decodeRemoteChecklist() ?: return null
+        SyncConflictEntry(
+            recordType = recordType,
+            localId = localId,
+            title = firstNonBlank(local.name, remote.name, localId),
+            fields = fields,
+            message = message,
+            localValues = local.summaryValues(),
+            cloudValues = remote.summaryValues(),
+        )
+    }
+    SyncRecordTypeItem -> {
+        val local = decodeLocalItem() ?: return null
+        val remote = decodeRemoteItem() ?: return null
+        SyncConflictEntry(
+            recordType = recordType,
+            localId = localId,
+            title = firstNonBlank(local.title, remote.title, localId),
+            fields = fields,
+            message = message,
+            localValues = local.summaryValues(),
+            cloudValues = remote.summaryValues(),
+        )
+    }
+    else -> null
+}
+
+private fun RemoteChecklistRecord.summaryValues(): List<SyncConflictValue> = listOf(
+    SyncConflictValue("NAME", name),
+    SyncConflictValue("SORT", sortIndex.toString()),
+    SyncConflictValue("DELETED", deletedAtMillis.formatNullableMillis()),
+    SyncConflictValue("UPDATED", updatedAtMillis.formatMillis()),
+    SyncConflictValue("VERSION", remoteVersion?.toString() ?: "none"),
+)
+
+private fun RemoteTodoItemRecord.summaryValues(): List<SyncConflictValue> = listOf(
+    SyncConflictValue("TITLE", title),
+    SyncConflictValue("LIST", checklistLocalId),
+    SyncConflictValue("PRIORITY", priority),
+    SyncConflictValue("DUE", dueAtMillis.formatMillis()),
+    SyncConflictValue("DONE", if (completed) "yes" else "no"),
+    SyncConflictValue("REPEAT", reminderRepeat),
+    SyncConflictValue("TRASH", trashedAtMillis.formatNullableMillis()),
+    SyncConflictValue("DELETED", deletedAtMillis.formatNullableMillis()),
+    SyncConflictValue("IMAGE", imageRemotePath ?: imageLocalName ?: "none"),
+    SyncConflictValue("UPDATED", updatedAtMillis.formatMillis()),
+    SyncConflictValue("VERSION", remoteVersion?.toString() ?: "none"),
+)
+
+private fun RemoteChecklistRecord.toEntityForResolution(
+    syncedAtMillis: Long,
+    syncState: SyncRecordState,
+): TodoChecklistEntity = toEntity(syncedAtMillis).copy(
+    syncState = syncState.name,
+    lastSyncedAtMillis = if (syncState == SyncRecordState.SYNCED) syncedAtMillis else null,
+    lastSyncError = null,
+)
+
+private fun RemoteTodoItemRecord.toEntityForResolution(
+    syncedAtMillis: Long,
+    syncState: SyncRecordState,
+): TodoItemEntity = toEntity(syncedAtMillis).copy(
+    syncState = syncState.name,
+    lastSyncedAtMillis = if (syncState == SyncRecordState.SYNCED) syncedAtMillis else null,
+    lastSyncError = null,
+)
+
+private fun Long.formatMillis(): String = Instant.ofEpochMilli(this)
+    .atZone(ZoneId.systemDefault())
+    .format(ConflictDateFormatter)
+
+private fun Long?.formatNullableMillis(): String = this?.formatMillis() ?: "none"
+
+private fun firstNonBlank(vararg values: String): String = values.firstOrNull { it.isNotBlank() } ?: "Untitled"

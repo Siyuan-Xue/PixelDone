@@ -1,10 +1,12 @@
-﻿package com.milesxue.pixeldone
+package com.milesxue.pixeldone
 
+import com.milesxue.pixeldone.data.local.SyncRecordTypeItem
 import com.milesxue.pixeldone.data.local.TodoChecklistEntity
 import com.milesxue.pixeldone.data.local.TodoEntitySet
 import com.milesxue.pixeldone.data.local.TodoItemEntity
 import com.milesxue.pixeldone.data.local.TodoStateMetadataEntity
 import com.milesxue.pixeldone.data.sync.AuthSessionRepository
+import com.milesxue.pixeldone.data.sync.LocalSyncConflictRecord
 import com.milesxue.pixeldone.data.sync.RemoteChangeBatch
 import com.milesxue.pixeldone.data.sync.RemoteChecklistRecord
 import com.milesxue.pixeldone.data.sync.RemoteMutationBatch
@@ -16,6 +18,7 @@ import com.milesxue.pixeldone.data.sync.SyncMutationRecord
 import com.milesxue.pixeldone.data.sync.TodoSyncCoordinator
 import com.milesxue.pixeldone.data.sync.TodoSyncLocalStore
 import com.milesxue.pixeldone.domain.sync.AuthSession
+import com.milesxue.pixeldone.domain.sync.ConflictResolutionChoice
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncRecordState
 import com.milesxue.pixeldone.domain.todo.ClockProvider
@@ -118,6 +121,127 @@ class TodoSyncCoordinatorTest {
         assertEquals(3_000L, savedItem.updatedAtMillis)
         assertEquals(SyncRecordState.NOT_SYNCED.name, savedItem.syncState)
         assertEquals("remote-todo-1", savedItem.remoteId)
+    }
+
+    @Test
+    fun syncConflictWritesLocalConflictRecordWithBothPayloads() = runTest {
+        val localItem = syncedActiveItem().copy(
+            title = "Local title",
+            updatedAtMillis = 2_000L,
+            syncState = SyncRecordState.NOT_SYNCED.name,
+        )
+        val localStore = FakeTodoSyncLocalStore(entitySetWith(item = localItem))
+        localStore.pristineSnapshot = RemoteTodoSnapshot(
+            checklists = listOf(remoteMainChecklist()),
+            items = listOf(remoteActiveItem()),
+        )
+        val remote = FakeRemoteTodoDataSource(
+            pullSnapshot = RemoteTodoSnapshot(
+                checklists = listOf(remoteMainChecklist()),
+                items = listOf(
+                    remoteActiveItem().copy(
+                        title = "Cloud title",
+                        updatedAtMillis = 3_000L,
+                        remoteVersion = 3_000L,
+                    ),
+                ),
+            ),
+        )
+        val coordinator = coordinator(localStore = localStore, remote = remote)
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.CONFLICT, coordinator.status.value)
+        val conflict = localStore.conflicts.single()
+        assertEquals(SyncRecordTypeItem, conflict.recordType)
+        assertEquals("todo-1", conflict.localId)
+        assertEquals(listOf("title"), conflict.fields)
+        assertEquals(3_000L, conflict.remoteVersion)
+        assertEquals(true, conflict.localPayloadJson.contains("Local title"))
+        assertEquals(true, conflict.remotePayloadJson.contains("Cloud title"))
+    }
+
+    @Test
+    fun keepLocalClearsConflictAndUploadsLocalVersion() = runTest {
+        val localItem = syncedActiveItem().copy(
+            title = "Local title",
+            updatedAtMillis = 2_000L,
+            syncState = SyncRecordState.NOT_SYNCED.name,
+        )
+        val localStore = FakeTodoSyncLocalStore(entitySetWith(item = localItem))
+        localStore.pristineSnapshot = RemoteTodoSnapshot(
+            checklists = listOf(remoteMainChecklist()),
+            items = listOf(remoteActiveItem()),
+        )
+        val remote = FakeRemoteTodoDataSource(
+            pullSnapshot = RemoteTodoSnapshot(
+                checklists = listOf(remoteMainChecklist()),
+                items = listOf(
+                    remoteActiveItem().copy(
+                        title = "Cloud title",
+                        updatedAtMillis = 3_000L,
+                        remoteVersion = 3_000L,
+                    ),
+                ),
+            ),
+        )
+        val coordinator = coordinator(localStore = localStore, remote = remote)
+        advanceUntilIdle()
+        remote.pullSnapshot = RemoteTodoSnapshot(checklists = listOf(remoteMainChecklist()))
+
+        val status = coordinator.resolveConflict(
+            recordType = SyncRecordTypeItem,
+            localId = "todo-1",
+            choice = ConflictResolutionChoice.KEEP_LOCAL,
+        )
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.SYNCED, status)
+        assertEquals(emptyList<LocalSyncConflictRecord>(), localStore.conflicts)
+        assertEquals("Local title", remote.pushedSnapshots.last().items.single().title)
+        val savedItem = localStore.entitySet.items.single { it.localId == "todo-1" }
+        assertEquals("Local title", savedItem.title)
+        assertEquals(SyncRecordState.SYNCED.name, savedItem.syncState)
+    }
+
+    @Test
+    fun keepCloudClearsConflictAndAppliesCloudVersionAsSynced() = runTest {
+        val localItem = syncedActiveItem().copy(
+            title = "Local title",
+            updatedAtMillis = 2_000L,
+            syncState = SyncRecordState.NOT_SYNCED.name,
+        )
+        val localStore = FakeTodoSyncLocalStore(entitySetWith(item = localItem))
+        localStore.pristineSnapshot = RemoteTodoSnapshot(
+            checklists = listOf(remoteMainChecklist()),
+            items = listOf(remoteActiveItem()),
+        )
+        val remote = FakeRemoteTodoDataSource(
+            pullSnapshot = RemoteTodoSnapshot(
+                checklists = listOf(remoteMainChecklist()),
+                items = listOf(
+                    remoteActiveItem().copy(
+                        title = "Cloud title",
+                        updatedAtMillis = 3_000L,
+                        remoteVersion = 3_000L,
+                    ),
+                ),
+            ),
+        )
+        val coordinator = coordinator(localStore = localStore, remote = remote)
+        advanceUntilIdle()
+
+        val status = coordinator.resolveConflict(
+            recordType = SyncRecordTypeItem,
+            localId = "todo-1",
+            choice = ConflictResolutionChoice.KEEP_CLOUD,
+        )
+
+        assertEquals(SyncCoordinatorStatus.SYNCED, status)
+        assertEquals(emptyList<LocalSyncConflictRecord>(), localStore.conflicts)
+        val savedItem = localStore.entitySet.items.single { it.localId == "todo-1" }
+        assertEquals("Cloud title", savedItem.title)
+        assertEquals(3_000L, savedItem.remoteVersion)
+        assertEquals(SyncRecordState.SYNCED.name, savedItem.syncState)
     }
 
     @Test
@@ -231,6 +355,7 @@ private class FakeTodoSyncLocalStore(initialEntitySet: TodoEntitySet) : TodoSync
     var syncCursor: Long? = null
     var pristineSnapshot: RemoteTodoSnapshot = RemoteTodoSnapshot()
     val pendingMutations = mutableListOf<SyncMutationRecord>()
+    val conflicts = mutableListOf<LocalSyncConflictRecord>()
 
     override suspend fun loadEntitySetForSync(nowMillis: Long): TodoEntitySet = entitySet
 
@@ -270,6 +395,23 @@ private class FakeTodoSyncLocalStore(initialEntitySet: TodoEntitySet) : TodoSync
 
     override suspend fun clearPendingMutation(ownerUserId: String, mutationUuid: String) {
         pendingMutations.removeAll { it.mutationUuid == mutationUuid }
+    }
+
+    override suspend fun recordConflict(ownerUserId: String, conflict: LocalSyncConflictRecord) {
+        conflicts.removeAll { it.recordType == conflict.recordType && it.localId == conflict.localId }
+        conflicts += conflict
+    }
+
+    override suspend fun loadConflicts(ownerUserId: String): List<LocalSyncConflictRecord> = conflicts.toList()
+
+    override suspend fun loadConflict(
+        ownerUserId: String,
+        recordType: String,
+        localId: String,
+    ): LocalSyncConflictRecord? = conflicts.firstOrNull { it.recordType == recordType && it.localId == localId }
+
+    override suspend fun clearConflict(ownerUserId: String, recordType: String, localId: String) {
+        conflicts.removeAll { it.recordType == recordType && it.localId == localId }
     }
 }
 

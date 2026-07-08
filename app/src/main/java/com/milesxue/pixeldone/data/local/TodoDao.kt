@@ -1,4 +1,4 @@
-﻿package com.milesxue.pixeldone.data.local
+package com.milesxue.pixeldone.data.local
 
 import androidx.room.Dao
 import androidx.room.Insert
@@ -62,6 +62,18 @@ interface TodoDao {
 
     @Query("DELETE FROM sync_mutations WHERE ownerUserId = :ownerUserId AND mutationUuid = :mutationUuid")
     suspend fun deleteSyncMutation(ownerUserId: String, mutationUuid: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSyncConflict(conflict: SyncConflictRecordEntity)
+
+    @Query("SELECT * FROM sync_conflict_records WHERE ownerUserId = :ownerUserId ORDER BY createdAtMillis ASC")
+    suspend fun getSyncConflicts(ownerUserId: String): List<SyncConflictRecordEntity>
+
+    @Query("SELECT * FROM sync_conflict_records WHERE ownerUserId = :ownerUserId AND recordType = :recordType AND localId = :localId LIMIT 1")
+    suspend fun getSyncConflict(ownerUserId: String, recordType: String, localId: String): SyncConflictRecordEntity?
+
+    @Query("DELETE FROM sync_conflict_records WHERE ownerUserId = :ownerUserId AND recordType = :recordType AND localId = :localId")
+    suspend fun deleteSyncConflict(ownerUserId: String, recordType: String, localId: String)
 
     @Query("DELETE FROM todo_items")
     suspend fun deleteItems()

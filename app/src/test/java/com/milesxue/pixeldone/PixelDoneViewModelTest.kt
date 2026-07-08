@@ -1,10 +1,13 @@
-﻿package com.milesxue.pixeldone
+package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.settings.InMemoryPixelDoneSettingsStore
 import com.milesxue.pixeldone.data.sync.AuthSessionRepository
 import com.milesxue.pixeldone.data.sync.SyncCoordinator
 import com.milesxue.pixeldone.data.todo.TodoRepository
 import com.milesxue.pixeldone.domain.sync.AuthSession
+import com.milesxue.pixeldone.domain.sync.ConflictResolutionChoice
+import com.milesxue.pixeldone.domain.sync.SyncConflictEntry
+import com.milesxue.pixeldone.domain.sync.SyncConflictValue
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.DockAction
@@ -306,6 +309,59 @@ class PixelDoneViewModelTest {
     }
 
     @Test
+    fun openConflictDialogLoadsConflicts() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val syncCoordinator = FakeSyncCoordinator(
+            initialStatus = SyncCoordinatorStatus.CONFLICT,
+            conflicts = listOf(sampleConflictEntry()),
+        )
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            syncCoordinator = syncCoordinator,
+        )
+
+        viewModel.onAction(PixelDoneAction.OpenConflictDialog)
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals(true, viewModel.uiState.value.conflictDialogVisible)
+        assertEquals(listOf(sampleConflictEntry()), viewModel.uiState.value.syncConflicts)
+    }
+
+    @Test
+    fun resolveConflictRefreshesDialogCount() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val repository = TodoRepository(InMemoryTodoStateStore(initial))
+        val conflict = sampleConflictEntry()
+        val syncCoordinator = FakeSyncCoordinator(
+            initialStatus = SyncCoordinatorStatus.CONFLICT,
+            conflicts = listOf(conflict),
+        )
+        val viewModel = PixelDoneViewModel(
+            todoRepository = repository,
+            reminderScheduler = FakeReminderScheduler(),
+            syncCoordinator = syncCoordinator,
+        )
+
+        viewModel.onAction(PixelDoneAction.OpenConflictDialog)
+        mainDispatcherRule.advanceUntilIdle()
+        viewModel.onAction(
+            PixelDoneAction.ResolveConflict(
+                recordType = conflict.recordType,
+                localId = conflict.localId,
+                choice = ConflictResolutionChoice.KEEP_CLOUD,
+            ),
+        )
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals(listOf(ConflictResolutionChoice.KEEP_CLOUD), syncCoordinator.resolutionChoices)
+        assertEquals(false, viewModel.uiState.value.conflictDialogVisible)
+        assertEquals(emptyList<SyncConflictEntry>(), viewModel.uiState.value.syncConflicts)
+        assertEquals(SyncCoordinatorStatus.SYNCED, viewModel.uiState.value.syncStatus)
+    }
+
+    @Test
     fun cancelSignInClearsPasswordAndMessagesButKeepsEmail() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
@@ -426,16 +482,46 @@ private class FakeAuthSessionRepository(
 }
 private class FakeSyncCoordinator(
     initialStatus: SyncCoordinatorStatus = SyncCoordinatorStatus.IDLE,
+    conflicts: List<SyncConflictEntry> = emptyList(),
 ) : SyncCoordinator {
     private val mutableStatus = MutableStateFlow(initialStatus)
-    private val mutableRunState = MutableStateFlow(SyncRunState(status = initialStatus))
+    private val mutableRunState = MutableStateFlow(
+        SyncRunState(status = initialStatus, conflictCount = conflicts.size),
+    )
+    private val mutableConflicts = conflicts.toMutableList()
     override val status: StateFlow<SyncCoordinatorStatus> = mutableStatus.asStateFlow()
     override val runState: StateFlow<SyncRunState> = mutableRunState.asStateFlow()
     var requestCount: Int = 0
+    var resolutionChoices: List<ConflictResolutionChoice> = emptyList()
 
     override suspend fun syncNow(): SyncCoordinatorStatus = mutableStatus.value
+
+    override suspend fun loadConflicts(): List<SyncConflictEntry> = mutableConflicts.toList()
+
+    override suspend fun resolveConflict(
+        recordType: String,
+        localId: String,
+        choice: ConflictResolutionChoice,
+    ): SyncCoordinatorStatus {
+        resolutionChoices = resolutionChoices + choice
+        mutableConflicts.removeAll { it.recordType == recordType && it.localId == localId }
+        val nextStatus = if (mutableConflicts.isEmpty()) SyncCoordinatorStatus.SYNCED else SyncCoordinatorStatus.CONFLICT
+        mutableStatus.value = nextStatus
+        mutableRunState.value = SyncRunState(status = nextStatus, conflictCount = mutableConflicts.size)
+        return nextStatus
+    }
 
     override fun requestSync() {
         requestCount += 1
     }
 }
+
+private fun sampleConflictEntry(): SyncConflictEntry = SyncConflictEntry(
+    recordType = "item",
+    localId = "todo-1",
+    title = "Write notes",
+    fields = listOf("title"),
+    message = "Conflict: title",
+    localValues = listOf(SyncConflictValue("TITLE", "Local")),
+    cloudValues = listOf(SyncConflictValue("TITLE", "Cloud")),
+)

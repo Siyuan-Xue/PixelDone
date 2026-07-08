@@ -1,4 +1,4 @@
-﻿package com.milesxue.pixeldone.ui.todo
+package com.milesxue.pixeldone.ui.todo
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -105,6 +105,9 @@ class PixelDoneViewModel(
             PixelDoneAction.CancelSignIn -> cancelSignIn()
             PixelDoneAction.SignOut -> signOut()
             PixelDoneAction.SyncNow -> syncNow()
+            PixelDoneAction.OpenConflictDialog -> openConflictDialog()
+            PixelDoneAction.DismissConflictDialog -> dismissConflictDialog()
+            is PixelDoneAction.ResolveConflict -> resolveConflict(action)
             PixelDoneAction.ResetPassword -> resetPassword()
             PixelDoneAction.DismissAuthMessage -> updateAuthInput { it.copy(message = null, error = null) }
             PixelDoneAction.SystemActionConsumed -> {
@@ -217,6 +220,44 @@ class PixelDoneViewModel(
                     it.copy(error = null, message = message)
                 }
             }
+        }
+    }
+
+    private fun openConflictDialog() {
+        viewModelScope.launch {
+            val conflicts = syncCoordinator.loadConflicts()
+            _uiState.value = _uiState.value.copy(
+                syncConflicts = conflicts,
+                conflictDialogVisible = true,
+                resolvingConflictKey = null,
+            )
+        }
+    }
+
+    private fun dismissConflictDialog() {
+        _uiState.value = _uiState.value.copy(
+            conflictDialogVisible = false,
+            resolvingConflictKey = null,
+        )
+    }
+
+    private fun resolveConflict(action: PixelDoneAction.ResolveConflict) {
+        val conflictKey = action.recordType + ":" + action.localId
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(resolvingConflictKey = conflictKey)
+            val status = syncCoordinator.resolveConflict(
+                recordType = action.recordType,
+                localId = action.localId,
+                choice = action.choice,
+            )
+            val conflicts = syncCoordinator.loadConflicts()
+            _uiState.value = _uiState.value.copy(
+                syncStatus = status,
+                syncRunState = syncCoordinator.runState.value,
+                syncConflicts = conflicts,
+                conflictDialogVisible = conflicts.isNotEmpty(),
+                resolvingConflictKey = null,
+            )
         }
     }
 

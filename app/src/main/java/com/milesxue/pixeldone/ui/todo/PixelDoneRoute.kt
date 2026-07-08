@@ -150,6 +150,9 @@ import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
 import com.milesxue.pixeldone.domain.sync.AuthSession
+import com.milesxue.pixeldone.domain.sync.ConflictResolutionChoice
+import com.milesxue.pixeldone.domain.sync.SyncConflictEntry
+import com.milesxue.pixeldone.domain.sync.SyncConflictValue
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.AllDockActions
@@ -1252,6 +1255,18 @@ internal fun PixelDoneApp() {
         viewModel.onAction(PixelDoneAction.SyncNow)
     }
 
+    fun openConflictDialog() {
+        viewModel.onAction(PixelDoneAction.OpenConflictDialog)
+    }
+
+    fun dismissConflictDialog() {
+        viewModel.onAction(PixelDoneAction.DismissConflictDialog)
+    }
+
+    fun resolveConflict(recordType: String, localId: String, choice: ConflictResolutionChoice) {
+        viewModel.onAction(PixelDoneAction.ResolveConflict(recordType, localId, choice))
+    }
+
     fun dismissUpdatePromptDialog() {
         showUpdatePromptDialog = false
         updatePromptInfo = null
@@ -1648,6 +1663,7 @@ internal fun PixelDoneApp() {
             onResetPassword = ::resetCloudPassword,
             onSignOut = ::signOutFromCloud,
             onSyncNow = ::syncCloudNow,
+            onOpenConflictDialog = ::openConflictDialog,
             permissionSettingsState = permissionRefreshTick.let { currentPermissionSettingsState() },
             onRequestNotificationPermission = ::requestNotificationPermissionFromSettings,
             onRequestExactAlarmPermission = {
@@ -1694,6 +1710,13 @@ internal fun PixelDoneApp() {
             onChange = { item -> openTodoImagePicker(item.id) },
             onRemove = { item -> removeTodoImage(item.id) },
             onDismiss = { imagePreviewTodoId = null },
+        )
+        SyncConflictDialog(
+            visible = uiState.conflictDialogVisible,
+            conflicts = uiState.syncConflicts,
+            resolvingConflictKey = uiState.resolvingConflictKey,
+            onResolve = ::resolveConflict,
+            onDismiss = ::dismissConflictDialog,
         )
     }
 }
@@ -1790,6 +1813,7 @@ private fun PixelDoneScreen(
     onResetPassword: () -> Unit = {},
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
+    onOpenConflictDialog: () -> Unit = {},
     permissionSettingsState: PermissionSettingsState,
     onRequestNotificationPermission: () -> Unit,
     onRequestExactAlarmPermission: () -> Unit,
@@ -1918,6 +1942,7 @@ private fun PixelDoneScreen(
                 onResetPassword = onResetPassword,
                 onSignOut = onSignOut,
                 onSyncNow = onSyncNow,
+                onOpenConflictDialog = onOpenConflictDialog,
                 permissionSettingsState = permissionSettingsState,
                 onRequestNotificationPermission = onRequestNotificationPermission,
                 onRequestExactAlarmPermission = onRequestExactAlarmPermission,
@@ -2228,6 +2253,7 @@ private fun TaskWorkspacePanel(
     onResetPassword: () -> Unit = {},
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
+    onOpenConflictDialog: () -> Unit = {},
     permissionSettingsState: PermissionSettingsState,
     onRequestNotificationPermission: () -> Unit,
     onRequestExactAlarmPermission: () -> Unit,
@@ -2257,6 +2283,7 @@ private fun TaskWorkspacePanel(
                 onOpenCloudSignIn = onOpenCloudSignIn,
                 onSignOut = onSignOut,
                 onSyncNow = onSyncNow,
+                onOpenConflictDialog = onOpenConflictDialog,
                 updateUiState = updateUiState,
                 onUpdateClick = onUpdateClick,
                 dockConfig = dockConfig,
@@ -2371,6 +2398,7 @@ private fun SettingsPanel(
     onOpenCloudSignIn: () -> Unit,
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
+    onOpenConflictDialog: () -> Unit = {},
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
     dockConfig: DockConfig,
@@ -2412,6 +2440,7 @@ private fun SettingsPanel(
                     onOpenCloudSignIn = onOpenCloudSignIn,
                     onSignOut = onSignOut,
                     onSyncNow = onSyncNow,
+                    onOpenConflictDialog = onOpenConflictDialog,
                 )
             }
             SettingsSection(title = "DISPLAY") {
@@ -2520,6 +2549,7 @@ private fun SettingsCloudPanel(
     onOpenCloudSignIn: () -> Unit,
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
+    onOpenConflictDialog: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
@@ -2598,11 +2628,23 @@ private fun SettingsCloudPanel(
                 )
             }
             if (authSession.signedIn && syncRunState.conflictCount > 0) {
-                SettingsRowText(
-                    title = "CONFLICTS",
-                    value = syncRunState.conflictCount.toString(),
-                    valueColor = colors.error,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SettingsRowText(
+                        title = "CONFLICTS",
+                        value = syncRunState.conflictCount.toString(),
+                        valueColor = colors.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SettingsTextAction(
+                        text = "REVIEW",
+                        onClick = onOpenConflictDialog,
+                        modifier = Modifier.width(88.dp),
+                    )
+                }
             }
         }
 
@@ -4557,6 +4599,231 @@ private fun DialogTextActionButton(
     }
 }
 
+@Composable
+private fun SyncConflictDialog(
+    visible: Boolean,
+    conflicts: List<SyncConflictEntry>,
+    resolvingConflictKey: String?,
+    onResolve: (String, String, ConflictResolutionChoice) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (!visible) return
+    val colors = PixelDoneColors.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Sync conflicts",
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textPrimary,
+            )
+        },
+        text = {
+            if (conflicts.isEmpty()) {
+                Text(
+                    text = "NO CONFLICTS",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textSecondary,
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(
+                        items = conflicts,
+                        key = { conflict -> conflict.recordType + ":" + conflict.localId },
+                    ) { conflict ->
+                        val conflictKey = conflict.recordType + ":" + conflict.localId
+                        SyncConflictReviewItem(
+                            conflict = conflict,
+                            resolving = resolvingConflictKey == conflictKey,
+                            onKeepLocal = {
+                                onResolve(
+                                    conflict.recordType,
+                                    conflict.localId,
+                                    ConflictResolutionChoice.KEEP_LOCAL,
+                                )
+                            },
+                            onKeepCloud = {
+                                onResolve(
+                                    conflict.recordType,
+                                    conflict.localId,
+                                    ConflictResolutionChoice.KEEP_CLOUD,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            DialogTextActionButton(
+                text = "CLOSE",
+                onClick = onDismiss,
+            )
+        },
+        shape = RectangleShape,
+        containerColor = colors.surface,
+        tonalElevation = 0.dp,
+    )
+}
+
+@Composable
+private fun SyncConflictReviewItem(
+    conflict: SyncConflictEntry,
+    resolving: Boolean,
+    onKeepLocal: () -> Unit,
+    onKeepCloud: () -> Unit,
+) {
+    val colors = PixelDoneColors.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surfaceSoft)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = conflict.recordType.conflictTypeLabel(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.primaryInteractive,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = conflict.title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = conflict.fields.joinToString(" / ").ifBlank { "FIELDS" },
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.error,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End,
+            )
+        }
+
+        Text(
+            text = conflict.message,
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.textSecondary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth >= 420.dp) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SyncConflictVersionBlock(
+                        title = "LOCAL",
+                        values = conflict.localValues,
+                        modifier = Modifier.weight(1f),
+                    )
+                    SyncConflictVersionBlock(
+                        title = "CLOUD",
+                        values = conflict.cloudValues,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SyncConflictVersionBlock(title = "LOCAL", values = conflict.localValues)
+                    SyncConflictVersionBlock(title = "CLOUD", values = conflict.cloudValues)
+                }
+            }
+        }
+
+        DialogActionRow(modifier = Modifier.fillMaxWidth()) {
+            PixelButton(
+                text = if (resolving) "..." else "KEEP LOCAL",
+                onClick = onKeepLocal,
+                enabled = !resolving,
+                modifier = Modifier.weight(1f),
+                primary = false,
+            )
+            PixelButton(
+                text = if (resolving) "..." else "KEEP CLOUD",
+                onClick = onKeepCloud,
+                enabled = !resolving,
+                modifier = Modifier.weight(1f),
+                primary = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SyncConflictVersionBlock(
+    title: String,
+    values: List<SyncConflictValue>,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    Column(
+        modifier = modifier
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .background(colors.surface)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        values.forEach { value ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    text = value.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                    modifier = Modifier.width(64.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = value.value,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+private fun String.conflictTypeLabel(): String = when (this) {
+    "item" -> "TODO"
+    "checklist" -> "LIST"
+    else -> uppercase(Locale.US)
+}
 @Composable
 private fun UpdateAvailableDialog(
     info: AppUpdateInfo?,

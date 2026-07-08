@@ -1,4 +1,4 @@
-﻿package com.milesxue.pixeldone.data.local
+package com.milesxue.pixeldone.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
@@ -12,9 +12,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TodoItemEntity::class,
         SyncCursorEntity::class,
         SyncPristineRecordEntity::class,
+        SyncConflictRecordEntity::class,
         SyncMutationEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class PixelDoneDatabase : RoomDatabase() {
@@ -62,6 +63,27 @@ internal object PixelDoneMigrations {
                     attempts INTEGER NOT NULL,
                     lastError TEXT,
                     PRIMARY KEY(ownerUserId, mutationUuid)
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
+    val Migration3To4: Migration = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS sync_conflict_records (
+                    ownerUserId TEXT NOT NULL,
+                    recordType TEXT NOT NULL,
+                    localId TEXT NOT NULL,
+                    localPayloadJson TEXT NOT NULL,
+                    remotePayloadJson TEXT NOT NULL,
+                    fieldsJson TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    remoteVersion INTEGER,
+                    createdAtMillis INTEGER NOT NULL,
+                    PRIMARY KEY(ownerUserId, recordType, localId)
                 )
                 """.trimIndent(),
             )

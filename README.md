@@ -174,7 +174,7 @@ app/build/outputs/apk/release/PixelDone-3.0.1-release.apk
 The latest beta RC debug APK is:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-3.0.2-rc.1-debug.apk
+app/build/outputs/apk/debug/PixelDone-3.0.2-rc.2-debug.apk
 ```
 
 ## Install
@@ -188,7 +188,7 @@ adb install -r app/build/outputs/apk/release/PixelDone-3.0.1-release.apk
 Install the beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-3.0.2-rc.1-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-3.0.2-rc.2-debug.apk
 ```
 
 The formal package name is:
@@ -205,4 +205,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.0.2-rc.1 beta RC for incremental local/cloud sync hardening, settings sync, WorkManager background scheduling, password reset requests, mutation replay protection, and conflict visibility. The latest formal signed release remains 3.0.1.
+3.0.2-rc.2 beta RC adds the Settings conflict review dialog on top of the incremental local/cloud sync hardening from rc1. Conflict candidates are stored locally in Room, can be resolved per checklist/todo by keeping the local or cloud version, and do not require a Supabase schema change. The latest formal signed release remains 3.0.1.

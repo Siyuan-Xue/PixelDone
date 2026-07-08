@@ -1,4 +1,4 @@
-﻿package com.milesxue.pixeldone.domain.sync
+package com.milesxue.pixeldone.domain.sync
 
 /**
  * Sync record state stored locally and mapped to the Supabase tables.
@@ -72,6 +72,26 @@ data class ConflictResolution<T>(
     val source: ConflictResolutionSource,
     val value: T,
     val deletedAtMillis: Long?,
+)
+
+enum class ConflictResolutionChoice {
+    KEEP_LOCAL,
+    KEEP_CLOUD,
+}
+
+data class SyncConflictValue(
+    val label: String,
+    val value: String,
+)
+
+data class SyncConflictEntry(
+    val recordType: String,
+    val localId: String,
+    val title: String,
+    val fields: List<String>,
+    val message: String,
+    val localValues: List<SyncConflictValue>,
+    val cloudValues: List<SyncConflictValue>,
 )
 
 enum class ConflictField {

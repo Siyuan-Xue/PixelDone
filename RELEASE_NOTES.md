@@ -1,12 +1,11 @@
-PixelDone v3.0.2-rc.1 is the beta RC for the local/cloud sync hardening milestone.
+PixelDone v3.0.2-rc.2 is the beta RC for manual sync conflict review.
 
 Highlights:
-- Adds local sync metadata for remote cursors, pristine payloads, and retryable mutation UUIDs.
-- Moves todo/checklist sync from snapshot push/pull toward cursor-based incremental change batches.
-- Adds conflict-aware three-way merge behavior so same-field conflicts remain visible instead of being silently overwritten.
-- Adds settings sync for `darkTheme` and Dock configuration while keeping update prompts, auth state, permission state, alarm runtime state, and local image files device-local.
-- Queues WorkManager background sync with network constraints and keeps manual Settings sync available.
-- Adds password reset email requests through Supabase Auth.
-- Updates Supabase setup notes for `user_settings`, `sync_mutation_log`, RLS, tombstones, and cursor-based sync metadata.
+- Adds a Settings `CLOUD` conflict review dialog for checklist and todo conflicts.
+- Stores conflict candidates locally in Room with local payload, cloud payload, conflict fields, message, remote version, and created time.
+- Lets users resolve each conflict by choosing `KEEP LOCAL` or `KEEP CLOUD` at the whole-record level.
+- Keeps either choice out of the old `CONFLICT` state: local choices enter the normal upload path, cloud choices apply locally as `SYNCED`.
+- Preserves the rc1 incremental sync base: remote cursors, pristine payloads, mutation UUID replay protection, settings sync, WorkManager scheduling, and password reset requests.
+- Does not add or require any Supabase table, RLS policy, RPC, or remote schema change for conflict review.
 
-Install note: this prerelease asset is the debug APK `PixelDone-3.0.2-rc.1-debug.apk` for `com.milesxue.pixeldone.debug`. The latest formal signed release remains `PixelDone-3.0.1-release.apk` for `com.milesxue.pixeldone`.
+Install note: this prerelease asset is the debug APK `PixelDone-3.0.2-rc.2-debug.apk` for `com.milesxue.pixeldone.debug`. The latest formal signed release remains `PixelDone-3.0.1-release.apk` for `com.milesxue.pixeldone`.

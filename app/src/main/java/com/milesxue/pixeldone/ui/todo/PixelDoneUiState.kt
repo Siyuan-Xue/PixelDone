@@ -1,6 +1,8 @@
-﻿package com.milesxue.pixeldone.ui.todo
+package com.milesxue.pixeldone.ui.todo
 
 import com.milesxue.pixeldone.domain.sync.AuthSession
+import com.milesxue.pixeldone.domain.sync.ConflictResolutionChoice
+import com.milesxue.pixeldone.domain.sync.SyncConflictEntry
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.DockConfig
@@ -23,6 +25,9 @@ data class PixelDoneUiState(
     val sortMode: SortMode = SortMode.PRIORITY,
     val hideCompleted: Boolean = false,
     val showDeadlineCountdown: Boolean = false,
+    val syncConflicts: List<SyncConflictEntry> = emptyList(),
+    val conflictDialogVisible: Boolean = false,
+    val resolvingConflictKey: String? = null,
     val pendingSystemAction: PendingSystemAction? = null,
 )
 
@@ -68,6 +73,13 @@ sealed interface PixelDoneAction {
     data object CancelSignIn : PixelDoneAction
     data object SignOut : PixelDoneAction
     data object SyncNow : PixelDoneAction
+    data object OpenConflictDialog : PixelDoneAction
+    data object DismissConflictDialog : PixelDoneAction
+    data class ResolveConflict(
+        val recordType: String,
+        val localId: String,
+        val choice: ConflictResolutionChoice,
+    ) : PixelDoneAction
     data object ResetPassword : PixelDoneAction
     data object DismissAuthMessage : PixelDoneAction
     data object SystemActionConsumed : PixelDoneAction
