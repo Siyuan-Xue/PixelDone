@@ -63,7 +63,6 @@ internal class PixelDoneAppContainer(context: Context) {
             localStore = todoStateStore,
             remoteDataSource = SupabaseRemoteTodoDataSource(supabaseHttpClient),
             clockProvider = clockProvider,
-            settingsStore = settingsStore,
             workScheduler = WorkManagerSyncScheduler(appContext),
         )
     } else {

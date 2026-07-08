@@ -56,13 +56,13 @@ class DataStorePixelDoneSettingsStore private constructor(
     }
 
     override fun saveDarkTheme(enabled: Boolean) {
-        editSettings(markSyncDirty = true) { stored ->
+        editSettings(markSyncDirty = false) { stored ->
             stored.copy(settings = stored.settings.copy(darkTheme = enabled))
         }
     }
 
     override fun saveDockConfig(config: DockConfig) {
-        editSettings(markSyncDirty = true) { stored ->
+        editSettings(markSyncDirty = false) { stored ->
             stored.copy(settings = stored.settings.copy(dockConfig = config.normalized()))
         }
     }
@@ -195,11 +195,11 @@ class InMemoryPixelDoneSettingsStore(
     override fun loadSettings(): PixelDoneSettings = stored.settings
 
     override fun saveDarkTheme(enabled: Boolean) {
-        update(stored.copy(settings = stored.settings.copy(darkTheme = enabled)).dirtyIfSyncPayloadChanged(stored))
+        update(stored.copy(settings = stored.settings.copy(darkTheme = enabled)))
     }
 
     override fun saveDockConfig(config: DockConfig) {
-        update(stored.copy(settings = stored.settings.copy(dockConfig = config.normalized())).dirtyIfSyncPayloadChanged(stored))
+        update(stored.copy(settings = stored.settings.copy(dockConfig = config.normalized())))
     }
 
     override fun saveNeverShowUpdateDialog(neverShow: Boolean) {
@@ -323,16 +323,6 @@ private fun StoredPixelDoneSettings.toLocalSettingsSyncRecord(nowMillis: Long): 
     )
 }
 
-private fun StoredPixelDoneSettings.dirtyIfSyncPayloadChanged(previous: StoredPixelDoneSettings): StoredPixelDoneSettings =
-    if (settings.syncPayload() == previous.settings.syncPayload()) {
-        this
-    } else {
-        copy(
-            settingsUpdatedAtMillis = System.currentTimeMillis(),
-            settingsSyncState = SyncRecordState.NOT_SYNCED.name,
-            settingsLastSyncError = null,
-        )
-    }
 
 private fun PixelDoneSettings.syncPayload(): Pair<Boolean, DockConfig> = darkTheme to dockConfig.normalized()
 

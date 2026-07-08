@@ -45,7 +45,6 @@ internal class TodoSyncCoordinator(
     private val localStore: TodoSyncLocalStore,
     private val remoteDataSource: RemoteTodoDataSource,
     private val clockProvider: ClockProvider,
-    private val settingsStore: SettingsSyncLocalStore? = null,
     private val workScheduler: SyncWorkScheduler = NoOpSyncWorkScheduler,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val autoSyncDebounceMillis: Long = AutoSyncDebounceMillis,
@@ -250,7 +249,6 @@ internal class TodoSyncCoordinator(
         mergeResult.conflicts.forEach { conflict ->
             localStore.recordConflict(ownerUserId, conflict)
         }
-        applyRemoteSettingsIfNeeded(remoteChanges.settings, mergeNowMillis)
 
         val pendingBeforeNew = localStore.loadPendingMutations(ownerUserId)
         if (pendingBeforeNew.isEmpty()) createPendingMutationIfNeeded(ownerUserId)
@@ -262,7 +260,6 @@ internal class TodoSyncCoordinator(
                 batch = RemoteMutationBatch(
                     mutationUuid = mutation.mutationUuid,
                     snapshot = mutation.snapshot,
-                    settings = mutation.settings,
                 ),
             )
             val metadataNowMillis = clockProvider.nowMillis()
@@ -274,7 +271,6 @@ internal class TodoSyncCoordinator(
                     syncedAtMillis = metadataNowMillis,
                 )
             }
-            result.settings?.let { settingsStore?.markSettingsSynced(it, metadataNowMillis) }
             localStore.clearPendingMutation(ownerUserId, mutation.mutationUuid)
             latestServerVersion = latestServerVersion.coerceAtLeast(result.serverVersion)
             localStore.saveSyncCursor(ownerUserId, latestServerVersion, metadataNowMillis)
@@ -395,30 +391,16 @@ internal class TodoSyncCoordinator(
         return finalStatus
     }
 
-    private suspend fun applyRemoteSettingsIfNeeded(remote: RemoteUserSettingsRecord?, syncedAtMillis: Long) {
-        val settings = settingsStore ?: return
-        if (remote == null) return
-        val local = settings.loadSettingsForSync(syncedAtMillis)
-        val localIsDirty = local.syncState == SyncRecordState.NOT_SYNCED.name || local.syncState == SyncRecordState.ERROR.name
-        if (!localIsDirty || remote.updatedAtMillis > local.updatedAtMillis) {
-            settings.applyRemoteSettings(remote, syncedAtMillis)
-        }
-    }
-
     private suspend fun createPendingMutationIfNeeded(ownerUserId: String) {
         val nowMillis = clockProvider.nowMillis()
         val latest = localStore.loadEntitySetForSync(nowMillis).withOwnerAttached(ownerUserId)
         val dirtySnapshot = latest.toDirtyRemoteSnapshot(ownerUserId)
-        val dirtySettings = settingsStore?.loadSettingsForSync(nowMillis)
-            ?.takeIf { it.syncState.isUploadableSettingsState() }
-            ?.toRemoteRecord(ownerUserId)
-        if (dirtySnapshot.checklists.isEmpty() && dirtySnapshot.items.isEmpty() && dirtySettings == null) return
+        if (dirtySnapshot.checklists.isEmpty() && dirtySnapshot.items.isEmpty()) return
         localStore.recordPendingMutation(
             ownerUserId = ownerUserId,
             mutation = SyncMutationRecord(
                 mutationUuid = UUID.randomUUID().toString(),
                 snapshot = dirtySnapshot,
-                settings = dirtySettings,
                 createdAtMillis = nowMillis,
             ),
         )
@@ -444,7 +426,6 @@ internal class TodoSyncCoordinator(
                 },
             )
         }
-        settingsStore?.markSettingsSyncError(message)
     }
 
     private fun statusFor(session: AuthSession): SyncCoordinatorStatus = when {
@@ -950,8 +931,6 @@ private fun RemoteChecklistRecord.recordClock(): Long = deletedAtMillis?.coerceA
 private fun TodoItemEntity.recordClock(): Long = deletedAtMillis?.coerceAtLeast(updatedAtMillis) ?: updatedAtMillis
 private fun RemoteTodoItemRecord.recordClock(): Long = deletedAtMillis?.coerceAtLeast(updatedAtMillis) ?: updatedAtMillis
 
-private fun String.isUploadableSettingsState(): Boolean =
-    this == SyncRecordState.LOCAL_ONLY.name || this == SyncRecordState.NOT_SYNCED.name || this == SyncRecordState.ERROR.name
 
 private val SyncPayloadJson = Json {
     encodeDefaults = true

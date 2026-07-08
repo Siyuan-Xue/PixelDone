@@ -114,6 +114,7 @@ class SupabaseRemoteTodoDataSourceTest {
         assertTrue(itemObjects[0].getValue("trashed_from_checklist_id") is JsonNull)
         assertEquals("camera.jpg", itemObjects[1].getValue("image_local_name").jsonPrimitive.content)
         assertEquals("MAIN", itemObjects[1].getValue("trashed_from_checklist_name").jsonPrimitive.content)
+        assertFalse(client.requests.any { it.path == "/rest/v1/user_settings" })
 
         val mutationRequest = client.requests.single { it.path == "/rest/v1/sync_mutation_log" }
         val mutationObject = json.parseToJsonElement(mutationRequest.body!!).jsonArray.single().jsonObject
@@ -140,8 +141,7 @@ class SupabaseRemoteTodoDataSourceTest {
         assertTrue("remote_version" to "gt.42" in checklistRequest.query)
         val itemRequest = client.requests.single { it.path == "/rest/v1/todo_items" }
         assertTrue("remote_version" to "gt.42" in itemRequest.query)
-        val settingsRequest = client.requests.single { it.path == "/rest/v1/user_settings" }
-        assertTrue("remote_version" to "gt.42" in settingsRequest.query)
+        assertFalse(client.requests.any { it.path == "/rest/v1/user_settings" })
     }
 
     private companion object {
@@ -208,7 +208,6 @@ private class RecordingSupabaseRequestClient : SupabaseRequestClient {
         return when (path) {
             "/rest/v1/todo_checklists" -> ChecklistResponse
             "/rest/v1/todo_items" -> TodoItemResponse
-            "/rest/v1/user_settings" -> UserSettingsResponse
             "/rest/v1/sync_mutation_log" -> ""
             else -> "[]"
         }
@@ -275,16 +274,6 @@ private class RecordingSupabaseRequestClient : SupabaseRequestClient {
                 "remote_version":300
               }
             ]
-        """
-        const val UserSettingsResponse = """
-            [{
-              "owner_user_id":"user-1",
-              "dark_theme":true,
-              "dock_plus_placement":"CENTER",
-              "dock_actions":["SORT","DEADLINE"],
-              "updated_at_millis":500,
-              "remote_version":500
-            }]
         """
     }
 }

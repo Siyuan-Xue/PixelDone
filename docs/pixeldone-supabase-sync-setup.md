@@ -32,7 +32,7 @@ Access tokens are stored with Android Keystore-backed AES-GCM encryption in priv
 
 ## Tables
 
-Run the schema in the Supabase SQL editor after the project is initialized. The table names match the PostgREST endpoints used by the Android app.
+Run the schema in the Supabase SQL editor after the project is initialized. The table names match the PostgREST endpoints used by the Android app. Theme and Dock preferences are local-only; current clients do not read or write a `user_settings` table.
 
 ```sql
 create extension if not exists pgcrypto;
@@ -108,14 +108,6 @@ create policy "Users can update their todo items"
   on public.todo_items for update
   using (owner_user_id = auth.uid())
   with check (owner_user_id = auth.uid());
-create table if not exists public.user_settings (
-  owner_user_id uuid primary key references auth.users(id) on delete cascade,
-  dark_theme boolean not null default false,
-  dock_plus_placement text not null default 'CENTER',
-  dock_actions text[] not null default array['SORT','DEADLINE'],
-  updated_at_millis bigint not null,
-  remote_version bigint not null default 1
-);
 
 create table if not exists public.sync_mutation_log (
   owner_user_id uuid not null references auth.users(id) on delete cascade,
@@ -124,24 +116,8 @@ create table if not exists public.sync_mutation_log (
   primary key (owner_user_id, mutation_uuid)
 );
 
-create index if not exists user_settings_owner_updated_idx
-  on public.user_settings(owner_user_id, remote_version);
 
-alter table public.user_settings enable row level security;
 alter table public.sync_mutation_log enable row level security;
-
-create policy "Users can read their settings"
-  on public.user_settings for select
-  using (owner_user_id = auth.uid());
-
-create policy "Users can insert their settings"
-  on public.user_settings for insert
-  with check (owner_user_id = auth.uid());
-
-create policy "Users can update their settings"
-  on public.user_settings for update
-  using (owner_user_id = auth.uid())
-  with check (owner_user_id = auth.uid());
 
 create policy "Users can read their mutation log"
   on public.sync_mutation_log for select
@@ -157,7 +133,7 @@ create policy "Users can insert their mutation log"
 Included now:
 
 - Email/password sign-up, sign-in, sign-out, and password reset email requests.
-- Local-first incremental todo/checklist/settings sync through Supabase Auth and PostgREST.
+- Local-first incremental todo/checklist sync through Supabase Auth and PostgREST. Theme and Dock settings remain local-only on each device.
 - Cursor-based pull by `remote_version`, idempotent mutation batches, and three-way conflict detection using local pristine payloads.
 - Local Room metadata preservation for `remoteId`, `ownerUserId`, `syncState`, `lastSyncedAtMillis`, `remoteVersion`, `lastSyncError`, sync cursors, pristine payloads, and queued mutation UUIDs.
 - Debug cleartext HTTP support for direct IP testing, plus an explicit release opt-in for the current personal beta HTTP phase.

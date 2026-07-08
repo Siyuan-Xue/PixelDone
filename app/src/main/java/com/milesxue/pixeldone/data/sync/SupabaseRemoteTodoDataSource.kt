@@ -38,17 +38,6 @@ internal class SupabaseRemoteTodoDataSource(
                 "order" to "remote_version.asc,checklist_local_id.asc,sort_index.asc,created_at_millis.asc",
             ),
         )
-        val settingsBody = httpClient.request(
-            method = "GET",
-            path = "/rest/v1/user_settings",
-            bearerToken = token,
-            query = listOfNotNull(
-                "select" to "*",
-                "owner_user_id" to "eq.$userId",
-                versionFilter?.let { "remote_version" to it },
-                "limit" to "1",
-            ),
-        )
         val checklists = responseJson.decodeFromString(
             ListSerializer(SupabaseChecklistRow.serializer()),
             checklistBody,
@@ -57,15 +46,10 @@ internal class SupabaseRemoteTodoDataSource(
             ListSerializer(SupabaseTodoItemRow.serializer()),
             itemBody,
         ).map { it.toRemoteRecord() }
-        val settings = responseJson.decodeFromString(
-            ListSerializer(SupabaseUserSettingsRow.serializer()),
-            settingsBody,
-        ).firstOrNull()?.toRemoteRecord()
         return RemoteChangeBatch(
-            serverVersion = maxServerVersion(sinceVersion, checklists, items, settings),
+            serverVersion = maxServerVersion(sinceVersion, checklists, items),
             checklists = checklists,
             items = items,
-            settings = settings,
         )
     }
 
@@ -115,28 +99,10 @@ internal class SupabaseRemoteTodoDataSource(
                 response,
             ).map { it.toRemoteRecord() }
         }
-        val settings = batch.settings?.let { settingsRecord ->
-            val response = httpClient.request(
-                method = "POST",
-                path = "/rest/v1/user_settings",
-                bearerToken = token,
-                query = listOf("on_conflict" to "owner_user_id"),
-                prefer = "resolution=merge-duplicates,return=representation",
-                body = requestJson.encodeToString(
-                    ListSerializer(SupabaseUserSettingsUpsertRow.serializer()),
-                    listOf(SupabaseUserSettingsUpsertRow.fromRemoteRecord(settingsRecord)),
-                ),
-            )
-            responseJson.decodeFromString(
-                ListSerializer(SupabaseUserSettingsRow.serializer()),
-                response,
-            ).firstOrNull()?.toRemoteRecord()
-        }
         recordMutation(session, userId, batch.mutationUuid)
         return RemotePushResult(
             accepted = RemoteTodoSnapshot(checklists = checklists, items = items),
-            settings = settings,
-            serverVersion = maxServerVersion(null, checklists, items, settings),
+            serverVersion = maxServerVersion(null, checklists, items),
         )
     }
 
@@ -160,12 +126,10 @@ internal class SupabaseRemoteTodoDataSource(
         fallback: Long?,
         checklists: List<RemoteChecklistRecord>,
         items: List<RemoteTodoItemRecord>,
-        settings: RemoteUserSettingsRecord?,
     ): Long = listOfNotNull(
         fallback,
         checklists.maxOfOrNull { it.remoteVersion ?: it.updatedAtMillis },
         items.maxOfOrNull { it.remoteVersion ?: it.updatedAtMillis },
-        settings?.remoteVersion ?: settings?.updatedAtMillis,
     ).maxOrNull() ?: 0L
 }
 
@@ -306,45 +270,6 @@ private data class SupabaseTodoItemUpsertRow(
             trashedFromChecklistName = record.trashedFromChecklistName,
             trashedAtMillis = record.trashedAtMillis,
         )
-    }
-}
-
-@Serializable
-private data class SupabaseUserSettingsRow(
-    @SerialName("owner_user_id") val ownerUserId: String,
-    @SerialName("dark_theme") val darkTheme: Boolean,
-    @SerialName("dock_plus_placement") val dockPlusPlacement: String,
-    @SerialName("dock_actions") val dockActions: List<String>,
-    @SerialName("updated_at_millis") val updatedAtMillis: Long,
-    @SerialName("remote_version") val remoteVersion: Long? = null,
-) {
-    fun toRemoteRecord(): RemoteUserSettingsRecord = RemoteUserSettingsRecord(
-        ownerUserId = ownerUserId,
-        darkTheme = darkTheme,
-        dockPlusPlacement = dockPlusPlacement,
-        dockActions = dockActions,
-        updatedAtMillis = updatedAtMillis,
-        remoteVersion = remoteVersion ?: updatedAtMillis,
-    )
-}
-
-@Serializable
-private data class SupabaseUserSettingsUpsertRow(
-    @SerialName("owner_user_id") val ownerUserId: String,
-    @SerialName("dark_theme") val darkTheme: Boolean,
-    @SerialName("dock_plus_placement") val dockPlusPlacement: String,
-    @SerialName("dock_actions") val dockActions: List<String>,
-    @SerialName("updated_at_millis") val updatedAtMillis: Long,
-) {
-    companion object {
-        fun fromRemoteRecord(record: RemoteUserSettingsRecord): SupabaseUserSettingsUpsertRow =
-            SupabaseUserSettingsUpsertRow(
-                ownerUserId = record.ownerUserId,
-                darkTheme = record.darkTheme,
-                dockPlusPlacement = record.dockPlusPlacement,
-                dockActions = record.dockActions,
-                updatedAtMillis = record.updatedAtMillis,
-            )
     }
 }
 
