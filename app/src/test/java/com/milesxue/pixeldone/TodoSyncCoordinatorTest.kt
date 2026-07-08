@@ -1,14 +1,18 @@
-package com.milesxue.pixeldone
+﻿package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.local.TodoChecklistEntity
 import com.milesxue.pixeldone.data.local.TodoEntitySet
 import com.milesxue.pixeldone.data.local.TodoItemEntity
 import com.milesxue.pixeldone.data.local.TodoStateMetadataEntity
 import com.milesxue.pixeldone.data.sync.AuthSessionRepository
+import com.milesxue.pixeldone.data.sync.RemoteChangeBatch
 import com.milesxue.pixeldone.data.sync.RemoteChecklistRecord
+import com.milesxue.pixeldone.data.sync.RemoteMutationBatch
+import com.milesxue.pixeldone.data.sync.RemotePushResult
 import com.milesxue.pixeldone.data.sync.RemoteTodoDataSource
 import com.milesxue.pixeldone.data.sync.RemoteTodoItemRecord
 import com.milesxue.pixeldone.data.sync.RemoteTodoSnapshot
+import com.milesxue.pixeldone.data.sync.SyncMutationRecord
 import com.milesxue.pixeldone.data.sync.TodoSyncCoordinator
 import com.milesxue.pixeldone.data.sync.TodoSyncLocalStore
 import com.milesxue.pixeldone.domain.sync.AuthSession
@@ -224,6 +228,10 @@ private class FakeTodoSyncLocalStore(initialEntitySet: TodoEntitySet) : TodoSync
     var replaceCount: Int = 0
     var updateCount: Int = 0
 
+    var syncCursor: Long? = null
+    var pristineSnapshot: RemoteTodoSnapshot = RemoteTodoSnapshot()
+    val pendingMutations = mutableListOf<SyncMutationRecord>()
+
     override suspend fun loadEntitySetForSync(nowMillis: Long): TodoEntitySet = entitySet
 
     override suspend fun replaceEntitySetFromSync(entitySet: TodoEntitySet) {
@@ -240,6 +248,29 @@ private class FakeTodoSyncLocalStore(initialEntitySet: TodoEntitySet) : TodoSync
         entitySet = updated
         return updated
     }
+
+    override suspend fun loadSyncCursor(ownerUserId: String): Long? = syncCursor
+
+    override suspend fun saveSyncCursor(ownerUserId: String, remoteVersion: Long, updatedAtMillis: Long) {
+        syncCursor = remoteVersion
+    }
+
+    override suspend fun loadPristineSnapshot(ownerUserId: String): RemoteTodoSnapshot = pristineSnapshot
+
+    override suspend fun savePristineSnapshot(ownerUserId: String, snapshot: RemoteTodoSnapshot, syncedAtMillis: Long) {
+        pristineSnapshot = snapshot
+    }
+
+    override suspend fun loadPendingMutations(ownerUserId: String): List<SyncMutationRecord> = pendingMutations.toList()
+
+    override suspend fun recordPendingMutation(ownerUserId: String, mutation: SyncMutationRecord) {
+        pendingMutations.removeAll { it.mutationUuid == mutation.mutationUuid }
+        pendingMutations += mutation
+    }
+
+    override suspend fun clearPendingMutation(ownerUserId: String, mutationUuid: String) {
+        pendingMutations.removeAll { it.mutationUuid == mutationUuid }
+    }
 }
 
 private class FakeRemoteTodoDataSource(
@@ -253,19 +284,24 @@ private class FakeRemoteTodoDataSource(
     var pullGate: CompletableDeferred<Unit>? = null
     var pushGate: CompletableDeferred<Unit>? = null
 
-    override suspend fun pullSnapshot(session: AuthSession): RemoteTodoSnapshot {
+    override suspend fun pullChanges(session: AuthSession, sinceVersion: Long?): RemoteChangeBatch {
         pullCount += 1
         if (!pullStarted.isCompleted) pullStarted.complete(Unit)
         pullGate?.await()
-        return pullSnapshot
+        return RemoteChangeBatch(
+            serverVersion = 1_000L,
+            checklists = pullSnapshot.checklists,
+            items = pullSnapshot.items,
+        )
     }
 
-    override suspend fun pushSnapshot(session: AuthSession, snapshot: RemoteTodoSnapshot): RemoteTodoSnapshot {
+    override suspend fun pushMutations(session: AuthSession, batch: RemoteMutationBatch): RemotePushResult {
         pushCount += 1
-        pushedSnapshots += snapshot
+        pushedSnapshots += batch.snapshot
         if (!pushStarted.isCompleted) pushStarted.complete(Unit)
         pushGate?.await()
-        return snapshot.copy(
+        val snapshot = batch.snapshot
+        val accepted = snapshot.copy(
             checklists = snapshot.checklists.map { checklist ->
                 checklist.copy(
                     remoteId = checklist.remoteId ?: "remote-${checklist.localId}",
@@ -278,6 +314,11 @@ private class FakeRemoteTodoDataSource(
                     remoteVersion = item.updatedAtMillis,
                 )
             },
+        )
+        return RemotePushResult(
+            accepted = accepted,
+            settings = batch.settings,
+            serverVersion = 2_000L,
         )
     }
 

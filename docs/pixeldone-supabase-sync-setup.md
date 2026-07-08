@@ -108,25 +108,64 @@ create policy "Users can update their todo items"
   on public.todo_items for update
   using (owner_user_id = auth.uid())
   with check (owner_user_id = auth.uid());
+create table if not exists public.user_settings (
+  owner_user_id uuid primary key references auth.users(id) on delete cascade,
+  dark_theme boolean not null default false,
+  dock_plus_placement text not null default 'CENTER',
+  dock_actions text[] not null default array['SORT','DEADLINE'],
+  updated_at_millis bigint not null,
+  remote_version bigint not null default 1
+);
+
+create table if not exists public.sync_mutation_log (
+  owner_user_id uuid not null references auth.users(id) on delete cascade,
+  mutation_uuid text not null,
+  created_at timestamptz not null default now(),
+  primary key (owner_user_id, mutation_uuid)
+);
+
+create index if not exists user_settings_owner_updated_idx
+  on public.user_settings(owner_user_id, remote_version);
+
+alter table public.user_settings enable row level security;
+alter table public.sync_mutation_log enable row level security;
+
+create policy "Users can read their settings"
+  on public.user_settings for select
+  using (owner_user_id = auth.uid());
+
+create policy "Users can insert their settings"
+  on public.user_settings for insert
+  with check (owner_user_id = auth.uid());
+
+create policy "Users can update their settings"
+  on public.user_settings for update
+  using (owner_user_id = auth.uid())
+  with check (owner_user_id = auth.uid());
+
+create policy "Users can read their mutation log"
+  on public.sync_mutation_log for select
+  using (owner_user_id = auth.uid());
+
+create policy "Users can insert their mutation log"
+  on public.sync_mutation_log for insert
+  with check (owner_user_id = auth.uid());
 ```
 
 ## Current Scope
 
 Included now:
 
-- Email/password sign-up, sign-in, and sign-out.
-- Local-first todo/checklist sync through Supabase Auth and PostgREST.
-- Last-write-wins merge based on `updated_at_millis` and `deleted_at_millis`.
-- Local Room metadata preservation for `remoteId`, `ownerUserId`, `syncState`, `lastSyncedAtMillis`, `remoteVersion`, and `lastSyncError`.
+- Email/password sign-up, sign-in, sign-out, and password reset email requests.
+- Local-first incremental todo/checklist/settings sync through Supabase Auth and PostgREST.
+- Cursor-based pull by `remote_version`, idempotent mutation batches, and three-way conflict detection using local pristine payloads.
+- Local Room metadata preservation for `remoteId`, `ownerUserId`, `syncState`, `lastSyncedAtMillis`, `remoteVersion`, `lastSyncError`, sync cursors, pristine payloads, and queued mutation UUIDs.
 - Debug cleartext HTTP support for direct IP testing, plus an explicit release opt-in for the current personal beta HTTP phase.
 
 Not included yet:
 
-- Password reset UI.
 - Image upload or Supabase Storage sync.
-- Settings sync.
-- Push/realtime sync.
-- Background WorkManager scheduling.
+- Realtime push subscriptions.
 
 
 ## Android Networking And CORS

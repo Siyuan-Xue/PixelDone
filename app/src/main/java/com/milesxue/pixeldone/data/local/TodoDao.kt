@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone.data.local
+﻿package com.milesxue.pixeldone.data.local
 
 import androidx.room.Dao
 import androidx.room.Insert
@@ -39,6 +39,30 @@ interface TodoDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMetadata(metadata: TodoStateMetadataEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSyncCursor(cursor: SyncCursorEntity)
+
+    @Query("SELECT * FROM sync_cursors WHERE ownerUserId = :ownerUserId LIMIT 1")
+    suspend fun getSyncCursor(ownerUserId: String): SyncCursorEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPristineRecords(records: List<SyncPristineRecordEntity>)
+
+    @Query("SELECT * FROM sync_pristine_records WHERE ownerUserId = :ownerUserId")
+    suspend fun getPristineRecords(ownerUserId: String): List<SyncPristineRecordEntity>
+
+    @Query("DELETE FROM sync_pristine_records WHERE ownerUserId = :ownerUserId")
+    suspend fun deletePristineRecords(ownerUserId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSyncMutation(mutation: SyncMutationEntity)
+
+    @Query("SELECT * FROM sync_mutations WHERE ownerUserId = :ownerUserId ORDER BY createdAtMillis ASC")
+    suspend fun getSyncMutations(ownerUserId: String): List<SyncMutationEntity>
+
+    @Query("DELETE FROM sync_mutations WHERE ownerUserId = :ownerUserId AND mutationUuid = :mutationUuid")
+    suspend fun deleteSyncMutation(ownerUserId: String, mutationUuid: String)
+
     @Query("DELETE FROM todo_items")
     suspend fun deleteItems()
 
@@ -56,6 +80,12 @@ interface TodoDao {
         insertChecklists(entitySet.checklists)
         insertItems(entitySet.items)
         insertMetadata(entitySet.metadata)
+    }
+
+    @Transaction
+    suspend fun replacePristineRecords(ownerUserId: String, records: List<SyncPristineRecordEntity>) {
+        deletePristineRecords(ownerUserId)
+        if (records.isNotEmpty()) insertPristineRecords(records)
     }
 
     @Transaction

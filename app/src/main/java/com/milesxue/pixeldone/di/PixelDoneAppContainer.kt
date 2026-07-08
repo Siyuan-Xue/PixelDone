@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone.di
+﻿package com.milesxue.pixeldone.di
 
 import android.content.Context
 import com.milesxue.pixeldone.BuildConfig
@@ -16,6 +16,7 @@ import com.milesxue.pixeldone.data.sync.SupabaseHttpClient
 import com.milesxue.pixeldone.data.sync.SupabaseRemoteTodoDataSource
 import com.milesxue.pixeldone.data.sync.SyncCoordinator
 import com.milesxue.pixeldone.data.sync.TodoSyncCoordinator
+import com.milesxue.pixeldone.data.sync.WorkManagerSyncScheduler
 import com.milesxue.pixeldone.data.todo.TodoPreferences
 import com.milesxue.pixeldone.data.todo.TodoRepository
 import com.milesxue.pixeldone.data.update.AppUpdateChannel
@@ -62,6 +63,8 @@ internal class PixelDoneAppContainer(context: Context) {
             localStore = todoStateStore,
             remoteDataSource = SupabaseRemoteTodoDataSource(supabaseHttpClient),
             clockProvider = clockProvider,
+            settingsStore = settingsStore,
+            workScheduler = WorkManagerSyncScheduler(appContext),
         )
     } else {
         LocalOnlySyncCoordinator()

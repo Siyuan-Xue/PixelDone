@@ -1,9 +1,13 @@
-package com.milesxue.pixeldone.data.settings
+﻿package com.milesxue.pixeldone.data.settings
 
 import android.content.Context
 import androidx.datastore.core.DataStoreFactory
 import androidx.datastore.core.Serializer
+import com.milesxue.pixeldone.data.sync.LocalSettingsSyncRecord
+import com.milesxue.pixeldone.data.sync.RemoteUserSettingsRecord
+import com.milesxue.pixeldone.data.sync.SettingsSyncLocalStore
 import com.milesxue.pixeldone.data.todo.TodoPreferences
+import com.milesxue.pixeldone.domain.sync.SyncRecordState
 import com.milesxue.pixeldone.domain.todo.DefaultDockActions
 import com.milesxue.pixeldone.domain.todo.DockAction
 import com.milesxue.pixeldone.domain.todo.DockConfig
@@ -34,7 +38,7 @@ interface PixelDoneSettingsStore {
 class DataStorePixelDoneSettingsStore private constructor(
     context: Context,
     private val legacyPreferences: TodoPreferences,
-) : PixelDoneSettingsStore {
+) : PixelDoneSettingsStore, SettingsSyncLocalStore {
     private val storeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val dataStore = DataStoreFactory.create(
         serializer = StoredPixelDoneSettingsSerializer,
@@ -52,19 +56,27 @@ class DataStorePixelDoneSettingsStore private constructor(
     }
 
     override fun saveDarkTheme(enabled: Boolean) {
-        editSettings { stored -> stored.copy(settings = stored.settings.copy(darkTheme = enabled)) }
+        editSettings(markSyncDirty = true) { stored ->
+            stored.copy(settings = stored.settings.copy(darkTheme = enabled))
+        }
     }
 
     override fun saveDockConfig(config: DockConfig) {
-        editSettings { stored -> stored.copy(settings = stored.settings.copy(dockConfig = config.normalized())) }
+        editSettings(markSyncDirty = true) { stored ->
+            stored.copy(settings = stored.settings.copy(dockConfig = config.normalized()))
+        }
     }
 
     override fun saveNeverShowUpdateDialog(neverShow: Boolean) {
-        editSettings { stored -> stored.copy(settings = stored.settings.copy(neverShowUpdateDialog = neverShow)) }
+        editSettings(markSyncDirty = false) { stored ->
+            stored.copy(settings = stored.settings.copy(neverShowUpdateDialog = neverShow))
+        }
     }
 
     override fun saveFutureSyncEnabled(enabled: Boolean) {
-        editSettings { stored -> stored.copy(settings = stored.settings.copy(futureSyncEnabled = enabled)) }
+        editSettings(markSyncDirty = false) { stored ->
+            stored.copy(settings = stored.settings.copy(futureSyncEnabled = enabled))
+        }
     }
 
     override fun observeSettings(onChange: () -> Unit): () -> Unit {
@@ -75,10 +87,80 @@ class DataStorePixelDoneSettingsStore private constructor(
         return { job.cancel() }
     }
 
-    private fun editSettings(transform: (StoredPixelDoneSettings) -> StoredPixelDoneSettings) {
+    override suspend fun loadSettingsForSync(nowMillis: Long): LocalSettingsSyncRecord {
+        ensureMigrated()
+        return dataStore.data.map { stored -> stored.toLocalSettingsSyncRecord(nowMillis) }.first()
+    }
+
+    override suspend fun applyRemoteSettings(record: RemoteUserSettingsRecord, syncedAtMillis: Long) {
+        ensureMigrated()
+        dataStore.updateData { stored ->
+            stored.copy(
+                settings = stored.settings.copy(
+                    darkTheme = record.darkTheme,
+                    dockConfig = record.toDockConfig(),
+                ),
+                settingsUpdatedAtMillis = record.updatedAtMillis,
+                settingsSyncState = SyncRecordState.SYNCED.name,
+                settingsLastSyncedAtMillis = syncedAtMillis,
+                settingsRemoteVersion = record.remoteVersion,
+                settingsLastSyncError = null,
+                migratedFromSharedPreferences = true,
+            )
+        }
+    }
+
+    override suspend fun markSettingsSynced(record: RemoteUserSettingsRecord, syncedAtMillis: Long) {
+        ensureMigrated()
+        dataStore.updateData { stored ->
+            val unchangedSincePush = stored.settings.darkTheme == record.darkTheme &&
+                stored.settings.dockConfig.normalized() == record.toDockConfig().normalized() &&
+                stored.settingsUpdatedAtMillis == record.updatedAtMillis
+            stored.copy(
+                settingsSyncState = if (unchangedSincePush) SyncRecordState.SYNCED.name else SyncRecordState.NOT_SYNCED.name,
+                settingsLastSyncedAtMillis = if (unchangedSincePush) syncedAtMillis else stored.settingsLastSyncedAtMillis,
+                settingsRemoteVersion = record.remoteVersion ?: stored.settingsRemoteVersion,
+                settingsLastSyncError = null,
+                migratedFromSharedPreferences = true,
+            )
+        }
+    }
+
+    override suspend fun markSettingsSyncError(message: String) {
+        ensureMigrated()
+        dataStore.updateData { stored ->
+            stored.copy(
+                settingsSyncState = if (stored.settingsSyncState == SyncRecordState.SYNCED.name) {
+                    stored.settingsSyncState
+                } else {
+                    SyncRecordState.ERROR.name
+                },
+                settingsLastSyncError = message.take(MaxSettingsSyncErrorLength),
+                migratedFromSharedPreferences = true,
+            )
+        }
+    }
+
+    private fun editSettings(
+        markSyncDirty: Boolean,
+        transform: (StoredPixelDoneSettings) -> StoredPixelDoneSettings,
+    ) {
         runBlocking(Dispatchers.IO) {
             ensureMigrated()
-            dataStore.updateData { stored -> transform(stored).copy(migratedFromSharedPreferences = true) }
+            val nowMillis = System.currentTimeMillis()
+            dataStore.updateData { stored ->
+                val updated = transform(stored)
+                if (markSyncDirty && updated.settings.syncPayload() != stored.settings.syncPayload()) {
+                    updated.copy(
+                        settingsUpdatedAtMillis = nowMillis,
+                        settingsSyncState = SyncRecordState.NOT_SYNCED.name,
+                        settingsLastSyncError = null,
+                        migratedFromSharedPreferences = true,
+                    )
+                } else {
+                    updated.copy(migratedFromSharedPreferences = true)
+                }
+            }
         }
     }
 
@@ -106,26 +188,26 @@ class DataStorePixelDoneSettingsStore private constructor(
 
 class InMemoryPixelDoneSettingsStore(
     initialSettings: PixelDoneSettings = PixelDoneSettings(),
-) : PixelDoneSettingsStore {
-    private var settings = initialSettings
+) : PixelDoneSettingsStore, SettingsSyncLocalStore {
+    private var stored = StoredPixelDoneSettings(settings = initialSettings, migratedFromSharedPreferences = true)
     private val listeners = mutableListOf<() -> Unit>()
 
-    override fun loadSettings(): PixelDoneSettings = settings
+    override fun loadSettings(): PixelDoneSettings = stored.settings
 
     override fun saveDarkTheme(enabled: Boolean) {
-        update(settings.copy(darkTheme = enabled))
+        update(stored.copy(settings = stored.settings.copy(darkTheme = enabled)).dirtyIfSyncPayloadChanged(stored))
     }
 
     override fun saveDockConfig(config: DockConfig) {
-        update(settings.copy(dockConfig = config.normalized()))
+        update(stored.copy(settings = stored.settings.copy(dockConfig = config.normalized())).dirtyIfSyncPayloadChanged(stored))
     }
 
     override fun saveNeverShowUpdateDialog(neverShow: Boolean) {
-        update(settings.copy(neverShowUpdateDialog = neverShow))
+        update(stored.copy(settings = stored.settings.copy(neverShowUpdateDialog = neverShow)))
     }
 
     override fun saveFutureSyncEnabled(enabled: Boolean) {
-        update(settings.copy(futureSyncEnabled = enabled))
+        update(stored.copy(settings = stored.settings.copy(futureSyncEnabled = enabled)))
     }
 
     override fun observeSettings(onChange: () -> Unit): () -> Unit {
@@ -133,8 +215,42 @@ class InMemoryPixelDoneSettingsStore(
         return { listeners -= onChange }
     }
 
-    private fun update(updatedSettings: PixelDoneSettings) {
-        settings = updatedSettings
+    override suspend fun loadSettingsForSync(nowMillis: Long): LocalSettingsSyncRecord = stored.toLocalSettingsSyncRecord(nowMillis)
+
+    override suspend fun applyRemoteSettings(record: RemoteUserSettingsRecord, syncedAtMillis: Long) {
+        update(
+            stored.copy(
+                settings = stored.settings.copy(
+                    darkTheme = record.darkTheme,
+                    dockConfig = record.toDockConfig(),
+                ),
+                settingsUpdatedAtMillis = record.updatedAtMillis,
+                settingsSyncState = SyncRecordState.SYNCED.name,
+                settingsLastSyncedAtMillis = syncedAtMillis,
+                settingsRemoteVersion = record.remoteVersion,
+                settingsLastSyncError = null,
+            ),
+        )
+    }
+
+    override suspend fun markSettingsSynced(record: RemoteUserSettingsRecord, syncedAtMillis: Long) {
+        stored = stored.copy(
+            settingsSyncState = SyncRecordState.SYNCED.name,
+            settingsLastSyncedAtMillis = syncedAtMillis,
+            settingsRemoteVersion = record.remoteVersion,
+            settingsLastSyncError = null,
+        )
+    }
+
+    override suspend fun markSettingsSyncError(message: String) {
+        stored = stored.copy(
+            settingsSyncState = SyncRecordState.ERROR.name,
+            settingsLastSyncError = message.take(MaxSettingsSyncErrorLength),
+        )
+    }
+
+    private fun update(updatedSettings: StoredPixelDoneSettings) {
+        stored = updatedSettings
         listeners.forEach { it() }
     }
 }
@@ -142,6 +258,11 @@ class InMemoryPixelDoneSettingsStore(
 private data class StoredPixelDoneSettings(
     val settings: PixelDoneSettings = PixelDoneSettings(),
     val migratedFromSharedPreferences: Boolean = false,
+    val settingsUpdatedAtMillis: Long = 0L,
+    val settingsSyncState: String = SyncRecordState.LOCAL_ONLY.name,
+    val settingsLastSyncedAtMillis: Long? = null,
+    val settingsRemoteVersion: Long? = null,
+    val settingsLastSyncError: String? = null,
 )
 
 private object StoredPixelDoneSettingsSerializer : Serializer<StoredPixelDoneSettings> {
@@ -162,6 +283,11 @@ private object StoredPixelDoneSettingsSerializer : Serializer<StoredPixelDoneSet
                     futureSyncEnabled = properties.booleanProperty("futureSyncEnabled", false),
                 ),
                 migratedFromSharedPreferences = properties.booleanProperty("migratedFromSharedPreferences", false),
+                settingsUpdatedAtMillis = properties.longProperty("settingsUpdatedAtMillis", 0L),
+                settingsSyncState = properties.getProperty("settingsSyncState") ?: SyncRecordState.LOCAL_ONLY.name,
+                settingsLastSyncedAtMillis = properties.nullableLongProperty("settingsLastSyncedAtMillis"),
+                settingsRemoteVersion = properties.nullableLongProperty("settingsRemoteVersion"),
+                settingsLastSyncError = properties.getProperty("settingsLastSyncError").takeUnless { it.isNullOrBlank() },
             )
         }.getOrDefault(defaultValue)
     }
@@ -174,12 +300,57 @@ private object StoredPixelDoneSettingsSerializer : Serializer<StoredPixelDoneSet
             setProperty("neverShowUpdateDialog", t.settings.neverShowUpdateDialog.toString())
             setProperty("futureSyncEnabled", t.settings.futureSyncEnabled.toString())
             setProperty("migratedFromSharedPreferences", t.migratedFromSharedPreferences.toString())
+            setProperty("settingsUpdatedAtMillis", t.settingsUpdatedAtMillis.toString())
+            setProperty("settingsSyncState", t.settingsSyncState)
+            setProperty("settingsLastSyncedAtMillis", t.settingsLastSyncedAtMillis?.toString().orEmpty())
+            setProperty("settingsRemoteVersion", t.settingsRemoteVersion?.toString().orEmpty())
+            setProperty("settingsLastSyncError", t.settingsLastSyncError.orEmpty())
         }.store(output, null)
     }
 }
 
+private fun StoredPixelDoneSettings.toLocalSettingsSyncRecord(nowMillis: Long): LocalSettingsSyncRecord {
+    val updatedAt = settingsUpdatedAtMillis.takeIf { it > 0L } ?: nowMillis
+    return LocalSettingsSyncRecord(
+        darkTheme = settings.darkTheme,
+        dockPlusPlacement = settings.dockConfig.normalized().plusPlacement.name,
+        dockActions = settings.dockConfig.normalized().actions.map { it.name },
+        updatedAtMillis = updatedAt,
+        syncState = settingsSyncState,
+        lastSyncedAtMillis = settingsLastSyncedAtMillis,
+        remoteVersion = settingsRemoteVersion,
+        lastSyncError = settingsLastSyncError,
+    )
+}
+
+private fun StoredPixelDoneSettings.dirtyIfSyncPayloadChanged(previous: StoredPixelDoneSettings): StoredPixelDoneSettings =
+    if (settings.syncPayload() == previous.settings.syncPayload()) {
+        this
+    } else {
+        copy(
+            settingsUpdatedAtMillis = System.currentTimeMillis(),
+            settingsSyncState = SyncRecordState.NOT_SYNCED.name,
+            settingsLastSyncError = null,
+        )
+    }
+
+private fun PixelDoneSettings.syncPayload(): Pair<Boolean, DockConfig> = darkTheme to dockConfig.normalized()
+
+private fun RemoteUserSettingsRecord.toDockConfig(): DockConfig = DockConfig(
+    plusPlacement = runCatching { DockPlusPlacement.valueOf(dockPlusPlacement) }.getOrDefault(DockPlusPlacement.CENTER),
+    actions = dockActions.mapNotNull { action -> runCatching { DockAction.valueOf(action) }.getOrNull() },
+).normalized()
+
 private fun Properties.booleanProperty(name: String, defaultValue: Boolean): Boolean {
     return getProperty(name)?.toBooleanStrictOrNull() ?: defaultValue
+}
+
+private fun Properties.longProperty(name: String, defaultValue: Long): Long {
+    return getProperty(name)?.toLongOrNull() ?: defaultValue
+}
+
+private fun Properties.nullableLongProperty(name: String): Long? {
+    return getProperty(name)?.takeIf { it.isNotBlank() }?.toLongOrNull()
 }
 
 private fun Properties.dockPlusPlacementProperty(): DockPlusPlacement {
@@ -196,3 +367,4 @@ private fun Properties.dockActionsProperty(): List<DockAction> {
 }
 
 private const val DockActionSeparator = ","
+private const val MaxSettingsSyncErrorLength = 280

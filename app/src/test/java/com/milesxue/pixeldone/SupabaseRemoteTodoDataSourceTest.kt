@@ -1,6 +1,7 @@
-package com.milesxue.pixeldone
+﻿package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.sync.RemoteChecklistRecord
+import com.milesxue.pixeldone.data.sync.RemoteMutationBatch
 import com.milesxue.pixeldone.data.sync.RemoteTodoItemRecord
 import com.milesxue.pixeldone.data.sync.RemoteTodoSnapshot
 import com.milesxue.pixeldone.data.sync.SupabaseRemoteTodoDataSource
@@ -21,7 +22,7 @@ class SupabaseRemoteTodoDataSourceTest {
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test
-    fun pushSnapshotUsesStableUpsertKeysAndMapsReturnedMetadata() = runTest {
+    fun pushMutationsUsesStableUpsertKeysAndMutationLog() = runTest {
         val client = RecordingSupabaseRequestClient()
         val dataSource = SupabaseRemoteTodoDataSource(client)
         val snapshot = RemoteTodoSnapshot(
@@ -83,18 +84,18 @@ class SupabaseRemoteTodoDataSourceTest {
             ),
         )
 
-        val pushed = dataSource.pushSnapshot(
+        val pushed = dataSource.pushMutations(
             session = AuthSession(
                 signedIn = true,
                 userId = "user-1",
                 accessToken = "access-token",
                 cloudAvailable = true,
             ),
-            snapshot = snapshot,
+            batch = RemoteMutationBatch(mutationUuid = "mutation-1", snapshot = snapshot),
         )
 
-        assertEquals("remote-list-1", pushed.checklists.single().remoteId)
-        assertEquals(listOf("remote-item-1", "remote-item-2"), pushed.items.map { it.remoteId })
+        assertEquals("remote-list-1", pushed.accepted.checklists.single().remoteId)
+        assertEquals(listOf("remote-item-1", "remote-item-2"), pushed.accepted.items.map { it.remoteId })
 
         val checklistRequest = client.requests.single { it.path == "/rest/v1/todo_checklists" }
         val checklistObjects = json.parseToJsonElement(checklistRequest.body!!).jsonArray.map { it.jsonObject }
@@ -113,6 +114,34 @@ class SupabaseRemoteTodoDataSourceTest {
         assertTrue(itemObjects[0].getValue("trashed_from_checklist_id") is JsonNull)
         assertEquals("camera.jpg", itemObjects[1].getValue("image_local_name").jsonPrimitive.content)
         assertEquals("MAIN", itemObjects[1].getValue("trashed_from_checklist_name").jsonPrimitive.content)
+
+        val mutationRequest = client.requests.single { it.path == "/rest/v1/sync_mutation_log" }
+        val mutationObject = json.parseToJsonElement(mutationRequest.body!!).jsonArray.single().jsonObject
+        assertEquals("user-1", mutationObject.getValue("owner_user_id").jsonPrimitive.content)
+        assertEquals("mutation-1", mutationObject.getValue("mutation_uuid").jsonPrimitive.content)
+    }
+
+    @Test
+    fun pullChangesUsesRemoteVersionCursor() = runTest {
+        val client = RecordingSupabaseRequestClient()
+        val dataSource = SupabaseRemoteTodoDataSource(client)
+
+        dataSource.pullChanges(
+            session = AuthSession(
+                signedIn = true,
+                userId = "user-1",
+                accessToken = "access-token",
+                cloudAvailable = true,
+            ),
+            sinceVersion = 42L,
+        )
+
+        val checklistRequest = client.requests.single { it.path == "/rest/v1/todo_checklists" }
+        assertTrue("remote_version" to "gt.42" in checklistRequest.query)
+        val itemRequest = client.requests.single { it.path == "/rest/v1/todo_items" }
+        assertTrue("remote_version" to "gt.42" in itemRequest.query)
+        val settingsRequest = client.requests.single { it.path == "/rest/v1/user_settings" }
+        assertTrue("remote_version" to "gt.42" in settingsRequest.query)
     }
 
     private companion object {
@@ -124,7 +153,6 @@ class SupabaseRemoteTodoDataSourceTest {
             "created_at_millis",
             "updated_at_millis",
             "deleted_at_millis",
-            "remote_version",
         )
         val ExpectedTodoItemUpsertKeys = setOf(
             "owner_user_id",
@@ -145,7 +173,6 @@ class SupabaseRemoteTodoDataSourceTest {
             "trashed_from_checklist_id",
             "trashed_from_checklist_name",
             "trashed_at_millis",
-            "remote_version",
         )
     }
 }
@@ -181,6 +208,8 @@ private class RecordingSupabaseRequestClient : SupabaseRequestClient {
         return when (path) {
             "/rest/v1/todo_checklists" -> ChecklistResponse
             "/rest/v1/todo_items" -> TodoItemResponse
+            "/rest/v1/user_settings" -> UserSettingsResponse
+            "/rest/v1/sync_mutation_log" -> ""
             else -> "[]"
         }
     }
@@ -243,9 +272,19 @@ private class RecordingSupabaseRequestClient : SupabaseRequestClient {
                 "trashed_from_checklist_id":"list-1",
                 "trashed_from_checklist_name":"MAIN",
                 "trashed_at_millis":350,
-                "remote_version":12
+                "remote_version":300
               }
             ]
+        """
+        const val UserSettingsResponse = """
+            [{
+              "owner_user_id":"user-1",
+              "dark_theme":true,
+              "dock_plus_placement":"CENTER",
+              "dock_actions":["SORT","DEADLINE"],
+              "updated_at_millis":500,
+              "remote_version":500
+            }]
         """
     }
 }

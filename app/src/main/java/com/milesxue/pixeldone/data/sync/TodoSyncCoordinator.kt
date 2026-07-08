@@ -10,7 +10,11 @@ import com.milesxue.pixeldone.domain.sync.ConflictResolver
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncMergeCandidate
 import com.milesxue.pixeldone.domain.sync.SyncRecordState
+import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.ClockProvider
+import com.milesxue.pixeldone.domain.todo.TrashChecklistId
+import com.milesxue.pixeldone.domain.todo.TrashChecklistName
+import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,13 +34,17 @@ internal class TodoSyncCoordinator(
     private val localStore: TodoSyncLocalStore,
     private val remoteDataSource: RemoteTodoDataSource,
     private val clockProvider: ClockProvider,
+    private val settingsStore: SettingsSyncLocalStore? = null,
+    private val workScheduler: SyncWorkScheduler = NoOpSyncWorkScheduler,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val autoSyncDebounceMillis: Long = AutoSyncDebounceMillis,
 ) : SyncCoordinator {
     private val syncMutex = Mutex()
     private val requestMutex = Mutex()
     private val mutableStatus = MutableStateFlow(statusFor(authSessionRepository.session.value))
+    private val mutableRunState = MutableStateFlow(SyncRunState(status = mutableStatus.value))
     override val status: StateFlow<SyncCoordinatorStatus> = mutableStatus.asStateFlow()
+    override val runState: StateFlow<SyncRunState> = mutableRunState.asStateFlow()
 
     private var scheduledSyncJob: Job? = null
     private var pendingAutoSyncAfterCurrent = false
@@ -44,23 +52,24 @@ internal class TodoSyncCoordinator(
     private var hasObservedSession = false
 
     init {
+        workScheduler.ensurePeriodicSync()
         scope.launch {
             authSessionRepository.session.collectLatest { session ->
                 if (mutableStatus.value != SyncCoordinatorStatus.SYNCING) {
-                    mutableStatus.value = statusFor(session)
+                    setRunState(mutableRunState.value.copy(status = statusFor(session), lastError = session.configurationError))
                 }
                 val signedInUserId = session.userId.takeIf { session.signedIn }
                 val shouldTriggerSync = signedInUserId != null &&
                     (!hasObservedSession || observedSignedInUserId != signedInUserId)
                 observedSignedInUserId = signedInUserId
                 hasObservedSession = true
-                if (shouldTriggerSync) scheduleSync(delayMillis = 0L)
+                if (shouldTriggerSync) scheduleSync(delayMillis = 0L, enqueueWork = false)
             }
         }
     }
 
     override fun requestSync() {
-        scheduleSync(delayMillis = autoSyncDebounceMillis)
+        scheduleSync(delayMillis = autoSyncDebounceMillis, enqueueWork = true)
     }
 
     override suspend fun syncNow(): SyncCoordinatorStatus = syncNowInternal(cancelScheduledSync = true)
@@ -91,11 +100,12 @@ internal class TodoSyncCoordinator(
             pendingAutoSyncAfterCurrent = false
             pending
         }
-        if (shouldRunPending) scheduleSync(delayMillis = autoSyncDebounceMillis)
+        if (shouldRunPending) scheduleSync(delayMillis = autoSyncDebounceMillis, enqueueWork = false)
         return result
     }
 
-    private fun scheduleSync(delayMillis: Long) {
+    private fun scheduleSync(delayMillis: Long, enqueueWork: Boolean) {
+        if (enqueueWork) workScheduler.requestSync()
         scope.launch {
             requestMutex.withLock {
                 if (syncMutex.isLocked || mutableStatus.value == SyncCoordinatorStatus.SYNCING) {
@@ -115,29 +125,45 @@ internal class TodoSyncCoordinator(
         val startingSession = authSessionRepository.session.value
         val readyStatus = statusFor(startingSession)
         if (readyStatus != SyncCoordinatorStatus.IDLE && readyStatus != SyncCoordinatorStatus.SYNCED) {
-            mutableStatus.value = readyStatus
+            setRunState(mutableRunState.value.copy(status = readyStatus, lastError = startingSession.configurationError))
             return readyStatus
         }
         val ownerUserId = requireNotNull(startingSession.userId)
-        mutableStatus.value = SyncCoordinatorStatus.SYNCING
+        setRunState(mutableRunState.value.copy(status = SyncCoordinatorStatus.SYNCING, lastError = null))
         return try {
-            runSyncWithRefreshRetry(ownerUserId)
-            mutableStatus.value = SyncCoordinatorStatus.SYNCED
-            SyncCoordinatorStatus.SYNCED
+            val result = runSyncWithRefreshRetry(ownerUserId)
+            val finalStatus = if (result.conflictCount > 0) SyncCoordinatorStatus.CONFLICT else SyncCoordinatorStatus.SYNCED
+            setRunState(
+                SyncRunState(
+                    status = finalStatus,
+                    lastSyncedAtMillis = clockProvider.nowMillis(),
+                    pendingCount = result.pendingCount,
+                    conflictCount = result.conflictCount,
+                    lastError = null,
+                ),
+            )
+            finalStatus
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             Log.w(LogTag, "PixelDone sync failed: ${error.safeLogMessage()}")
             markSyncError(ownerUserId, error.message ?: "Sync failed.")
-            mutableStatus.value = SyncCoordinatorStatus.ERROR
+            val pendingCount = localStore.loadPendingMutations(ownerUserId).size
+            setRunState(
+                mutableRunState.value.copy(
+                    status = SyncCoordinatorStatus.ERROR,
+                    pendingCount = pendingCount,
+                    lastError = error.message ?: "Sync failed.",
+                ),
+            )
             SyncCoordinatorStatus.ERROR
         }
     }
 
-    private suspend fun runSyncWithRefreshRetry(ownerUserId: String) {
+    private suspend fun runSyncWithRefreshRetry(ownerUserId: String): SyncResult {
         val session = authSessionRepository.refreshSessionIfNeeded(clockProvider.nowMillis())
         try {
-            runSync(session, ownerUserId)
+            return runSync(session, ownerUserId)
         } catch (error: SyncRemoteException) {
             if (!error.isExpiredJwt()) throw error
             Log.i(LogTag, "Supabase access token expired during sync; refreshing and retrying once.")
@@ -145,34 +171,96 @@ internal class TodoSyncCoordinator(
                 nowMillis = clockProvider.nowMillis(),
                 force = true,
             )
-            runSync(refreshed, ownerUserId)
+            return runSync(refreshed, ownerUserId)
         }
     }
 
-    private suspend fun runSync(session: AuthSession, ownerUserId: String) {
-        val remote = remoteDataSource.pullSnapshot(session)
+    private suspend fun runSync(session: AuthSession, ownerUserId: String): SyncResult {
+        val sinceVersion = localStore.loadSyncCursor(ownerUserId)
+        val remoteChanges = remoteDataSource.pullChanges(session, sinceVersion)
+        val pristine = localStore.loadPristineSnapshot(ownerUserId)
         val mergeNowMillis = clockProvider.nowMillis()
-        val merged = localStore.updateEntitySetFromSync(mergeNowMillis) { latestLocal ->
+        val mergeResult = MergeAccumulator()
+        localStore.updateEntitySetFromSync(mergeNowMillis) { latestLocal ->
             mergeSnapshots(
                 local = latestLocal.withOwnerAttached(ownerUserId),
-                remote = remote,
+                remote = remoteChanges.toSnapshot(),
+                pristine = pristine,
                 ownerUserId = ownerUserId,
                 syncedAtMillis = mergeNowMillis,
+                mergeResult = mergeResult,
             )
         }
-        val dirtySnapshot = merged.toDirtyRemoteSnapshot(ownerUserId)
-        if (dirtySnapshot.checklists.isEmpty() && dirtySnapshot.items.isEmpty()) return
+        applyRemoteSettingsIfNeeded(remoteChanges.settings, mergeNowMillis)
 
-        val pushed = remoteDataSource.pushSnapshot(session, dirtySnapshot)
-        val metadataNowMillis = clockProvider.nowMillis()
-        localStore.updateEntitySetFromSync(metadataNowMillis) { latestLocal ->
-            latestLocal.withOwnerAttached(ownerUserId).withPushedRemoteMetadataSafely(
-                pushed = pushed,
-                pushedSource = dirtySnapshot,
-                ownerUserId = ownerUserId,
-                syncedAtMillis = metadataNowMillis,
+        val pendingBeforeNew = localStore.loadPendingMutations(ownerUserId)
+        if (pendingBeforeNew.isEmpty()) createPendingMutationIfNeeded(ownerUserId)
+        val pendingMutations = localStore.loadPendingMutations(ownerUserId)
+        var latestServerVersion = remoteChanges.serverVersion
+        for (mutation in pendingMutations) {
+            val result = remoteDataSource.pushMutations(
+                session = session,
+                batch = RemoteMutationBatch(
+                    mutationUuid = mutation.mutationUuid,
+                    snapshot = mutation.snapshot,
+                    settings = mutation.settings,
+                ),
             )
+            val metadataNowMillis = clockProvider.nowMillis()
+            localStore.updateEntitySetFromSync(metadataNowMillis) { latestLocal ->
+                latestLocal.withOwnerAttached(ownerUserId).withPushedRemoteMetadataSafely(
+                    pushed = result.accepted,
+                    pushedSource = mutation.snapshot,
+                    ownerUserId = ownerUserId,
+                    syncedAtMillis = metadataNowMillis,
+                )
+            }
+            result.settings?.let { settingsStore?.markSettingsSynced(it, metadataNowMillis) }
+            localStore.clearPendingMutation(ownerUserId, mutation.mutationUuid)
+            latestServerVersion = latestServerVersion.coerceAtLeast(result.serverVersion)
+            localStore.saveSyncCursor(ownerUserId, latestServerVersion, metadataNowMillis)
         }
+
+        val finalNowMillis = clockProvider.nowMillis()
+        localStore.saveSyncCursor(ownerUserId, latestServerVersion, finalNowMillis)
+        val latest = localStore.loadEntitySetForSync(finalNowMillis).withOwnerAttached(ownerUserId)
+        localStore.savePristineSnapshot(
+            ownerUserId = ownerUserId,
+            snapshot = latest.toRemoteSnapshotForPristine(ownerUserId),
+            syncedAtMillis = finalNowMillis,
+        )
+        val pendingCount = localStore.loadPendingMutations(ownerUserId).size
+        val conflictCount = latest.conflictCount()
+        return SyncResult(pendingCount = pendingCount, conflictCount = conflictCount)
+    }
+
+    private suspend fun applyRemoteSettingsIfNeeded(remote: RemoteUserSettingsRecord?, syncedAtMillis: Long) {
+        val settings = settingsStore ?: return
+        if (remote == null) return
+        val local = settings.loadSettingsForSync(syncedAtMillis)
+        val localIsDirty = local.syncState == SyncRecordState.NOT_SYNCED.name || local.syncState == SyncRecordState.ERROR.name
+        if (!localIsDirty || remote.updatedAtMillis > local.updatedAtMillis) {
+            settings.applyRemoteSettings(remote, syncedAtMillis)
+        }
+    }
+
+    private suspend fun createPendingMutationIfNeeded(ownerUserId: String) {
+        val nowMillis = clockProvider.nowMillis()
+        val latest = localStore.loadEntitySetForSync(nowMillis).withOwnerAttached(ownerUserId)
+        val dirtySnapshot = latest.toDirtyRemoteSnapshot(ownerUserId)
+        val dirtySettings = settingsStore?.loadSettingsForSync(nowMillis)
+            ?.takeIf { it.syncState.isUploadableSettingsState() }
+            ?.toRemoteRecord(ownerUserId)
+        if (dirtySnapshot.checklists.isEmpty() && dirtySnapshot.items.isEmpty() && dirtySettings == null) return
+        localStore.recordPendingMutation(
+            ownerUserId = ownerUserId,
+            mutation = SyncMutationRecord(
+                mutationUuid = UUID.randomUUID().toString(),
+                snapshot = dirtySnapshot,
+                settings = dirtySettings,
+                createdAtMillis = nowMillis,
+            ),
+        )
     }
 
     private suspend fun markSyncError(ownerUserId: String, message: String) {
@@ -180,14 +268,14 @@ internal class TodoSyncCoordinator(
         localStore.updateEntitySetFromSync(nowMillis) { current ->
             current.copy(
                 checklists = current.checklists.map { checklist ->
-                    if (checklist.ownerUserId == ownerUserId && checklist.syncState != SyncRecordState.SYNCED.name) {
+                    if (checklist.ownerUserId == ownerUserId && checklist.syncState.isRetryableSyncState()) {
                         checklist.copy(syncState = SyncRecordState.ERROR.name, lastSyncError = message.take(MaxSyncErrorLength))
                     } else {
                         checklist
                     }
                 },
                 items = current.items.map { item ->
-                    if (item.ownerUserId == ownerUserId && item.syncState != SyncRecordState.SYNCED.name) {
+                    if (item.ownerUserId == ownerUserId && item.syncState.isRetryableSyncState()) {
                         item.copy(syncState = SyncRecordState.ERROR.name, lastSyncError = message.take(MaxSyncErrorLength))
                     } else {
                         item
@@ -195,6 +283,7 @@ internal class TodoSyncCoordinator(
                 },
             )
         }
+        settingsStore?.markSettingsSyncError(message)
     }
 
     private fun statusFor(session: AuthSession): SyncCoordinatorStatus = when {
@@ -202,6 +291,11 @@ internal class TodoSyncCoordinator(
         !session.cloudAvailable -> SyncCoordinatorStatus.NOT_CONFIGURED
         !session.signedIn -> SyncCoordinatorStatus.SIGNED_OUT
         else -> SyncCoordinatorStatus.IDLE
+    }
+
+    private fun setRunState(state: SyncRunState) {
+        mutableRunState.value = state
+        mutableStatus.value = state.status
     }
 
     private fun SyncRemoteException.isExpiredJwt(): Boolean =
@@ -220,6 +314,20 @@ internal class TodoSyncCoordinator(
         private const val AutoSyncDebounceMillis = 2_000L
     }
 }
+
+private data class SyncResult(
+    val pendingCount: Int,
+    val conflictCount: Int,
+)
+
+private class MergeAccumulator {
+    var conflictCount: Int = 0
+}
+
+private fun RemoteChangeBatch.toSnapshot(): RemoteTodoSnapshot = RemoteTodoSnapshot(
+    checklists = checklists,
+    items = items,
+)
 
 private fun TodoEntitySet.withOwnerAttached(ownerUserId: String): TodoEntitySet = copy(
     checklists = checklists.map { it.withOwnerAttached(ownerUserId) },
@@ -247,11 +355,15 @@ private fun TodoItemEntity.withOwnerAttached(ownerUserId: String): TodoItemEntit
 private fun mergeSnapshots(
     local: TodoEntitySet,
     remote: RemoteTodoSnapshot,
+    pristine: RemoteTodoSnapshot,
     ownerUserId: String,
     syncedAtMillis: Long,
+    mergeResult: MergeAccumulator,
 ): TodoEntitySet {
     val remoteChecklistsById = remote.checklists.associateBy { it.localId }
     val remoteItemsById = remote.items.associateBy { it.localId }
+    val pristineChecklistsById = pristine.checklists.associateBy { it.localId }
+    val pristineItemsById = pristine.items.associateBy { it.localId }
     val localChecklistsById = local.checklists.associateBy { it.localId }
     val localItemsById = local.items.associateBy { it.localId }
     val mergedChecklistIds = (localChecklistsById.keys + remoteChecklistsById.keys).toList()
@@ -262,16 +374,20 @@ private fun mergeSnapshots(
             mergeChecklist(
                 local = localChecklistsById[localId],
                 remote = remoteChecklistsById[localId],
+                pristine = pristineChecklistsById[localId],
                 ownerUserId = ownerUserId,
                 syncedAtMillis = syncedAtMillis,
+                mergeResult = mergeResult,
             )
         }.sortedWith(compareBy<TodoChecklistEntity> { it.sortIndex }.thenBy { it.createdAtMillis }),
         items = mergedItemIds.mapNotNull { localId ->
             mergeItem(
                 local = localItemsById[localId],
                 remote = remoteItemsById[localId],
+                pristine = pristineItemsById[localId],
                 ownerUserId = ownerUserId,
                 syncedAtMillis = syncedAtMillis,
+                mergeResult = mergeResult,
             )
         }.sortedWith(
             compareBy<TodoItemEntity> { it.checklistLocalId }
@@ -284,41 +400,58 @@ private fun mergeSnapshots(
 private fun mergeChecklist(
     local: TodoChecklistEntity?,
     remote: RemoteChecklistRecord?,
+    pristine: RemoteChecklistRecord?,
     ownerUserId: String,
     syncedAtMillis: Long,
+    mergeResult: MergeAccumulator,
 ): TodoChecklistEntity? = when {
     local == null && remote == null -> null
     local == null -> remote!!.toEntity(syncedAtMillis)
     remote == null -> local.withOwnerAttached(ownerUserId).asDirtyIfNeeded()
     else -> {
         val ownedLocal = local.withOwnerAttached(ownerUserId)
-        val resolution = ConflictResolver.resolveLastWriteWins(
-            local = SyncMergeCandidate(
-                value = ownedLocal,
-                updatedAtMillis = ownedLocal.updatedAtMillis,
-                deletedAtMillis = ownedLocal.deletedAtMillis,
-                remoteVersion = ownedLocal.remoteVersion,
-            ),
-            remote = SyncMergeCandidate(
-                value = remote,
-                updatedAtMillis = remote.updatedAtMillis,
-                deletedAtMillis = remote.deletedAtMillis,
-                remoteVersion = remote.remoteVersion,
-            ),
-        )
-        if (resolution.source == ConflictResolutionSource.REMOTE) {
-            remote.toEntity(syncedAtMillis)
+        val conflictFields = if (pristine != null && ownedLocal.syncState.isRetryableSyncState()) {
+            ownedLocal.changedFieldsFrom(pristine).intersect(remote.changedFieldsFrom(pristine))
         } else {
-            val localClock = ownedLocal.recordClock()
-            val remoteClock = remote.recordClock()
-            val needsPush = ownedLocal.syncState != SyncRecordState.SYNCED.name || localClock > remoteClock
+            emptySet()
+        }
+        if (conflictFields.isNotEmpty()) {
+            mergeResult.conflictCount += 1
             ownedLocal.copy(
                 remoteId = remote.remoteId ?: ownedLocal.remoteId,
                 remoteVersion = remote.remoteVersion ?: ownedLocal.remoteVersion,
-                syncState = if (needsPush) SyncRecordState.NOT_SYNCED.name else SyncRecordState.SYNCED.name,
-                lastSyncedAtMillis = if (needsPush) ownedLocal.lastSyncedAtMillis else syncedAtMillis,
-                lastSyncError = null,
+                syncState = SyncRecordState.CONFLICT.name,
+                lastSyncError = "Conflict: ${conflictFields.sorted().joinToString(",")}",
             )
+        } else {
+            val resolution = ConflictResolver.resolveLastWriteWins(
+                local = SyncMergeCandidate(
+                    value = ownedLocal,
+                    updatedAtMillis = ownedLocal.updatedAtMillis,
+                    deletedAtMillis = ownedLocal.deletedAtMillis,
+                    remoteVersion = ownedLocal.remoteVersion,
+                ),
+                remote = SyncMergeCandidate(
+                    value = remote,
+                    updatedAtMillis = remote.updatedAtMillis,
+                    deletedAtMillis = remote.deletedAtMillis,
+                    remoteVersion = remote.remoteVersion,
+                ),
+            )
+            if (resolution.source == ConflictResolutionSource.REMOTE) {
+                remote.toEntity(syncedAtMillis)
+            } else {
+                val localClock = ownedLocal.recordClock()
+                val remoteClock = remote.recordClock()
+                val needsPush = ownedLocal.syncState != SyncRecordState.SYNCED.name || localClock > remoteClock
+                ownedLocal.copy(
+                    remoteId = remote.remoteId ?: ownedLocal.remoteId,
+                    remoteVersion = remote.remoteVersion ?: ownedLocal.remoteVersion,
+                    syncState = if (needsPush) SyncRecordState.NOT_SYNCED.name else SyncRecordState.SYNCED.name,
+                    lastSyncedAtMillis = if (needsPush) ownedLocal.lastSyncedAtMillis else syncedAtMillis,
+                    lastSyncError = null,
+                )
+            }
         }
     }
 }
@@ -326,44 +459,61 @@ private fun mergeChecklist(
 private fun mergeItem(
     local: TodoItemEntity?,
     remote: RemoteTodoItemRecord?,
+    pristine: RemoteTodoItemRecord?,
     ownerUserId: String,
     syncedAtMillis: Long,
+    mergeResult: MergeAccumulator,
 ): TodoItemEntity? = when {
     local == null && remote == null -> null
     local == null -> remote!!.toEntity(syncedAtMillis)
     remote == null -> local.withOwnerAttached(ownerUserId).asDirtyIfNeeded()
     else -> {
         val ownedLocal = local.withOwnerAttached(ownerUserId)
-        val resolution = ConflictResolver.resolveLastWriteWins(
-            local = SyncMergeCandidate(
-                value = ownedLocal,
-                updatedAtMillis = ownedLocal.updatedAtMillis,
-                deletedAtMillis = ownedLocal.deletedAtMillis,
-                remoteVersion = ownedLocal.remoteVersion,
-            ),
-            remote = SyncMergeCandidate(
-                value = remote,
-                updatedAtMillis = remote.updatedAtMillis,
-                deletedAtMillis = remote.deletedAtMillis,
-                remoteVersion = remote.remoteVersion,
-            ),
-        )
-        if (resolution.source == ConflictResolutionSource.REMOTE) {
-            remote.toEntity(
-                syncedAtMillis = syncedAtMillis,
-                locallyPurgedAtMillis = ownedLocal.locallyPurgedAtMillis.takeIf { remote.deletedAtMillis != null },
-            )
+        val conflictFields = if (pristine != null && ownedLocal.syncState.isRetryableSyncState()) {
+            ownedLocal.changedFieldsFrom(pristine).intersect(remote.changedFieldsFrom(pristine))
         } else {
-            val localClock = ownedLocal.recordClock()
-            val remoteClock = remote.recordClock()
-            val needsPush = ownedLocal.syncState != SyncRecordState.SYNCED.name || localClock > remoteClock
-            ownedLocal.copy(
+            emptySet()
+        }
+        if (conflictFields.isNotEmpty() || ownedLocal.hasDeleteEditConflict(remote)) {
+            mergeResult.conflictCount += 1
+            ownedLocal.moveToTrashForRemoteDelete(remote).copy(
                 remoteId = remote.remoteId ?: ownedLocal.remoteId,
                 remoteVersion = remote.remoteVersion ?: ownedLocal.remoteVersion,
-                syncState = if (needsPush) SyncRecordState.NOT_SYNCED.name else SyncRecordState.SYNCED.name,
-                lastSyncedAtMillis = if (needsPush) ownedLocal.lastSyncedAtMillis else syncedAtMillis,
-                lastSyncError = null,
+                syncState = SyncRecordState.CONFLICT.name,
+                lastSyncError = "Conflict: ${(conflictFields + "delete").sorted().joinToString(",")}",
             )
+        } else {
+            val resolution = ConflictResolver.resolveLastWriteWins(
+                local = SyncMergeCandidate(
+                    value = ownedLocal,
+                    updatedAtMillis = ownedLocal.updatedAtMillis,
+                    deletedAtMillis = ownedLocal.deletedAtMillis,
+                    remoteVersion = ownedLocal.remoteVersion,
+                ),
+                remote = SyncMergeCandidate(
+                    value = remote,
+                    updatedAtMillis = remote.updatedAtMillis,
+                    deletedAtMillis = remote.deletedAtMillis,
+                    remoteVersion = remote.remoteVersion,
+                ),
+            )
+            if (resolution.source == ConflictResolutionSource.REMOTE) {
+                remote.toEntity(
+                    syncedAtMillis = syncedAtMillis,
+                    locallyPurgedAtMillis = ownedLocal.locallyPurgedAtMillis.takeIf { remote.deletedAtMillis != null },
+                )
+            } else {
+                val localClock = ownedLocal.recordClock()
+                val remoteClock = remote.recordClock()
+                val needsPush = ownedLocal.syncState != SyncRecordState.SYNCED.name || localClock > remoteClock
+                ownedLocal.copy(
+                    remoteId = remote.remoteId ?: ownedLocal.remoteId,
+                    remoteVersion = remote.remoteVersion ?: ownedLocal.remoteVersion,
+                    syncState = if (needsPush) SyncRecordState.NOT_SYNCED.name else SyncRecordState.SYNCED.name,
+                    lastSyncedAtMillis = if (needsPush) ownedLocal.lastSyncedAtMillis else syncedAtMillis,
+                    lastSyncError = null,
+                )
+            }
         }
     }
 }
@@ -373,6 +523,56 @@ private fun TodoChecklistEntity.asDirtyIfNeeded(): TodoChecklistEntity =
 
 private fun TodoItemEntity.asDirtyIfNeeded(): TodoItemEntity =
     if (syncState == SyncRecordState.SYNCED.name) this else copy(syncState = SyncRecordState.NOT_SYNCED.name)
+
+private fun TodoChecklistEntity.changedFieldsFrom(pristine: RemoteChecklistRecord): Set<String> = buildSet {
+    if (sortIndex != pristine.sortIndex) add("sort")
+    if (name != pristine.name) add("name")
+    if (deletedAtMillis != pristine.deletedAtMillis) add("delete")
+}
+
+private fun RemoteChecklistRecord.changedFieldsFrom(pristine: RemoteChecklistRecord): Set<String> = buildSet {
+    if (sortIndex != pristine.sortIndex) add("sort")
+    if (name != pristine.name) add("name")
+    if (deletedAtMillis != pristine.deletedAtMillis) add("delete")
+}
+
+private fun TodoItemEntity.changedFieldsFrom(pristine: RemoteTodoItemRecord): Set<String> = buildSet {
+    if (checklistLocalId != pristine.checklistLocalId) add("checklist")
+    if (sortIndex != pristine.sortIndex) add("sort")
+    if (title != pristine.title) add("title")
+    if (priority != pristine.priority) add("priority")
+    if (dueAtMillis != pristine.dueAtMillis) add("due")
+    if (completed != pristine.completed) add("completed")
+    if (reminderRepeat != pristine.reminderRepeat) add("repeat")
+    if (imageLocalName != pristine.imageLocalName || imageRemotePath != pristine.imageRemotePath) add("image")
+    if (deletedAtMillis != pristine.deletedAtMillis || trashedAtMillis != pristine.trashedAtMillis) add("delete")
+}
+
+private fun RemoteTodoItemRecord.changedFieldsFrom(pristine: RemoteTodoItemRecord): Set<String> = buildSet {
+    if (checklistLocalId != pristine.checklistLocalId) add("checklist")
+    if (sortIndex != pristine.sortIndex) add("sort")
+    if (title != pristine.title) add("title")
+    if (priority != pristine.priority) add("priority")
+    if (dueAtMillis != pristine.dueAtMillis) add("due")
+    if (completed != pristine.completed) add("completed")
+    if (reminderRepeat != pristine.reminderRepeat) add("repeat")
+    if (imageLocalName != pristine.imageLocalName || imageRemotePath != pristine.imageRemotePath) add("image")
+    if (deletedAtMillis != pristine.deletedAtMillis || trashedAtMillis != pristine.trashedAtMillis) add("delete")
+}
+
+private fun TodoItemEntity.hasDeleteEditConflict(remote: RemoteTodoItemRecord): Boolean =
+    remote.deletedAtMillis != null && deletedAtMillis == null && syncState.isRetryableSyncState()
+
+private fun TodoItemEntity.moveToTrashForRemoteDelete(remote: RemoteTodoItemRecord): TodoItemEntity {
+    val remoteDeletedAt = remote.deletedAtMillis ?: return this
+    return copy(
+        checklistLocalId = TrashChecklistId,
+        deletedAtMillis = remoteDeletedAt,
+        trashedAtMillis = trashedAtMillis ?: remoteDeletedAt,
+        trashedFromChecklistId = trashedFromChecklistId ?: checklistLocalId,
+        trashedFromChecklistName = trashedFromChecklistName ?: TrashChecklistName,
+    )
+}
 
 private fun RemoteChecklistRecord.toEntity(syncedAtMillis: Long): TodoChecklistEntity = TodoChecklistEntity(
     localId = localId,
@@ -421,10 +621,19 @@ private fun RemoteTodoItemRecord.toEntity(
 
 private fun TodoEntitySet.toDirtyRemoteSnapshot(ownerUserId: String): RemoteTodoSnapshot = RemoteTodoSnapshot(
     checklists = checklists
-        .filter { it.ownerUserId == ownerUserId && it.syncState != SyncRecordState.SYNCED.name }
+        .filter { it.ownerUserId == ownerUserId && it.syncState.isRetryableSyncState() }
         .map { it.toRemoteRecord(ownerUserId) },
     items = items
-        .filter { it.ownerUserId == ownerUserId && it.syncState != SyncRecordState.SYNCED.name }
+        .filter { it.ownerUserId == ownerUserId && it.syncState.isRetryableSyncState() }
+        .map { it.toRemoteRecord(ownerUserId) },
+)
+
+private fun TodoEntitySet.toRemoteSnapshotForPristine(ownerUserId: String): RemoteTodoSnapshot = RemoteTodoSnapshot(
+    checklists = checklists
+        .filter { it.ownerUserId == ownerUserId && it.syncState == SyncRecordState.SYNCED.name }
+        .map { it.toRemoteRecord(ownerUserId) },
+    items = items
+        .filter { it.ownerUserId == ownerUserId && it.syncState == SyncRecordState.SYNCED.name }
         .map { it.toRemoteRecord(ownerUserId) },
 )
 
@@ -544,7 +753,17 @@ private fun RemoteTodoItemRecord.hasSameSyncPayloadAs(other: RemoteTodoItemRecor
         trashedFromChecklistName == other.trashedFromChecklistName &&
         trashedAtMillis == other.trashedAtMillis
 
+private fun TodoEntitySet.conflictCount(): Int =
+    checklists.count { it.syncState == SyncRecordState.CONFLICT.name } +
+        items.count { it.syncState == SyncRecordState.CONFLICT.name }
+
+private fun String.isRetryableSyncState(): Boolean =
+    this == SyncRecordState.NOT_SYNCED.name || this == SyncRecordState.ERROR.name
+
 private fun TodoChecklistEntity.recordClock(): Long = deletedAtMillis?.coerceAtLeast(updatedAtMillis) ?: updatedAtMillis
 private fun RemoteChecklistRecord.recordClock(): Long = deletedAtMillis?.coerceAtLeast(updatedAtMillis) ?: updatedAtMillis
 private fun TodoItemEntity.recordClock(): Long = deletedAtMillis?.coerceAtLeast(updatedAtMillis) ?: updatedAtMillis
 private fun RemoteTodoItemRecord.recordClock(): Long = deletedAtMillis?.coerceAtLeast(updatedAtMillis) ?: updatedAtMillis
+
+private fun String.isUploadableSettingsState(): Boolean =
+    this == SyncRecordState.LOCAL_ONLY.name || this == SyncRecordState.NOT_SYNCED.name || this == SyncRecordState.ERROR.name

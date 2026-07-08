@@ -1,11 +1,12 @@
-PixelDone v3.0.1 is the formal signed patch release for cloud sync stability.
+PixelDone v3.0.2-rc.1 is the beta RC for the local/cloud sync hardening milestone.
 
 Highlights:
-- Fixes todo rebound after quickly deleting multiple items while cloud sync is running.
-- Re-reads the latest local Room state before applying pulled remote data, so stale sync snapshots no longer overwrite newer local deletes or edits.
-- Applies pushed remote metadata only when the local record still matches what was pushed; edits made during push stay `NOT_SYNCED` for the next sync.
-- Adds a 2-second trailing debounce for automatic sync requests and coalesces requests that arrive during an active sync into at most one follow-up sync.
-- Removes noisy todo-sync triggers from Settings-only changes, checklist selection changes, and duplicate ViewModel auth-success handling.
-- Preserves locally hidden cloud tombstones after clearing `TRASH`, so deletion facts can continue propagating without reappearing in the UI.
+- Adds local sync metadata for remote cursors, pristine payloads, and retryable mutation UUIDs.
+- Moves todo/checklist sync from snapshot push/pull toward cursor-based incremental change batches.
+- Adds conflict-aware three-way merge behavior so same-field conflicts remain visible instead of being silently overwritten.
+- Adds settings sync for `darkTheme` and Dock configuration while keeping update prompts, auth state, permission state, alarm runtime state, and local image files device-local.
+- Queues WorkManager background sync with network constraints and keeps manual Settings sync available.
+- Adds password reset email requests through Supabase Auth.
+- Updates Supabase setup notes for `user_settings`, `sync_mutation_log`, RLS, tombstones, and cursor-based sync metadata.
 
-Install note: this release asset is the signed APK `PixelDone-3.0.1-release.apk` for `com.milesxue.pixeldone`. Debug RC builds use the separate package `com.milesxue.pixeldone.debug` and can remain installed separately.
+Install note: this prerelease asset is the debug APK `PixelDone-3.0.2-rc.1-debug.apk` for `com.milesxue.pixeldone.debug`. The latest formal signed release remains `PixelDone-3.0.1-release.apk` for `com.milesxue.pixeldone`.

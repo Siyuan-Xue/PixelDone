@@ -67,9 +67,9 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep Android 14+ full-screen intent permission checks tied to the system grant and preserve STOP/SNOOZE access when Android denies full-screen launch.
 - Treat a direct return from Android's Full Screen access page as no grant instead of repeatedly reopening the permission page.
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
-- Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control cloud sync, control update prompts, reconfigure permissions, check for updates, and view the current version.
-- Sign up, sign in, sign out, and manually sync todos/checklists through the low-key Settings `CLOUD` area.
-- Debounce automatic todo/checklist sync requests and protect local edits/deletes from stale remote merge write-back during active sync.
+- Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control cloud sync, show pending/conflict sync counts, control update prompts, reconfigure permissions, check for updates, and view the current version.
+- Sign up, sign in, sign out, request password reset email, and manually sync todos/checklists through the low-key Settings `CLOUD` area.
+- Debounce automatic todo/checklist sync requests, enqueue WorkManager background sync, preserve sync cursors/pristine payloads/mutation UUIDs, and protect local edits/deletes from stale remote merge write-back during active sync.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
 - Use five atomic dock functions for `SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, and `QUICK DELETE`.
 - Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph and a line-drawn trash can for `QUICK DELETE`.
@@ -97,6 +97,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Manual dependency injection
 - Supabase Auth and PostgREST via native Android HTTP
 - Android Keystore-backed session storage
+- WorkManager background sync
 
 ## Architecture Map
 
@@ -173,7 +174,7 @@ app/build/outputs/apk/release/PixelDone-3.0.1-release.apk
 The latest beta RC debug APK is:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-3.0.0-rc.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-3.0.2-rc.1-debug.apk
 ```
 
 ## Install
@@ -187,7 +188,7 @@ adb install -r app/build/outputs/apk/release/PixelDone-3.0.1-release.apk
 Install the beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-3.0.0-rc.2-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-3.0.2-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -204,4 +205,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.0.1 formal signed patch release for cloud sync stability, quick-delete tombstone propagation, and automatic sync debounce/coalescing.
+3.0.2-rc.1 beta RC for incremental local/cloud sync hardening, settings sync, WorkManager background scheduling, password reset requests, mutation replay protection, and conflict visibility. The latest formal signed release remains 3.0.1.

@@ -151,6 +151,7 @@ import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
 import com.milesxue.pixeldone.domain.sync.AuthSession
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
+import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.AllDockActions
 import com.milesxue.pixeldone.domain.todo.DefaultChecklistId
 import com.milesxue.pixeldone.domain.todo.DefaultChecklistName
@@ -1236,6 +1237,10 @@ internal fun PixelDoneApp() {
         viewModel.onAction(PixelDoneAction.SignUp)
     }
 
+    fun resetCloudPassword() {
+        viewModel.onAction(PixelDoneAction.ResetPassword)
+    }
+
     fun signOutFromCloud() {
         if (editorMode is EditorMode.CloudSignIn) {
             editorMode = EditorMode.None
@@ -1632,6 +1637,7 @@ internal fun PixelDoneApp() {
             currentVersion = BuildConfig.VERSION_NAME,
             syncStatusText = syncStatusText,
             syncStatus = uiState.syncStatus,
+            syncRunState = uiState.syncRunState,
             authSession = authSession,
             authInput = authInput,
             onAuthEmailChange = ::setAuthEmail,
@@ -1639,6 +1645,7 @@ internal fun PixelDoneApp() {
             onAuthModeChange = ::setCloudAuthMode,
             onSignIn = ::signInToCloud,
             onSignUp = ::signUpToCloud,
+            onResetPassword = ::resetCloudPassword,
             onSignOut = ::signOutFromCloud,
             onSyncNow = ::syncCloudNow,
             permissionSettingsState = permissionRefreshTick.let { currentPermissionSettingsState() },
@@ -1772,6 +1779,7 @@ private fun PixelDoneScreen(
     currentVersion: String,
     syncStatusText: String,
     syncStatus: SyncCoordinatorStatus,
+    syncRunState: SyncRunState = SyncRunState(),
     authSession: AuthSession,
     authInput: AuthInputState,
     onAuthEmailChange: (String) -> Unit,
@@ -1779,6 +1787,7 @@ private fun PixelDoneScreen(
     onAuthModeChange: (CloudAuthMode) -> Unit,
     onSignIn: () -> Unit,
     onSignUp: () -> Unit,
+    onResetPassword: () -> Unit = {},
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     permissionSettingsState: PermissionSettingsState,
@@ -1898,6 +1907,7 @@ private fun PixelDoneScreen(
                 currentVersion = currentVersion,
                 syncStatusText = syncStatusText,
                 syncStatus = syncStatus,
+                syncRunState = syncRunState,
                 authSession = authSession,
                 authInput = authInput,
                 onAuthEmailChange = onAuthEmailChange,
@@ -1905,6 +1915,7 @@ private fun PixelDoneScreen(
                 onAuthModeChange = onAuthModeChange,
                 onSignIn = onSignIn,
                 onSignUp = onSignUp,
+                onResetPassword = onResetPassword,
                 onSignOut = onSignOut,
                 onSyncNow = onSyncNow,
                 permissionSettingsState = permissionSettingsState,
@@ -2206,6 +2217,7 @@ private fun TaskWorkspacePanel(
     currentVersion: String,
     syncStatusText: String,
     syncStatus: SyncCoordinatorStatus,
+    syncRunState: SyncRunState = SyncRunState(),
     authSession: AuthSession,
     authInput: AuthInputState,
     onAuthEmailChange: (String) -> Unit,
@@ -2213,6 +2225,7 @@ private fun TaskWorkspacePanel(
     onAuthModeChange: (CloudAuthMode) -> Unit,
     onSignIn: () -> Unit,
     onSignUp: () -> Unit,
+    onResetPassword: () -> Unit = {},
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     permissionSettingsState: PermissionSettingsState,
@@ -2238,6 +2251,7 @@ private fun TaskWorkspacePanel(
                 currentVersion = currentVersion,
                 syncStatusText = syncStatusText,
                 syncStatus = syncStatus,
+                syncRunState = syncRunState,
                 authSession = authSession,
                 authInput = authInput,
                 onOpenCloudSignIn = onOpenCloudSignIn,
@@ -2334,6 +2348,7 @@ private fun TaskWorkspacePanel(
                 onAuthModeChange = onAuthModeChange,
                 onSignIn = onSignIn,
                 onSignUp = onSignUp,
+                onResetPassword = onResetPassword,
                 onCancelAuth = onCancelCloudSignIn,
                 compactForKeyboard = compactForKeyboard,
             )
@@ -2350,6 +2365,7 @@ private fun SettingsPanel(
     currentVersion: String,
     syncStatusText: String,
     syncStatus: SyncCoordinatorStatus,
+    syncRunState: SyncRunState = SyncRunState(),
     authSession: AuthSession,
     authInput: AuthInputState,
     onOpenCloudSignIn: () -> Unit,
@@ -2392,6 +2408,7 @@ private fun SettingsPanel(
                     authInput = authInput,
                     syncStatusText = syncStatusText,
                     syncStatus = syncStatus,
+                    syncRunState = syncRunState,
                     onOpenCloudSignIn = onOpenCloudSignIn,
                     onSignOut = onSignOut,
                     onSyncNow = onSyncNow,
@@ -2499,6 +2516,7 @@ private fun SettingsCloudPanel(
     authInput: AuthInputState,
     syncStatusText: String,
     syncStatus: SyncCoordinatorStatus,
+    syncRunState: SyncRunState = SyncRunState(),
     onOpenCloudSignIn: () -> Unit,
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
@@ -2571,6 +2589,20 @@ private fun SettingsCloudPanel(
                         primary = false,
                     )
                 }
+            }
+            if (authSession.signedIn && syncRunState.pendingCount > 0) {
+                SettingsRowText(
+                    title = "PENDING",
+                    value = syncRunState.pendingCount.toString(),
+                    valueColor = colors.textSecondary,
+                )
+            }
+            if (authSession.signedIn && syncRunState.conflictCount > 0) {
+                SettingsRowText(
+                    title = "CONFLICTS",
+                    value = syncRunState.conflictCount.toString(),
+                    valueColor = colors.error,
+                )
             }
         }
 
@@ -3083,11 +3115,13 @@ private fun SyncCoordinatorStatus.settingsLabel(): String = when (this) {
     SyncCoordinatorStatus.IDLE -> "READY"
     SyncCoordinatorStatus.SYNCING -> "SYNCING"
     SyncCoordinatorStatus.SYNCED -> "SYNCED"
+    SyncCoordinatorStatus.CONFLICT -> "CONFLICT"
     SyncCoordinatorStatus.ERROR -> "ERROR"
 }
 
 internal fun SyncCoordinatorStatus.settingsValueColor(colors: PixelDonePalette): Color = when (this) {
-    SyncCoordinatorStatus.ERROR -> colors.error
+    SyncCoordinatorStatus.ERROR,
+    SyncCoordinatorStatus.CONFLICT -> colors.error
     SyncCoordinatorStatus.SYNCED -> colors.success
     else -> colors.textSecondary
 }
@@ -3281,6 +3315,7 @@ private fun CloudAuthEditorPanel(
     onAuthModeChange: (CloudAuthMode) -> Unit,
     onSignIn: () -> Unit,
     onSignUp: () -> Unit,
+    onResetPassword: () -> Unit = {},
     onCancelAuth: () -> Unit,
     compactForKeyboard: Boolean,
 ) {
@@ -3385,6 +3420,15 @@ private fun CloudAuthEditorPanel(
                     text = error,
                     style = MaterialTheme.typography.labelSmall,
                     color = colors.error,
+                )
+            }
+            if (authInput.mode == CloudAuthMode.SIGN_IN) {
+                Spacer(modifier = Modifier.height(6.dp))
+                SettingsTextAction(
+                    text = "RESET",
+                    onClick = onResetPassword,
+                    enabled = !authInput.busy,
+                    modifier = Modifier.width(72.dp),
                 )
             }
             Spacer(modifier = Modifier.height(verticalGap))

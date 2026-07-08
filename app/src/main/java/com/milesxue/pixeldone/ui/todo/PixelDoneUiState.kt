@@ -1,7 +1,8 @@
-package com.milesxue.pixeldone.ui.todo
+﻿package com.milesxue.pixeldone.ui.todo
 
 import com.milesxue.pixeldone.domain.sync.AuthSession
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
+import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.PixelDoneSettings
 import com.milesxue.pixeldone.domain.todo.SortMode
@@ -18,6 +19,7 @@ data class PixelDoneUiState(
     val authSession: AuthSession = AuthSession(),
     val authInput: AuthInputState = AuthInputState(),
     val syncStatus: SyncCoordinatorStatus = SyncCoordinatorStatus.LOCAL_ONLY,
+    val syncRunState: SyncRunState = SyncRunState(),
     val sortMode: SortMode = SortMode.PRIORITY,
     val hideCompleted: Boolean = false,
     val showDeadlineCountdown: Boolean = false,
@@ -66,6 +68,7 @@ sealed interface PixelDoneAction {
     data object CancelSignIn : PixelDoneAction
     data object SignOut : PixelDoneAction
     data object SyncNow : PixelDoneAction
+    data object ResetPassword : PixelDoneAction
     data object DismissAuthMessage : PixelDoneAction
     data object SystemActionConsumed : PixelDoneAction
 }

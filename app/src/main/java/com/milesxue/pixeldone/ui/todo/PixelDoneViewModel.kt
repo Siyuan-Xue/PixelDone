@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone.ui.todo
+﻿package com.milesxue.pixeldone.ui.todo
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -41,6 +41,7 @@ class PixelDoneViewModel(
             settings = settingsStore.loadSettings(),
             authSession = authSessionRepository.session.value,
             syncStatus = syncCoordinator.status.value,
+            syncRunState = syncCoordinator.runState.value,
         ),
     )
     val uiState: StateFlow<PixelDoneUiState> = _uiState.asStateFlow()
@@ -65,8 +66,11 @@ class PixelDoneViewModel(
             }
         }
         viewModelScope.launch {
-            syncCoordinator.status.collect { status ->
-                _uiState.value = _uiState.value.copy(syncStatus = status)
+            syncCoordinator.runState.collect { runState ->
+                _uiState.value = _uiState.value.copy(
+                    syncStatus = runState.status,
+                    syncRunState = runState,
+                )
             }
         }
     }
@@ -101,6 +105,7 @@ class PixelDoneViewModel(
             PixelDoneAction.CancelSignIn -> cancelSignIn()
             PixelDoneAction.SignOut -> signOut()
             PixelDoneAction.SyncNow -> syncNow()
+            PixelDoneAction.ResetPassword -> resetPassword()
             PixelDoneAction.DismissAuthMessage -> updateAuthInput { it.copy(message = null, error = null) }
             PixelDoneAction.SystemActionConsumed -> {
                 _uiState.value = _uiState.value.copy(pendingSystemAction = null)
@@ -183,6 +188,23 @@ class PixelDoneViewModel(
         }
     }
 
+    private fun resetPassword() {
+        val email = _uiState.value.authInput.email.trim()
+        if (email.isBlank()) {
+            updateAuthInput { it.copy(error = "Email is required.", message = null) }
+            return
+        }
+        viewModelScope.launch {
+            updateAuthInput { it.copy(busy = true, error = null, message = null) }
+            try {
+                authSessionRepository.resetPassword(email)
+                updateAuthInput { it.copy(busy = false, error = null, message = "Reset email sent.") }
+            } catch (error: Exception) {
+                updateAuthInput { it.copy(busy = false, error = error.message ?: "Reset failed.", message = null) }
+            }
+        }
+    }
+
     private fun syncNow() {
         viewModelScope.launch {
             updateAuthInput { it.copy(error = null, message = null) }
@@ -244,5 +266,6 @@ private fun com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.settingsMes
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.IDLE -> "Ready."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SYNCING -> "Syncing."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SYNCED -> "Synced."
+    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.CONFLICT -> "Sync conflicts."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.ERROR -> "Sync failed."
 }

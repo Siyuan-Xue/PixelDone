@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone.data.sync
+﻿package com.milesxue.pixeldone.data.sync
 
 import com.milesxue.pixeldone.domain.sync.AuthSession
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,6 +66,19 @@ internal class SupabaseAuthSessionRepository(
         sessionStore.save(session)
         mutableSession.value = session
         return session
+    }
+
+    override suspend fun resetPassword(email: String) {
+        config.configurationError()?.let { throw SyncConfigurationException(it) }
+        val body = json.encodeToString(
+            EmailOnlyRequest.serializer(),
+            EmailOnlyRequest(email = email.trim()),
+        )
+        httpClient.request(
+            method = "POST",
+            path = "/auth/v1/recover",
+            body = body,
+        )
     }
 
     override suspend fun signOut() {
@@ -167,6 +180,11 @@ internal class SupabaseAuthSessionRepository(
 private data class EmailPasswordRequest(
     val email: String,
     val password: String,
+)
+
+@Serializable
+private data class EmailOnlyRequest(
+    val email: String,
 )
 
 @Serializable

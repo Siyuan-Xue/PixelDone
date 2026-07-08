@@ -1,4 +1,4 @@
-package com.milesxue.pixeldone
+﻿package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.settings.InMemoryPixelDoneSettingsStore
 import com.milesxue.pixeldone.data.sync.AuthSessionRepository
@@ -6,6 +6,7 @@ import com.milesxue.pixeldone.data.sync.SyncCoordinator
 import com.milesxue.pixeldone.data.todo.TodoRepository
 import com.milesxue.pixeldone.domain.sync.AuthSession
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
+import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.DockAction
 import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.DockPlusPlacement
@@ -427,7 +428,9 @@ private class FakeSyncCoordinator(
     initialStatus: SyncCoordinatorStatus = SyncCoordinatorStatus.IDLE,
 ) : SyncCoordinator {
     private val mutableStatus = MutableStateFlow(initialStatus)
+    private val mutableRunState = MutableStateFlow(SyncRunState(status = initialStatus))
     override val status: StateFlow<SyncCoordinatorStatus> = mutableStatus.asStateFlow()
+    override val runState: StateFlow<SyncRunState> = mutableRunState.asStateFlow()
     var requestCount: Int = 0
 
     override suspend fun syncNow(): SyncCoordinatorStatus = mutableStatus.value
