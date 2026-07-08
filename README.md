@@ -144,10 +144,9 @@ Cloud-enabled builds receive public Supabase client configuration at build time 
 pixeldone.supabaseUrl=http://SERVER_IP:8000
 pixeldone.supabasePublishableKey=YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY
 pixeldone.requireCloudConfig=true
-pixeldone.allowInsecureSupabaseHttp=true
 ```
 
-`pixeldone.allowInsecureSupabaseHttp=true` is only for the current direct-IP HTTP server phase. Remove it after the service moves to `pixeldone.com` with HTTPS.
+Formal and debug builds intentionally allow the current direct-IP HTTP Supabase endpoint. Keep using HTTPS when it becomes available, but do not disable Cloud solely because the configured Supabase URL uses `http://`.
 
 ## Release And Update Source
 
@@ -168,7 +167,7 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The latest formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.0.2-release.apk
+app/build/outputs/apk/release/PixelDone-3.0.3-release.apk
 ```
 
 The latest beta RC debug APK is:
@@ -182,7 +181,7 @@ app/build/outputs/apk/debug/PixelDone-3.0.2-rc.2-debug.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.0.2-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.0.3-release.apk
 ```
 
 Install the latest beta RC debug build with:
@@ -205,4 +204,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.0.2 formal release adds the Settings conflict review dialog on top of the incremental local/cloud sync hardening from rc1. Conflict candidates are stored locally in Room, can be resolved per checklist/todo by keeping the local or cloud version, and do not require a Supabase schema change. Theme and Dock preferences are local-only; cloud sync covers checklists and todos only.
+3.0.3 formal release fixes Cloud availability for the current HTTP Supabase deployment, adds the current remote schema SQL script, and keeps the 3.0.2 conflict review and incremental local/cloud sync hardening. Theme and Dock preferences are local-only; cloud sync covers checklists and todos only.

@@ -58,10 +58,8 @@ val requireCloudConfig = pixelDoneBooleanConfigValue(
     "PIXELDONE_REQUIRE_CLOUD_CONFIG",
     "pixeldone.requireCloudConfig",
 )
-val allowInsecureSupabaseHttp = pixelDoneBooleanConfigValue(
-    "PIXELDONE_ALLOW_INSECURE_SUPABASE_HTTP",
-    "pixeldone.allowInsecureSupabaseHttp",
-)
+// Formal PixelDone releases must support the current direct-IP HTTP Supabase endpoint.
+val allowInsecureSupabaseHttp = true
 
 if (requireCloudConfig && (supabaseUrl.isBlank() || supabasePublishableKey.isBlank())) {
     throw org.gradle.api.GradleException(
@@ -69,16 +67,6 @@ if (requireCloudConfig && (supabaseUrl.isBlank() || supabasePublishableKey.isBla
     )
 }
 
-if (
-    requireCloudConfig &&
-    releaseSigningRequested &&
-    supabaseUrl.trim().startsWith("http://", ignoreCase = true) &&
-    !allowInsecureSupabaseHttp
-) {
-    throw org.gradle.api.GradleException(
-        "Cloud-enabled release builds require HTTPS unless PIXELDONE_ALLOW_INSECURE_SUPABASE_HTTP=true."
-    )
-}
 
 android {
     namespace = "com.milesxue.pixeldone"
@@ -88,8 +76,8 @@ android {
         applicationId = "com.milesxue.pixeldone"
         minSdk = 26
         targetSdk = 37
-        versionCode = 75
-        versionName = "3.0.2"
+        versionCode = 76
+        versionName = "3.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(

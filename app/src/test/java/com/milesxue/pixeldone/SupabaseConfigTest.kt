@@ -30,14 +30,14 @@ class SupabaseConfigTest {
     }
 
     @Test
-    fun releaseHttpConfigIsBlocked() {
+    fun formalHttpConfigIsAllowedByBuildPolicy() {
         val config = SupabaseConfig(
             baseUrl = "http://10.0.0.8:8000",
             publishableKey = "publishable",
-            allowInsecureHttp = false,
+            allowInsecureHttp = true,
         )
 
         assertTrue(config.isConfigured)
-        assertEquals("Cleartext HTTP is disabled for this build.", config.configurationError())
+        assertNull(config.configurationError())
     }
 }

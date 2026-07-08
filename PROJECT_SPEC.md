@@ -371,6 +371,7 @@ Release APK rules:
 - The versioned release APK must be copied to `app/build/outputs/apk/release/`, in the same directory as the default `app-release.apk`.
 - After `assembleRelease`, the same directory should contain both `app-release.apk` and `{ProjectName}-{versionName}-release.apk`.
 - The formal app-internal updater should target normal GitHub Releases first and locate the versioned signed release APK asset. If GitHub checking or downloading fails, stalls, or lacks the matching APK asset, it may fall back to the synced Gitee mirror. It should not use local debug APKs as formal update assets.
+- PixelDone formal release builds must allow cleartext HTTP for the current self-hosted Supabase/direct-IP deployment. Do not require HTTPS or disable Cloud only because `PIXELDONE_SUPABASE_URL` uses `http://`, unless the user explicitly changes this product rule.
 - Direct APK distribution notes must tell users to uninstall incompatible debug/prototype builds when the package name or signing certificate changes.
 
 ### 13.7 Pre-Wrap-Up Checks
