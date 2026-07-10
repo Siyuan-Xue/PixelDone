@@ -68,6 +68,8 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Treat a direct return from Android's Full Screen access page as no grant instead of repeatedly reopening the permission page.
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
 - Use the `SETTINGS` list to choose System or one of the six United Nations official languages, switch LIGHT/DARK display mode, configure the dock, control cloud sync, show pending/conflict sync counts, control update prompts, reconfigure permissions, check for updates, and view the current version.
+- Show the seven language choices in a compact two-column grid; concrete languages always use their native names while System follows the active UI language.
+- Use matching pixel-line sign-in/sign-out icons and a two-arrow sync glyph in the Cloud controls.
 - Sign up, sign in, sign out, request password reset email, and manually sync todos/checklists through the low-key Settings `CLOUD` area.
 - Subscribe to Supabase Realtime while foregrounded and signed in so another device's checklist/todo/settings/tombstone changes trigger a debounced transactional cursor pull without manual refresh.
 - Keep unresolved conflicts persistent and globally reviewable: dismissing the dialog does not resolve them, and a later conflict reopens the dialog with every unresolved item. Only actual conflicting fields and item content are shown.
@@ -153,7 +155,7 @@ pixeldone.supabasePublishableKey=YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY
 pixeldone.requireCloudConfig=true
 ```
 
-Formal and debug builds intentionally allow the current direct-IP HTTP Supabase endpoint. Keep using HTTPS when it becomes available, but do not disable Cloud solely because the configured Supabase URL uses `http://`.
+Formal and debug builds intentionally use the configured direct-IP HTTP Supabase endpoint. HTTP is the durable deployment choice and there is no planned HTTPS migration. This transport does not provide confidentiality or server identity verification; never place service-role credentials or other secrets in client configuration.
 
 Before running a 3.1 client, the operator must manually execute `docs/pixeldone-supabase-3.1.0-rc.1-migration.sql` and return its verification output. The client intentionally has no legacy schema fallback.
 
@@ -173,16 +175,10 @@ https://gitee.com/milesxue/PixelDone/releases
 
 Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
 
-The latest formal signed release APK is:
+The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.0.3-release.apk
-```
-
-The latest beta RC debug APK is:
-
-```text
-app/build/outputs/apk/debug/PixelDone-3.1.0-rc.1-debug.apk
+app/build/outputs/apk/release/PixelDone-3.1.0-release.apk
 ```
 
 ## Install
@@ -190,13 +186,7 @@ app/build/outputs/apk/debug/PixelDone-3.1.0-rc.1-debug.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.0.3-release.apk
-```
-
-Install the latest beta RC debug build with:
-
-```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-3.1.0-rc.1-debug.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.1.0-release.apk
 ```
 
 The formal package name is:
@@ -213,4 +203,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.1.0-rc.1 is the current release-candidate target. It introduces the Supabase 3.1 transaction contract, Realtime multi-device invalidation, durable aggregated conflict review, field-level three-way merge, minimal tombstones, 30-day Trash cleanup, and System plus Arabic/Chinese/English/French/Russian/Spanish language modes. The formal 3.0.3 release remains the latest formal version until this RC is validated and promoted.
+3.1.0 is the current formal release target. It introduces the Supabase 3.1 transaction contract, Realtime multi-device invalidation, durable aggregated conflict review, field-level three-way merge, minimal tombstones, 30-day Trash cleanup, native-name language selection, and shared Android/Windows account data. Task images remain local-only on both platforms.

@@ -79,7 +79,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -128,6 +131,7 @@ import com.milesxue.pixeldone.ui.todo.components.PixelItemImageButton
 import com.milesxue.pixeldone.ui.todo.components.PixelPanel
 import com.milesxue.pixeldone.ui.todo.components.PixelRestoreButton
 import com.milesxue.pixeldone.ui.todo.components.PixelSegmentedControl
+import com.milesxue.pixeldone.ui.todo.components.cloudLoginLogoutPolylines
 import com.milesxue.pixeldone.ui.todo.components.PixelSettingsButton
 import com.milesxue.pixeldone.ui.todo.components.PrioritySlider
 import com.milesxue.pixeldone.ui.todo.components.priorityColor
@@ -2746,25 +2750,49 @@ private fun CloudIconAction(
     ) {
         Canvas(Modifier.size(22.dp)) {
             val stroke = 2.dp.toPx()
+            val pixelStroke = Stroke(
+                width = stroke,
+                cap = StrokeCap.Square,
+                join = StrokeJoin.Miter,
+            )
             when (icon) {
                 CloudActionIcon.LOGIN, CloudActionIcon.LOGOUT -> {
-                    val outward = icon == CloudActionIcon.LOGOUT
-                    val doorX = if (outward) 6.dp.toPx() else 16.dp.toPx()
-                    drawLine(iconColor, Offset(doorX, 3.dp.toPx()), Offset(doorX, 19.dp.toPx()), stroke)
-                    val startX = if (outward) 4.dp.toPx() else 18.dp.toPx()
-                    val endX = if (outward) 18.dp.toPx() else 4.dp.toPx()
-                    drawLine(iconColor, Offset(startX, 11.dp.toPx()), Offset(endX, 11.dp.toPx()), stroke)
-                    val headX = if (outward) 14.dp.toPx() else 8.dp.toPx()
-                    drawLine(iconColor, Offset(headX, 7.dp.toPx()), Offset(endX, 11.dp.toPx()), stroke)
-                    drawLine(iconColor, Offset(headX, 15.dp.toPx()), Offset(endX, 11.dp.toPx()), stroke)
+                    cloudLoginLogoutPolylines(logout = icon == CloudActionIcon.LOGOUT).forEach { polyline ->
+                        val path = Path().apply {
+                            val first = polyline.points.first()
+                            moveTo(first.x.dp.toPx(), first.y.dp.toPx())
+                            polyline.points.drop(1).forEach { point ->
+                                lineTo(point.x.dp.toPx(), point.y.dp.toPx())
+                            }
+                        }
+                        drawPath(path, iconColor, style = pixelStroke)
+                    }
                 }
                 CloudActionIcon.SYNC -> {
-                    drawArc(iconColor, -55f, 220f, false, style = Stroke(stroke))
-                    drawArc(iconColor, 125f, 220f, false, style = Stroke(stroke))
-                    drawLine(iconColor, Offset(17.dp.toPx(), 3.dp.toPx()), Offset(19.dp.toPx(), 8.dp.toPx()), stroke)
-                    drawLine(iconColor, Offset(17.dp.toPx(), 3.dp.toPx()), Offset(12.dp.toPx(), 4.dp.toPx()), stroke)
-                    drawLine(iconColor, Offset(5.dp.toPx(), 19.dp.toPx()), Offset(3.dp.toPx(), 14.dp.toPx()), stroke)
-                    drawLine(iconColor, Offset(5.dp.toPx(), 19.dp.toPx()), Offset(10.dp.toPx(), 18.dp.toPx()), stroke)
+                    val upperArrow = Path().apply {
+                        moveTo(18.dp.toPx(), 12.dp.toPx())
+                        cubicTo(
+                            18.dp.toPx(), 7.dp.toPx(),
+                            15.dp.toPx(), 4.dp.toPx(),
+                            11.dp.toPx(), 4.dp.toPx(),
+                        )
+                        moveTo(11.dp.toPx(), 1.dp.toPx())
+                        lineTo(7.dp.toPx(), 5.dp.toPx())
+                        lineTo(11.dp.toPx(), 9.dp.toPx())
+                    }
+                    val lowerArrow = Path().apply {
+                        moveTo(4.dp.toPx(), 10.dp.toPx())
+                        cubicTo(
+                            4.dp.toPx(), 15.dp.toPx(),
+                            7.dp.toPx(), 18.dp.toPx(),
+                            11.dp.toPx(), 18.dp.toPx(),
+                        )
+                        moveTo(11.dp.toPx(), 13.dp.toPx())
+                        lineTo(15.dp.toPx(), 17.dp.toPx())
+                        lineTo(11.dp.toPx(), 21.dp.toPx())
+                    }
+                    drawPath(upperArrow, iconColor, style = pixelStroke)
+                    drawPath(lowerArrow, iconColor, style = pixelStroke)
                 }
             }
         }
@@ -2829,49 +2857,70 @@ private fun SettingsLanguageSelector(
     val colors = PixelDoneColors.current
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SettingsRowText(title = stringResource(R.string.settings_language), value = value.displayName())
-        AppLanguage.entries.forEach { language ->
-            val selected = language == value
-            val languageLabel = language.displayName()
-            val selectionLabel = if (selected) stringResource(R.string.selected) else stringResource(R.string.not_selected)
+        AppLanguage.entries.chunked(2).forEach { languages ->
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 44.dp)
-                    .background(if (selected) colors.selectedSurface else Color.Transparent)
-                    .clickable { onSelected(language) }
-                    .semantics {
-                        contentDescription = languageLabel
-                        stateDescription = selectionLabel
-                    }
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Canvas(Modifier.size(14.dp)) {
-                    drawRect(if (selected) colors.primary else colors.borderWeak)
-                    if (selected) {
-                        drawRect(colors.surface, topLeft = Offset(4.dp.toPx(), 4.dp.toPx()), size = Size(6.dp.toPx(), 6.dp.toPx()))
-                    }
+                languages.forEach { language ->
+                    LanguageChoice(
+                        language = language,
+                        selected = language == value,
+                        onSelected = onSelected,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
-                Text(
-                    text = languageLabel,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) colors.textPrimary else colors.textSecondary,
-                )
+                if (languages.size == 1) {
+                    Spacer(Modifier.weight(1f))
+                }
             }
         }
     }
 }
 
 @Composable
+private fun LanguageChoice(
+    language: AppLanguage,
+    selected: Boolean,
+    onSelected: (AppLanguage) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val languageLabel = language.displayName()
+    val selectionLabel = if (selected) stringResource(R.string.selected) else stringResource(R.string.not_selected)
+    Row(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .background(if (selected) colors.selectedSurface else Color.Transparent)
+            .clickable { onSelected(language) }
+            .semantics {
+                contentDescription = languageLabel
+                stateDescription = selectionLabel
+            }
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Canvas(Modifier.size(14.dp)) {
+            drawRect(if (selected) colors.primary else colors.borderWeak)
+            if (selected) {
+                drawRect(colors.surface, topLeft = Offset(4.dp.toPx(), 4.dp.toPx()), size = Size(6.dp.toPx(), 6.dp.toPx()))
+            }
+        }
+        Text(
+            text = languageLabel,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) colors.textPrimary else colors.textSecondary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun AppLanguage.displayName(): String = when (this) {
     AppLanguage.SYSTEM -> stringResource(R.string.language_system)
-    AppLanguage.ENGLISH -> stringResource(R.string.language_english)
-    AppLanguage.SIMPLIFIED_CHINESE -> stringResource(R.string.language_chinese)
-    AppLanguage.ARABIC -> stringResource(R.string.language_arabic)
-    AppLanguage.FRENCH -> stringResource(R.string.language_french)
-    AppLanguage.RUSSIAN -> stringResource(R.string.language_russian)
-    AppLanguage.SPANISH -> stringResource(R.string.language_spanish)
+    else -> requireNotNull(nativeDisplayName)
 }
 @Composable
 private fun settingsTextFieldColors(colors: PixelDonePalette) = OutlinedTextFieldDefaults.colors(

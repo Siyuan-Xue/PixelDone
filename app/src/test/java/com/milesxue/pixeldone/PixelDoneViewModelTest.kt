@@ -63,6 +63,23 @@ class PixelDoneViewModelTest {
     }
 
     @Test
+    fun externallyAppliedCloudStateReschedulesReminders() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val store = InMemoryTodoStateStore(initial)
+        val repository = TodoRepository(store)
+        val scheduler = FakeReminderScheduler()
+        val viewModel = PixelDoneViewModel(repository, scheduler)
+        val cloudTodo = TodoItem("cloud", "Cloud", TodoPriority.XHIGH, 9_000L, false, 2L)
+        val cloudState = updateChecklistItems(initial, initial.selectedListId, listOf(cloudTodo))!!
+
+        store.saveTodoState(cloudState)
+
+        assertEquals(cloudState, viewModel.uiState.value.checklistState)
+        assertEquals(emptyList<TodoItem>(), scheduler.lastPreviousItems)
+        assertEquals(listOf(cloudTodo), scheduler.lastCurrentItems)
+    }
+
+    @Test
     fun replaceChecklistStateRequestsCloudSync() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))

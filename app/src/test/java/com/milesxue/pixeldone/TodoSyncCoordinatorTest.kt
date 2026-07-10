@@ -213,6 +213,38 @@ class TodoSyncCoordinatorTest {
     }
 
     @Test
+    fun localImageMetadataIsNeverUploadedAndSurvivesCloudRefresh() = runTest {
+        val local = syncedActiveItem().copy(
+            imageLocalName = "private-photo.jpg",
+            imageRemotePath = null,
+            imageSyncState = SyncRecordState.LOCAL_ONLY.name,
+            title = "Local title",
+            updatedAtMillis = 2_000L,
+            syncState = SyncRecordState.NOT_SYNCED.name,
+        )
+        val store = FakeTodoSyncLocalStore(entitySetWith(item = local)).apply {
+            pristineSnapshot = RemoteTodoSnapshot(items = listOf(remoteActiveItem()))
+        }
+        val remote = FakeRemoteTodoDataSource(
+            RemoteTodoSnapshot(
+                items = listOf(remoteActiveItem().copy(completed = true, remoteVersion = 3_000L)),
+            ),
+        )
+
+        val coordinator = coordinator(localStore = store, remote = remote)
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.SYNCED, coordinator.status.value)
+        val uploaded = remote.pushedSnapshots.single().items.single()
+        assertEquals(null, uploaded.imageLocalName)
+        assertEquals(null, uploaded.imageRemotePath)
+        assertEquals(SyncRecordState.LOCAL_ONLY.name, uploaded.imageSyncState)
+        val merged = store.entitySet.items.single()
+        assertEquals("private-photo.jpg", merged.imageLocalName)
+        assertEquals(true, merged.completed)
+    }
+
+    @Test
     fun keepLocalClearsConflictAndUploadsLocalVersion() = runTest {
         val localItem = syncedActiveItem().copy(
             title = "Local title",

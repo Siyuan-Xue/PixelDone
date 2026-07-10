@@ -47,10 +47,16 @@ class PixelDoneViewModel(
     )
     val uiState: StateFlow<PixelDoneUiState> = _uiState.asStateFlow()
     private var lastPresentedConflictSignature: Int? = null
+    private var localMutationInProgress = false
 
     init {
         unregisterTodoObserver = todoRepository.observeTodoState {
-            _uiState.value = _uiState.value.copy(checklistState = todoRepository.state.value)
+            val previousState = _uiState.value.checklistState
+            val currentState = todoRepository.state.value
+            if (!localMutationInProgress && previousState.lists != currentState.lists) {
+                reminderScheduler.sync(normalTodos(previousState), normalTodos(currentState))
+            }
+            _uiState.value = _uiState.value.copy(checklistState = currentState)
         }
         unregisterSettingsObserver = settingsStore.observeSettings {
             _uiState.value = _uiState.value.copy(settings = settingsStore.loadSettings())
@@ -141,9 +147,14 @@ class PixelDoneViewModel(
     fun replaceChecklistState(updatedState: TodoChecklistState): Set<ReminderCapability> {
         val uiBefore = _uiState.value.checklistState
         var committedBefore = uiBefore
-        val committed = todoRepository.updateTodoState { latest ->
-            committedBefore = latest
-            mergeUserTodoStateChange(uiBefore, updatedState, latest)
+        val committed = try {
+            localMutationInProgress = true
+            todoRepository.updateTodoState { latest ->
+                committedBefore = latest
+                mergeUserTodoStateChange(uiBefore, updatedState, latest)
+            }
+        } finally {
+            localMutationInProgress = false
         }
         val missingCapabilities = reminderScheduler.sync(normalTodos(committedBefore), normalTodos(committed))
         _uiState.value = _uiState.value.copy(checklistState = committed)

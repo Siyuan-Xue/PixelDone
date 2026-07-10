@@ -16,14 +16,18 @@ data class PixelDoneSettings(
         get() = !neverShowUpdateDialog
 }
 
-enum class AppLanguage(val syncValue: String, val localeTag: String?) {
-    SYSTEM("system", null),
-    ENGLISH("en", "en"),
-    SIMPLIFIED_CHINESE("zh-Hans", "zh-Hans"),
-    ARABIC("ar", "ar"),
-    FRENCH("fr", "fr"),
-    RUSSIAN("ru", "ru"),
-    SPANISH("es", "es");
+enum class AppLanguage(
+    val syncValue: String,
+    val localeTag: String?,
+    val nativeDisplayName: String?,
+) {
+    SYSTEM("system", null, null),
+    ENGLISH("en", "en", "English"),
+    SIMPLIFIED_CHINESE("zh-Hans", "zh-Hans", "简体中文"),
+    ARABIC("ar", "ar", "العربية"),
+    FRENCH("fr", "fr", "Français"),
+    RUSSIAN("ru", "ru", "Русский"),
+    SPANISH("es", "es", "Español");
 
     companion object {
         fun fromSyncValue(value: String): AppLanguage = entries.firstOrNull { it.syncValue == value } ?: SYSTEM

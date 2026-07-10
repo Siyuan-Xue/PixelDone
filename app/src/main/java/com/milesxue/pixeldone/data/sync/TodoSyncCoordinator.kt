@@ -295,10 +295,15 @@ internal class TodoSyncCoordinator(
             local.copy(remoteId = cloud.remoteId ?: local.remoteId, remoteVersion = cloud.remoteVersion)
         } else cloud
         val syncState = if (choice == ConflictResolutionChoice.KEEP_LOCAL) SyncRecordState.NOT_SYNCED else SyncRecordState.SYNCED
-        localStore.updateEntitySetFromSync(now) { state -> state.copy(
-            items = state.items.filterNot { it.ownerUserId == owner && it.localId == conflict.localId } +
-                selected.toEntity(now, syncState),
-        ) }
+        localStore.updateEntitySetFromSync(now) { state ->
+            val currentLocal = state.items.firstOrNull {
+                it.ownerUserId == owner && it.localId == conflict.localId
+            }
+            state.copy(
+                items = state.items.filterNot { it.ownerUserId == owner && it.localId == conflict.localId } +
+                    selected.toEntity(now, syncState).withLocalImageFrom(currentLocal),
+            )
+        }
         return true
     }
 
@@ -408,12 +413,17 @@ private fun mergeItem(
     existing: LocalSyncConflictRecord?, owner: String, now: Long,
     conflicts: MutableList<LocalSyncConflictRecord>,
 ): TodoItemEntity {
-    if (local == null || !local.syncState.isDirty() && existing == null) return cloud.toEntity(now, SyncRecordState.SYNCED)
+    if (local == null) return cloud.toEntity(now, SyncRecordState.SYNCED)
+    if (!local.syncState.isDirty() && existing == null) {
+        return cloud.toEntity(now, SyncRecordState.SYNCED).withLocalImageFrom(local)
+    }
     if (existing != null || local.syncState == SyncRecordState.CONFLICT.name) {
         conflicts += itemConflict(local, cloud, base, owner, now)
         return local.copy(syncState = SyncRecordState.CONFLICT.name)
     }
-    if (local.toRemote(owner).samePayload(cloud)) return cloud.toEntity(now, SyncRecordState.SYNCED)
+    if (local.toRemote(owner).samePayload(cloud)) {
+        return cloud.toEntity(now, SyncRecordState.SYNCED).withLocalImageFrom(local)
+    }
     val sameRemoteBase = base == null && local.remoteVersion != null && local.remoteVersion == cloud.remoteVersion
     val localFields = base?.let(local::fieldsFrom) ?: local.fieldsFrom(cloud)
     val cloudFields = if (sameRemoteBase) emptySet() else
@@ -437,9 +447,9 @@ private fun mergeItem(
         dueAtMillis = if ("due" in localFields) local.dueAtMillis else merged.dueAtMillis,
         completed = if ("completed" in localFields) local.completed else merged.completed,
         reminderRepeat = if ("repeat" in localFields) local.reminderRepeat else merged.reminderRepeat,
-        imageLocalName = if ("image" in localFields) local.imageLocalName else merged.imageLocalName,
-        imageRemotePath = if ("image" in localFields) local.imageRemotePath else merged.imageRemotePath,
-        imageSyncState = if ("image" in localFields) local.imageSyncState else merged.imageSyncState,
+        imageLocalName = local.imageLocalName,
+        imageRemotePath = local.imageRemotePath,
+        imageSyncState = local.imageSyncState,
         trashedFromChecklistId = if ("trash" in localFields) local.trashedFromChecklistId else merged.trashedFromChecklistId,
         trashedFromChecklistName = if ("trash" in localFields) local.trashedFromChecklistName else merged.trashedFromChecklistName,
         trashedAtMillis = if ("trash" in localFields) local.trashedAtMillis else merged.trashedAtMillis,
@@ -598,9 +608,25 @@ private fun TodoChecklistEntity.toRemote(owner: String) = RemoteChecklistRecord(
 )
 
 private fun TodoItemEntity.toRemote(owner: String) = RemoteTodoItemRecord(
-    localId, remoteId, owner, checklistLocalId, sortIndex, title, priority, dueAtMillis,
-    completed, createdAtMillis, updatedAtMillis, reminderRepeat, imageLocalName, imageRemotePath,
-    imageSyncState, trashedFromChecklistId, trashedFromChecklistName, trashedAtMillis, remoteVersion,
+    localId = localId,
+    remoteId = remoteId,
+    ownerUserId = owner,
+    checklistLocalId = checklistLocalId,
+    sortIndex = sortIndex,
+    title = title,
+    priority = priority,
+    dueAtMillis = dueAtMillis,
+    completed = completed,
+    createdAtMillis = createdAtMillis,
+    updatedAtMillis = updatedAtMillis,
+    reminderRepeat = reminderRepeat,
+    imageLocalName = null,
+    imageRemotePath = null,
+    imageSyncState = SyncRecordState.LOCAL_ONLY.name,
+    trashedFromChecklistId = trashedFromChecklistId,
+    trashedFromChecklistName = trashedFromChecklistName,
+    trashedAtMillis = trashedAtMillis,
+    remoteVersion = remoteVersion,
 )
 
 private fun SyncTombstoneEntity.toRemote() = RemoteTombstoneRecord(
@@ -614,9 +640,15 @@ private fun RemoteChecklistRecord.toEntity(now: Long, state: SyncRecordState) = 
 
 private fun RemoteTodoItemRecord.toEntity(now: Long, state: SyncRecordState) = TodoItemEntity(
     localId, checklistLocalId, sortIndex, remoteId, ownerUserId, title, priority, dueAtMillis,
-    completed, createdAtMillis, updatedAtMillis, reminderRepeat, imageLocalName, imageRemotePath,
-    imageSyncState, trashedFromChecklistId, trashedFromChecklistName, trashedAtMillis,
+    completed, createdAtMillis, updatedAtMillis, reminderRepeat, null, null,
+    SyncRecordState.LOCAL_ONLY.name, trashedFromChecklistId, trashedFromChecklistName, trashedAtMillis,
     state.name, if (state == SyncRecordState.SYNCED) now else null, remoteVersion,
+)
+
+private fun TodoItemEntity.withLocalImageFrom(local: TodoItemEntity?) = copy(
+    imageLocalName = local?.imageLocalName,
+    imageRemotePath = local?.imageRemotePath,
+    imageSyncState = local?.imageSyncState ?: SyncRecordState.LOCAL_ONLY.name,
 )
 
 private fun TodoChecklistEntity.fieldsFrom(base: RemoteChecklistRecord) = buildSet {
@@ -635,7 +667,6 @@ private fun TodoItemEntity.fieldsFrom(base: RemoteTodoItemRecord) = buildSet {
     if (dueAtMillis != base.dueAtMillis) add("due")
     if (completed != base.completed) add("completed")
     if (reminderRepeat != base.reminderRepeat) add("repeat")
-    if (imageLocalName != base.imageLocalName || imageRemotePath != base.imageRemotePath || imageSyncState != base.imageSyncState) add("image")
     if (trashedFromChecklistId != base.trashedFromChecklistId || trashedFromChecklistName != base.trashedFromChecklistName || trashedAtMillis != base.trashedAtMillis) add("trash")
 }
 private fun RemoteTodoItemRecord.fieldsFrom(base: RemoteTodoItemRecord) = buildSet {
@@ -646,7 +677,6 @@ private fun RemoteTodoItemRecord.fieldsFrom(base: RemoteTodoItemRecord) = buildS
     if (dueAtMillis != base.dueAtMillis) add("due")
     if (completed != base.completed) add("completed")
     if (reminderRepeat != base.reminderRepeat) add("repeat")
-    if (imageLocalName != base.imageLocalName || imageRemotePath != base.imageRemotePath || imageSyncState != base.imageSyncState) add("image")
     if (trashedFromChecklistId != base.trashedFromChecklistId || trashedFromChecklistName != base.trashedFromChecklistName || trashedAtMillis != base.trashedAtMillis) add("trash")
 }
 
@@ -659,8 +689,7 @@ private fun RemoteTodoItemRecord.samePayload(other: RemoteTodoItemRecord) =
         title == other.title && priority == other.priority && dueAtMillis == other.dueAtMillis &&
         completed == other.completed && createdAtMillis == other.createdAtMillis &&
         updatedAtMillis == other.updatedAtMillis && reminderRepeat == other.reminderRepeat &&
-        imageLocalName == other.imageLocalName && imageRemotePath == other.imageRemotePath &&
-        imageSyncState == other.imageSyncState && trashedFromChecklistId == other.trashedFromChecklistId &&
+        trashedFromChecklistId == other.trashedFromChecklistId &&
         trashedFromChecklistName == other.trashedFromChecklistName && trashedAtMillis == other.trashedAtMillis
 
 private val LocalSyncConflictRecord.key get() = recordType + ":" + localId

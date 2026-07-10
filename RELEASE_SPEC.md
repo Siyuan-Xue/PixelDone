@@ -21,7 +21,7 @@ This document contains PixelDone-only release and infrastructure exceptions. The
 - PixelDone 3.1 is a hard remote-schema cutover. It does not support the pre-3.1 direct-table sync contract.
 - The operator manually runs `docs/pixeldone-supabase-3.1.0-rc.1-migration.sql` and returns the verification output before an RC is tagged or published.
 - The app must report `SERVER UPDATE REQUIRED` when the server does not provide schema `3.1`; do not add a legacy fallback.
-- Formal and debug builds currently allow the configured direct-IP Supabase endpoint over cleartext HTTP. Do not disable Cloud solely because the configured URL uses `http://`; move to HTTPS when the deployment is ready.
+- Formal and debug builds intentionally allow the configured direct-IP Supabase endpoint over cleartext HTTP. HTTP is the durable PixelDone deployment contract; there is no planned HTTPS migration. Keep the risk disclosure in README and release notes, and never broaden the client to unrelated cleartext endpoints.
 - Never package a service-role key, database password, signing secret, or refresh token in the APK or repository.
 
 ## RC Verification

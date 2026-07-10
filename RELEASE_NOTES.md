@@ -1,22 +1,17 @@
-PixelDone v3.1.0-rc.1 is the debug prerelease candidate for the Supabase 3.1 sync cutover.
+PixelDone v3.1.0 is the formal signed release for shared Android and Windows Cloud sync.
 
 Highlights:
-- Replaces the legacy Cloud schema with the 3.1 transaction contract in `docs/pixeldone-supabase-3.1.0-rc.1-migration.sql`.
-- Adds Realtime invalidation so signed-in foreground devices refresh checklist and todo changes made on other devices without manual refresh.
-- Makes merge conflicts durable and global: new conflict batches open the review dialog on any page, dismissed conflicts remain unresolved, and later conflicts reopen review with all unresolved items.
-- Simplifies conflict review to item/list identifiers and actual conflicting fields, with whole-record keep-local and keep-cloud actions.
-- Adds cloud-synced language mode with System plus the six UN official languages: Arabic, Chinese, English, French, Russian, and Spanish.
-- Adds 30-day Trash retention cleanup through Supabase cron, with restore resetting the countdown and minimal tombstones retained for sync deletion propagation.
-- Updates Cloud controls to muted borderless icon buttons and uses clay REVIEW actions for conflict review.
+- Introduces the Supabase 3.1 atomic mutation, global cursor, CAS, tombstone, Realtime invalidation, and durable conflict-review contract.
+- Adds System plus Arabic, Chinese, English, French, Russian, and Spanish language modes, with a compact two-column selector and each concrete language shown using its native name.
+- Redraws the Cloud sign-in, sign-out, and sync controls as restrained PixelDone line icons.
+- Keeps language mode synced while theme, Dock, update preferences, and local task images remain device-local.
+- Reschedules Android reminders whenever a Cloud pull changes task timing or state.
+- Retains recoverable Trash items for 30 days before scrubbing them into minimal sync tombstones.
+- Uses GitHub Releases as the primary update source with the user-managed Gitee mirror as fallback.
 
-Install note: this prerelease asset is the debug APK `PixelDone-3.1.0-rc.1-debug.apk` for `com.milesxue.pixeldone.debug`. Before using this client against Supabase, run the SQL migration once and verify the final SQL checkpoint output.
+Distribution:
+- The attached `PixelDone-3.1.0-release.apk` is the signed formal package for `com.milesxue.pixeldone`.
+- PixelDone intentionally connects to the configured direct-IP Supabase deployment over cleartext HTTP. HTTP does not provide transport confidentiality or server identity verification, and no HTTPS migration is planned.
+- Task images remain local to each device and are not uploaded to Supabase Storage.
 
-PixelDone v3.0.3 is the formal signed patch release for Cloud HTTP availability and remote schema setup.
-
-Highlights:
-- Allows formal signed builds to use the current direct-IP HTTP Supabase endpoint, fixing the `Cleartext HTTP is disabled for this build` Cloud state.
-- Adds `docs/pixeldone-supabase-remote-schema-update.sql` as the current Supabase remote schema script for checklists, todos, mutation UUID logging, remote versions, triggers, indexes, and RLS policies.
-- Keeps theme and Dock preferences local-only on each device; cloud sync covers checklists and todos only.
-- Preserves the 3.0.2 conflict review dialog and incremental sync hardening: remote cursors, pristine payloads, mutation UUID replay protection, WorkManager scheduling, and password reset requests.
-
-Install note: this release asset is the signed APK `PixelDone-3.0.3-release.apk` for `com.milesxue.pixeldone`. Users on `PixelDone-3.0.2-release.apk` should update to this build before using Cloud sync against the current HTTP Supabase endpoint.
+Before first use, the operator must apply `docs/pixeldone-supabase-3.1.0-rc.1-migration.sql` once and verify its final checkpoint output. PixelDone 3.1 has no legacy schema fallback.
