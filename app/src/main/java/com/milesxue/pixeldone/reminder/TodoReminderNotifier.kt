@@ -24,8 +24,6 @@ object TodoReminderNotifier {
     const val XHIGH_CHANNEL_ID = "xhigh_alarm_fullscreen_v1"
     const val XHIGH_NOTIFICATION_ID = ReminderNotificationIds.XHIGH_ALARM
 
-    private const val SHORT_CHANNEL_NAME = "Todo due alerts"
-    private const val XHIGH_CHANNEL_NAME = "XHIGH fullscreen alarms"
     private const val SHORT_GROUP_KEY = "pixeldone.reminder.short"
     private const val XHIGH_GROUP_KEY = "pixeldone.reminder.xhigh"
     private val ShortVibrationPattern = longArrayOf(0L, 140L, 90L, 180L)
@@ -48,7 +46,7 @@ object TodoReminderNotifier {
         if (!canPostNotifications(context)) return
         val dueItems = items.takeIf { it.isNotEmpty() } ?: return
         val notificationManager = context.getSystemService(NotificationManager::class.java)
-        notificationManager.createNotificationChannel(shortNotificationChannel())
+        notificationManager.createNotificationChannel(shortNotificationChannel(context))
 
         if (dueItems.size == 1) {
             val item = dueItems.single()
@@ -61,7 +59,7 @@ object TodoReminderNotifier {
                 Notification.Builder(context, SHORT_CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_notification)
                     .setContentTitle(item.title)
-                    .setContentText(item.notificationContentText(firedDueAtMillis))
+                    .setContentText(item.notificationContentText(context, firedDueAtMillis))
                     .setContentIntent(openAppIntent(context, notificationId))
                     .setAutoCancel(true)
                     .setShowWhen(true)
@@ -79,8 +77,8 @@ object TodoReminderNotifier {
         if (replaceExisting) {
             notificationManager.cancel(notificationId)
         }
-        val inboxStyle = Notification.InboxStyle()
-            .setBigContentTitle("${dueItems.size} tasks due")
+        val batchTitle = context.resources.getQuantityString(R.plurals.tasks_due, dueItems.size, dueItems.size)
+        val inboxStyle = Notification.InboxStyle().setBigContentTitle(batchTitle)
         dueItems.take(6).forEach { item ->
             inboxStyle.addLine(item.title)
         }
@@ -88,7 +86,7 @@ object TodoReminderNotifier {
             notificationId,
             Notification.Builder(context, SHORT_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("${dueItems.size} tasks due")
+                .setContentTitle(batchTitle)
                 .setContentText(dueItems.previewTitles())
                 .setStyle(inboxStyle)
                 .setNumber(dueItems.size)
@@ -120,7 +118,7 @@ object TodoReminderNotifier {
             ?: listOf(
                 TodoItem(
                     id = "xhigh-alarm",
-                    title = "XHIGH task due",
+                    title = context.getString(R.string.xhigh_task_due),
                     priority = TodoPriority.XHIGH,
                     dueAtMillis = firedDueAtMillis,
                     completed = false,
@@ -134,8 +132,8 @@ object TodoReminderNotifier {
             companionShortItems = companionShortItems,
         )
         val actionIds = dueItems.map { it.id }
-        val stopLabel = if (dueItems.size > 1) "STOP ALL" else "STOP"
-        val snoozeLabel = if (dueItems.size > 1) "SNOOZE ALL 10" else "SNOOZE 10"
+        val stopLabel = context.getString(if (dueItems.size > 1) R.string.stop_all else R.string.stop)
+        val snoozeLabel = context.getString(if (dueItems.size > 1) R.string.snooze_all_10 else R.string.snooze_10)
         val stopAlarmIntent = XHighAlarmService.actionPendingIntent(
             context = context,
             todoIds = actionIds,
@@ -144,12 +142,12 @@ object TodoReminderNotifier {
             firedDueAtMillis = firedDueAtMillis,
         )
         context.getSystemService(NotificationManager::class.java)
-            .createNotificationChannel(xhighNotificationChannel())
+            .createNotificationChannel(xhighNotificationChannel(context))
 
         return Notification.Builder(context, XHIGH_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(dueItems.xhighNotificationTitle())
-            .setContentText(dueItems.xhighNotificationText(firedDueAtMillis))
+            .setContentTitle(dueItems.xhighNotificationTitle(context))
+            .setContentText(dueItems.xhighNotificationText(context, firedDueAtMillis))
             .setContentIntent(activityIntent)
             .setFullScreenIntent(activityIntent, true)
             .setDeleteIntent(stopAlarmIntent)
@@ -195,13 +193,13 @@ object TodoReminderNotifier {
             PackageManager.PERMISSION_GRANTED
     }
 
-    private fun shortNotificationChannel(): NotificationChannel {
+    private fun shortNotificationChannel(context: Context): NotificationChannel {
         return NotificationChannel(
             SHORT_CHANNEL_ID,
-            SHORT_CHANNEL_NAME,
+            context.getString(R.string.notification_short_channel),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "Short sound and vibration for due todos"
+            description = context.getString(R.string.notification_short_channel_description)
             setSound(
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
                 AudioAttributes.Builder()
@@ -214,13 +212,13 @@ object TodoReminderNotifier {
         }
     }
 
-    private fun xhighNotificationChannel(): NotificationChannel {
+    private fun xhighNotificationChannel(context: Context): NotificationChannel {
         return NotificationChannel(
             XHIGH_CHANNEL_ID,
-            XHIGH_CHANNEL_NAME,
+            context.getString(R.string.notification_alarm_channel),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "Fullscreen XHIGH todo alarms"
+            description = context.getString(R.string.notification_alarm_channel_description)
             setSound(
                 alarmSoundUri(),
                 AudioAttributes.Builder()
@@ -245,8 +243,8 @@ object TodoReminderNotifier {
         )
     }
 
-    private fun TodoItem.notificationContentText(firedDueAtMillis: Long): String {
-        return "${priority.name}  ${firedDueAtMillis.formatAlarmTime()}${reminderRepeat.notificationSuffix()}"
+    private fun TodoItem.notificationContentText(context: Context, firedDueAtMillis: Long): String {
+        return "${priority.name}  ${firedDueAtMillis.formatAlarmTime(context)}${reminderRepeat.notificationSuffix(context)}"
     }
 
     private fun List<TodoItem>.previewTitles(): String {
@@ -254,30 +252,34 @@ object TodoReminderNotifier {
         return if (size > 3) "$visibleTitles / +${size - 3}" else visibleTitles
     }
 
-    private fun List<TodoItem>.xhighNotificationTitle(): String {
-        return if (size == 1) first().title else "$size XHIGH TASKS DUE"
+    private fun List<TodoItem>.xhighNotificationTitle(context: Context): String {
+        return if (size == 1) first().title else context.resources.getQuantityString(
+            R.plurals.xhigh_tasks_due,
+            size,
+            size,
+        )
     }
 
-    private fun List<TodoItem>.xhighNotificationText(firedDueAtMillis: Long): String {
-        return if (size == 1) first().notificationContentText(firedDueAtMillis) else previewTitles()
+    private fun List<TodoItem>.xhighNotificationText(context: Context, firedDueAtMillis: Long): String {
+        return if (size == 1) first().notificationContentText(context, firedDueAtMillis) else previewTitles()
     }
 
-    private fun Long.formatAlarmTime(): String {
+    private fun Long.formatAlarmTime(context: Context): String {
         return if (this > 0L) {
             java.time.Instant.ofEpochMilli(this)
                 .atZone(java.time.ZoneId.systemDefault())
                 .toLocalDateTime()
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
         } else {
-            "Now"
+            context.getString(R.string.now)
         }
     }
 
-    private fun ReminderRepeat.notificationSuffix(): String {
+    private fun ReminderRepeat.notificationSuffix(context: Context): String {
         return when (this) {
             ReminderRepeat.NONE -> ""
-            ReminderRepeat.DAILY -> "  DAILY"
-            ReminderRepeat.WEEKLY -> "  WEEKLY"
+            ReminderRepeat.DAILY -> "  ${context.getString(R.string.repeat_daily)}"
+            ReminderRepeat.WEEKLY -> "  ${context.getString(R.string.repeat_weekly)}"
         }
     }
 }

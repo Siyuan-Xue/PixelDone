@@ -58,6 +58,7 @@ internal class PixelDoneSyncWorker(
             SyncCoordinatorStatus.CONFLICT,
             SyncCoordinatorStatus.LOCAL_ONLY,
             SyncCoordinatorStatus.NOT_CONFIGURED,
+            SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED,
             SyncCoordinatorStatus.SIGNED_OUT,
             SyncCoordinatorStatus.IDLE -> Result.success()
             SyncCoordinatorStatus.SYNCING -> Result.retry()

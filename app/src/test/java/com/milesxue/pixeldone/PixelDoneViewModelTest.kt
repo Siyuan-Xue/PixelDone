@@ -330,6 +330,32 @@ class PixelDoneViewModelTest {
     }
 
     @Test
+    fun newConflictAfterDismissReopensWithAllUnresolvedConflicts() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val first = sampleConflictEntry()
+        val second = first.copy(localId = "todo-2", title = "Second item")
+        val coordinator = FakeSyncCoordinator(
+            initialStatus = SyncCoordinatorStatus.CONFLICT,
+            conflicts = listOf(first),
+        )
+        val viewModel = PixelDoneViewModel(
+            todoRepository = TodoRepository(InMemoryTodoStateStore(initial)),
+            reminderScheduler = FakeReminderScheduler(),
+            syncCoordinator = coordinator,
+        )
+        mainDispatcherRule.advanceUntilIdle()
+        assertEquals(true, viewModel.uiState.value.conflictDialogVisible)
+
+        viewModel.onAction(PixelDoneAction.DismissConflictDialog)
+        assertEquals(false, viewModel.uiState.value.conflictDialogVisible)
+        coordinator.setConflicts(listOf(first, second))
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals(true, viewModel.uiState.value.conflictDialogVisible)
+        assertEquals(listOf(first, second), viewModel.uiState.value.syncConflicts)
+    }
+
+    @Test
     fun resolveConflictRefreshesDialogCount() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
@@ -513,6 +539,14 @@ private class FakeSyncCoordinator(
 
     override fun requestSync() {
         requestCount += 1
+    }
+
+    fun setConflicts(conflicts: List<SyncConflictEntry>) {
+        mutableConflicts.clear()
+        mutableConflicts.addAll(conflicts)
+        val next = if (conflicts.isEmpty()) SyncCoordinatorStatus.SYNCED else SyncCoordinatorStatus.CONFLICT
+        mutableStatus.value = next
+        mutableRunState.value = SyncRunState(status = next, conflictCount = conflicts.size)
     }
 }
 

@@ -12,6 +12,7 @@ data class TodoEntitySet(
     val metadata: TodoStateMetadataEntity,
     val checklists: List<TodoChecklistEntity>,
     val items: List<TodoItemEntity>,
+    val tombstones: List<SyncTombstoneEntity> = emptyList(),
 )
 
 fun TodoChecklistState.toTodoEntitySet(
@@ -32,7 +33,6 @@ fun TodoChecklistState.toTodoEntitySet(
             name = checklist.name,
             createdAtMillis = previous?.createdAtMillis ?: checklist.createdAtMillis,
             updatedAtMillis = if (changed) nowMillis else previous.updatedAtMillis,
-            deletedAtMillis = previous?.deletedAtMillis,
             syncState = syncStateAfterLocalWrite(
                 previousSyncState = previous?.syncState,
                 ownerUserId = ownerUserId,
@@ -61,7 +61,6 @@ fun TodoChecklistState.toTodoEntitySet(
                 completed = item.completed,
                 createdAtMillis = previous?.createdAtMillis ?: item.createdAtMillis,
                 updatedAtMillis = if (changed) nowMillis else previous.updatedAtMillis,
-                deletedAtMillis = item.trashedAtMillis,
                 reminderRepeat = item.reminderRepeat.name,
                 imageLocalName = item.imageFileName,
                 imageRemotePath = previous?.imageRemotePath,
@@ -69,7 +68,6 @@ fun TodoChecklistState.toTodoEntitySet(
                 trashedFromChecklistId = item.trashedFromChecklistId,
                 trashedFromChecklistName = item.trashedFromChecklistName,
                 trashedAtMillis = item.trashedAtMillis,
-                locallyPurgedAtMillis = null,
                 syncState = syncStateAfterLocalWrite(
                     previousSyncState = previous?.syncState,
                     ownerUserId = ownerUserId,
@@ -81,17 +79,41 @@ fun TodoChecklistState.toTodoEntitySet(
             )
         }
     }
-    val retainedCloudTombstones = previousEntitySet?.items.orEmpty()
-        .filter { it.shouldRetainCloudTombstoneAfterLocalPurge(visibleItemIds) }
-        .map { item -> item.copy(locallyPurgedAtMillis = item.locallyPurgedAtMillis ?: nowMillis) }
-    val itemEntities = visibleItemEntities + retainedCloudTombstones
+    val visibleChecklistIds = lists.mapTo(mutableSetOf()) { it.id }
+    val removedChecklistTombstones = previousEntitySet?.checklists.orEmpty()
+        .filter { it.ownerUserId != null && it.localId !in visibleChecklistIds }
+        .map { checklist ->
+            SyncTombstoneEntity(
+                ownerUserId = requireNotNull(checklist.ownerUserId),
+                recordType = SyncRecordTypeChecklist,
+                localId = checklist.localId,
+                deletedAtMillis = nowMillis,
+                remoteVersion = checklist.remoteVersion,
+            )
+        }
+    val removedItemTombstones = previousEntitySet?.items.orEmpty()
+        .filter { it.ownerUserId != null && it.localId !in visibleItemIds }
+        .map { item ->
+            SyncTombstoneEntity(
+                ownerUserId = requireNotNull(item.ownerUserId),
+                recordType = SyncRecordTypeItem,
+                localId = item.localId,
+                deletedAtMillis = nowMillis,
+                remoteVersion = item.remoteVersion,
+            )
+        }
+    val tombstones = (previousEntitySet?.tombstones.orEmpty() + removedChecklistTombstones + removedItemTombstones)
+        .associateBy { Triple(it.ownerUserId, it.recordType, it.localId) }
+        .values
+        .toList()
     return TodoEntitySet(
         metadata = TodoStateMetadataEntity(
             selectedListLocalId = selectedListId,
             updatedAtMillis = nowMillis,
         ),
         checklists = checklistEntities,
-        items = itemEntities,
+        items = visibleItemEntities,
+        tombstones = tombstones,
     )
 }
 
@@ -102,8 +124,7 @@ fun todoEntitiesToState(
     fallbackCreatedAtMillis: Long,
 ): TodoChecklistState? {
     if (checklists.isEmpty()) return null
-    val visibleItems = items.filter { it.locallyPurgedAtMillis == null }
-    val itemsByChecklist = visibleItems.groupBy { it.checklistLocalId }
+    val itemsByChecklist = items.groupBy { it.checklistLocalId }
     val lists = checklists.map { checklist ->
         TodoChecklist(
             id = checklist.localId,
@@ -136,8 +157,7 @@ private fun syncStateAfterLocalWrite(
 private fun TodoChecklistEntity.matches(checklist: TodoChecklist, sortIndex: Int): Boolean =
     this.sortIndex == sortIndex &&
         name == checklist.name &&
-        createdAtMillis == checklist.createdAtMillis &&
-        deletedAtMillis == null
+        createdAtMillis == checklist.createdAtMillis
 
 private fun TodoItemEntity.matches(item: TodoItem, checklistLocalId: String, sortIndex: Int): Boolean =
     this.checklistLocalId == checklistLocalId &&
@@ -147,18 +167,11 @@ private fun TodoItemEntity.matches(item: TodoItem, checklistLocalId: String, sor
         dueAtMillis == item.dueAtMillis &&
         completed == item.completed &&
         createdAtMillis == item.createdAtMillis &&
-        deletedAtMillis == item.trashedAtMillis &&
         reminderRepeat == item.reminderRepeat.name &&
         imageLocalName == item.imageFileName &&
         trashedFromChecklistId == item.trashedFromChecklistId &&
         trashedFromChecklistName == item.trashedFromChecklistName &&
-        trashedAtMillis == item.trashedAtMillis &&
-        locallyPurgedAtMillis == null
-
-private fun TodoItemEntity.shouldRetainCloudTombstoneAfterLocalPurge(currentItemIds: Set<String>): Boolean =
-    localId !in currentItemIds &&
-        ownerUserId != null &&
-        deletedAtMillis != null
+        trashedAtMillis == item.trashedAtMillis
 
 private fun TodoItemEntity.toDomainTodoItem(): TodoItem? {
     val priority = TodoPriority.entries.firstOrNull { it.name == priority } ?: return null
@@ -174,6 +187,6 @@ private fun TodoItemEntity.toDomainTodoItem(): TodoItem? {
         imageFileName = imageLocalName,
         trashedFromChecklistId = trashedFromChecklistId,
         trashedFromChecklistName = trashedFromChecklistName,
-        trashedAtMillis = trashedAtMillis ?: deletedAtMillis,
+        trashedAtMillis = trashedAtMillis,
     )
 }

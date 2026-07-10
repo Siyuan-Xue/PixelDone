@@ -54,6 +54,20 @@ class RoomTodoStateStore private constructor(
         }
     }
 
+    override fun updateTodoState(transform: (TodoChecklistState) -> TodoChecklistState): TodoChecklistState {
+        val nowMillis = System.currentTimeMillis()
+        return runBlocking(Dispatchers.IO) {
+            writeMutex.withLock {
+                ensureMigrated(nowMillis)
+                val previousEntities = dao.getEntitySet()
+                val current = loadStateFromRoom(nowMillis) ?: createInitialChecklistState(emptyList(), nowMillis)
+                val updated = transform(current)
+                dao.replaceState(updated.toTodoEntitySet(nowMillis, previousEntitySet = previousEntities))
+                updated
+            }
+        }
+    }
+
     override fun observeTodoState(onChange: () -> Unit): () -> Unit {
         runBlocking(Dispatchers.IO) {
             writeMutex.withLock { ensureMigrated(System.currentTimeMillis()) }
@@ -258,6 +272,7 @@ class RoomTodoStateStore private constructor(
                 PixelDoneMigrations.Migration1To2,
                 PixelDoneMigrations.Migration2To3,
                 PixelDoneMigrations.Migration3To4,
+                PixelDoneMigrations.Migration4To5,
             ).build()
             return RoomTodoStateStore(database, legacyPreferences)
         }

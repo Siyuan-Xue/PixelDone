@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -81,6 +82,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -89,6 +91,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -115,6 +119,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
+import com.milesxue.pixeldone.applyPixelDoneLanguage
+import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.ui.todo.components.PixelAlarmIcon
 import com.milesxue.pixeldone.ui.todo.components.PixelButton
 import com.milesxue.pixeldone.ui.todo.components.PixelItemDeleteButton
@@ -152,7 +158,6 @@ import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
 import com.milesxue.pixeldone.domain.sync.AuthSession
 import com.milesxue.pixeldone.domain.sync.ConflictResolutionChoice
 import com.milesxue.pixeldone.domain.sync.SyncConflictEntry
-import com.milesxue.pixeldone.domain.sync.SyncConflictValue
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.AllDockActions
@@ -172,6 +177,7 @@ import com.milesxue.pixeldone.domain.todo.TodoChecklistState
 import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.domain.todo.TrashChecklistId
+import com.milesxue.pixeldone.domain.todo.AppLanguage
 import com.milesxue.pixeldone.domain.todo.TrashChecklistName
 import com.milesxue.pixeldone.domain.todo.activeTodoCount
 import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodoAfterReminder
@@ -350,6 +356,16 @@ private sealed interface EditorMode {
 @Composable
 internal fun PixelDoneApp() {
     val context = LocalContext.current
+    val checklistLockedText = stringResource(R.string.checklist_locked)
+    val nameRequiredText = stringResource(R.string.name_required)
+    val nameExistsText = stringResource(R.string.name_exists)
+    val checklistSaveFailedText = stringResource(R.string.checklist_save_failed)
+    val latestUpdateText = stringResource(R.string.latest_version_status, BuildConfig.VERSION_NAME)
+    val getVersionTemplate = stringResource(R.string.get_version_status)
+    val allowInstallText = stringResource(R.string.allow_install)
+    val installingVersionTemplate = stringResource(R.string.installing_version)
+    val updateFailedText = stringResource(R.string.update_failed)
+    val checkingUpdateText = stringResource(R.string.checking_update)
     val updateScope = rememberCoroutineScope()
     val appContainer = remember(context) { context.pixelDoneAppContainer() }
     val todoRepository = remember(appContainer) { appContainer.todoRepository }
@@ -373,6 +389,7 @@ internal fun PixelDoneApp() {
     val darkTheme = settings.darkTheme
     val dockConfig = settings.dockConfig
     val neverShowUpdateDialog = settings.neverShowUpdateDialog
+    val languageMode = settings.languageMode
     val syncStatusText = uiState.syncStatus.settingsLabel()
     val authSession = uiState.authSession
     val authInput = uiState.authInput
@@ -428,6 +445,9 @@ internal fun PixelDoneApp() {
     var batchMoveSelectedTodoIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var batchDeleteActive by remember { mutableStateOf(false) }
     var checklistBackStack by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(languageMode) {
+        applyPixelDoneLanguage(languageMode)
+    }
     val selectedChecklist = selectedChecklistOf(checklistState)
     val checklistIds = checklistState.lists.map { it.id }
     val checklistIdSet = checklistIds.toSet()
@@ -640,8 +660,11 @@ internal fun PixelDoneApp() {
     }
 
     fun hasFullScreenIntentAccess(): Boolean {
-        val canUseFullScreenIntent =
+        val canUseFullScreenIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             context.getSystemService(NotificationManager::class.java)?.canUseFullScreenIntent() == true
+        } else {
+            true
+        }
         return hasFullScreenIntentAccessForSdk(Build.VERSION.SDK_INT, canUseFullScreenIntent)
     }
 
@@ -978,13 +1001,13 @@ internal fun PixelDoneApp() {
     fun submitChecklist(): Boolean {
         val editingId = editingChecklistId
         if (editingId != null && isSpecialChecklistId(editingId)) {
-            checklistEditorError = "This list is locked."
+            checklistEditorError = checklistLockedText
             return false
         }
         val trimmedName = checklistNameInput.trim()
         checklistEditorError = when {
-            trimmedName.isEmpty() -> "Name is required."
-            !isChecklistNameAvailable(checklistState, trimmedName, editingId) -> "Name already exists."
+            trimmedName.isEmpty() -> nameRequiredText
+            !isChecklistNameAvailable(checklistState, trimmedName, editingId) -> nameExistsText
             else -> null
         }
         if (checklistEditorError != null) return false
@@ -1003,7 +1026,7 @@ internal fun PixelDoneApp() {
                 nameInput = trimmedName,
             )
         } ?: run {
-            checklistEditorError = "Could not save list."
+            checklistEditorError = checklistSaveFailedText
             return false
         }
 
@@ -1184,11 +1207,10 @@ internal fun PixelDoneApp() {
 
     fun versionLabel(version: String): String = "v$version"
 
-    fun latestUpdateMessage(): String =
-        "latest: ${versionLabel(BuildConfig.VERSION_NAME)}"
+    fun latestUpdateMessage(): String = latestUpdateText
 
     fun availableUpdateMessage(info: AppUpdateInfo): String =
-        "get: ${versionLabel(BuildConfig.VERSION_NAME)} -> ${versionLabel(info.version)}"
+        String.format(Locale.getDefault(), getVersionTemplate, BuildConfig.VERSION_NAME, info.version)
 
     fun setNeverShowUpdateDialog(neverShow: Boolean) {
         viewModel.onAction(PixelDoneAction.SetShowUpdateDialogs(!neverShow))
@@ -1204,6 +1226,9 @@ internal fun PixelDoneApp() {
 
     fun setDockConfigPreference(config: DockConfig) {
         viewModel.onAction(PixelDoneAction.SetDockConfig(config.normalized()))
+    }
+    fun setLanguagePreference(language: AppLanguage) {
+        viewModel.onAction(PixelDoneAction.SetLanguage(language))
     }
     fun setAuthEmail(email: String) {
         viewModel.onAction(PixelDoneAction.SetAuthEmail(email))
@@ -1288,7 +1313,7 @@ internal fun PixelDoneApp() {
                 pendingUpdateInstallDownload = download
                 updateUiState = AppUpdateUiState(
                     status = UpdateUiStatus.Installing,
-                    message = "allow install",
+                    message = allowInstallText,
                 )
                 openInstallUpdateSettings()
                 return true
@@ -1317,14 +1342,14 @@ internal fun PixelDoneApp() {
                         updateUiState = AppUpdateUiState(
                             status = UpdateUiStatus.Downloading,
                             info = info,
-                            message = formatUpdateDownloadMessage(info.version),
+                            message = formatLocalizedUpdateDownloadMessage(context, info.version),
                         )
                         val completion = updateService.awaitCompletion(result.download) { progress ->
                             if (activeUpdateDownload?.downloadId == result.download.downloadId) {
                                 updateUiState = AppUpdateUiState(
                                     status = UpdateUiStatus.Downloading,
                                     info = info,
-                                    message = formatUpdateDownloadMessage(info.version, progress),
+                                    message = formatLocalizedUpdateDownloadMessage(context, info.version, progress),
                                     progress = progress,
                                 )
                             }
@@ -1341,7 +1366,7 @@ internal fun PixelDoneApp() {
                             updateProgressDialogDismissed = false
                             updateUiState = AppUpdateUiState(
                                 status = UpdateUiStatus.Installing,
-                                message = "install: ${versionLabel(info.version)}",
+                                message = String.format(Locale.getDefault(), installingVersionTemplate, info.version),
                             )
                             return@launch
                         }
@@ -1353,7 +1378,7 @@ internal fun PixelDoneApp() {
             updateProgressDialogDismissed = false
             updateUiState = AppUpdateUiState(
                 status = UpdateUiStatus.Offline,
-                message = "update failed",
+                message = updateFailedText,
             )
         }
     }
@@ -1395,7 +1420,7 @@ internal fun PixelDoneApp() {
                 if (showCurrentOrOfflineStatus) {
                     updateUiState = AppUpdateUiState(
                         status = UpdateUiStatus.Offline,
-                        message = "update failed",
+                        message = updateFailedText,
                     )
                 }
             }
@@ -1441,12 +1466,12 @@ internal fun PixelDoneApp() {
                         updateUiState = if (updateService.openInstallPrompt(pendingInstall)) {
                             AppUpdateUiState(
                                 status = UpdateUiStatus.Installing,
-                                message = "install: ${versionLabel(pendingInstall.version)}",
+                                message = String.format(Locale.getDefault(), installingVersionTemplate, pendingInstall.version),
                             )
                         } else {
                             AppUpdateUiState(
                                 status = UpdateUiStatus.Offline,
-                                message = "update failed",
+                                message = updateFailedText,
                             )
                         }
                     }
@@ -1483,7 +1508,7 @@ internal fun PixelDoneApp() {
         updateCheckInFlight = true
         updateUiState = AppUpdateUiState(
             status = UpdateUiStatus.Checking,
-            message = "checking...",
+            message = checkingUpdateText,
         )
         updateScope.launch {
             try {
@@ -1501,7 +1526,7 @@ internal fun PixelDoneApp() {
         PixelDoneScreen(
             checklists = checklistState.lists,
             selectedChecklistId = selectedChecklist.id,
-            selectedChecklistName = selectedChecklist.name,
+            selectedChecklistName = selectedChecklist.localizedDisplayName(),
             isTrashSelected = isTrashSelected,
             isSettingsSelected = isSettingsSelected,
             headerExpanded = headerExpanded,
@@ -1647,6 +1672,8 @@ internal fun PixelDoneApp() {
             onUpdateClick = ::handleUpdateClick,
             darkTheme = darkTheme,
             onDarkThemeChange = ::setDarkThemePreference,
+            language = languageMode,
+            onLanguageChange = ::setLanguagePreference,
             showUpdateDialogs = shouldShowUpdatePromptSetting(neverShowUpdateDialog),
             onShowUpdateDialogsChange = ::setShowUpdateDialogs,
             currentVersion = BuildConfig.VERSION_NAME,
@@ -1797,6 +1824,8 @@ private fun PixelDoneScreen(
     onUpdateClick: () -> Unit,
     darkTheme: Boolean,
     onDarkThemeChange: (Boolean) -> Unit,
+    language: AppLanguage,
+    onLanguageChange: (AppLanguage) -> Unit,
     showUpdateDialogs: Boolean,
     onShowUpdateDialogsChange: (Boolean) -> Unit,
     currentVersion: String,
@@ -1824,7 +1853,7 @@ private fun PixelDoneScreen(
     onStopActiveXHighAlarm: () -> Unit = {},
 ) {
     val colors = PixelDoneColors.current
-    BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
@@ -1926,6 +1955,8 @@ private fun PixelDoneScreen(
                 onUpdateClick = onUpdateClick,
                 darkTheme = darkTheme,
                 onDarkThemeChange = onDarkThemeChange,
+                language = language,
+                onLanguageChange = onLanguageChange,
                 showUpdateDialogs = showUpdateDialogs,
                 onShowUpdateDialogsChange = onShowUpdateDialogsChange,
                 currentVersion = currentVersion,
@@ -1976,9 +2007,9 @@ private fun Header(
     val scrollState = rememberScrollState()
     val colors = PixelDoneColors.current
     val statusText = when {
-        isSettingsSelected -> "OPTIONS"
-        isTrashSelected -> "ITEMS ${activeCount + completedCount}"
-        else -> "ACTIVE $activeCount  DONE $completedCount"
+        isSettingsSelected -> stringResource(R.string.options)
+        isTrashSelected -> stringResource(R.string.items_count, activeCount + completedCount)
+        else -> stringResource(R.string.active_done_count, activeCount, completedCount)
     }
 
     PixelPanel(
@@ -2033,7 +2064,7 @@ private fun Header(
             }
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "LONG PRESS \"+\" TO CREATE LIST",
+                text = stringResource(R.string.long_press_add_list),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textSecondary,
                 modifier = Modifier.fillMaxWidth(),
@@ -2064,7 +2095,11 @@ private fun XHighAlarmControlPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = if (alarm.displayCount == 1) "XHIGH ALARM RINGING" else "${alarm.displayCount} XHIGH ALARMS",
+                    text = if (alarm.displayCount == 1) {
+                        stringResource(R.string.xhigh_alarm_ringing)
+                    } else {
+                        pluralStringResource(R.plurals.xhigh_alarms_count, alarm.displayCount, alarm.displayCount)
+                    },
                     color = colors.error,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
@@ -2097,13 +2132,13 @@ private fun XHighAlarmControlPanel(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 PixelButton(
-                    text = "SNOOZE 10",
+                    text = stringResource(R.string.snooze_10),
                     onClick = onSnooze,
                     modifier = Modifier.weight(1f),
                     selected = true,
                 )
                 PixelButton(
-                    text = "STOP",
+                    text = stringResource(R.string.stop),
                     onClick = onStop,
                     modifier = Modifier.weight(1f),
                     destructive = true,
@@ -2125,9 +2160,13 @@ private fun ChecklistPickerRow(
     val borderColor = if (selected) colors.primaryInteractive else colors.borderWeak
     val backgroundColor = if (selected) colors.selectedSurface else colors.surfaceSoft
     val subtitle = when {
-        isSettingsChecklist(checklist) -> "APP OPTIONS"
-        isTrashChecklist(checklist) -> "ITEMS ${checklist.items.size}"
-        else -> "ACTIVE ${activeTodoCount(checklist)}  DONE ${completedTodoCount(checklist)}"
+        isSettingsChecklist(checklist) -> stringResource(R.string.app_options)
+        isTrashChecklist(checklist) -> stringResource(R.string.items_count, checklist.items.size)
+        else -> stringResource(
+            R.string.active_done_count,
+            activeTodoCount(checklist),
+            completedTodoCount(checklist),
+        )
     }
 
     Row(
@@ -2145,7 +2184,7 @@ private fun ChecklistPickerRow(
                 .clickable(onClick = onSelect),
         ) {
             Text(
-                text = checklist.name,
+                text = checklist.localizedDisplayName(),
                 color = colors.textPrimary,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
@@ -2167,6 +2206,13 @@ private fun ChecklistPickerRow(
             PixelSettingsButton(onClick = onEdit)
         }
     }
+}
+
+@Composable
+private fun TodoChecklist.localizedDisplayName(): String = when {
+    isSettingsChecklist(this) -> stringResource(R.string.options)
+    isTrashChecklist(this) -> stringResource(R.string.field_trash)
+    else -> name
 }
 
 @Composable
@@ -2237,6 +2283,8 @@ private fun TaskWorkspacePanel(
     onUpdateClick: () -> Unit,
     darkTheme: Boolean,
     onDarkThemeChange: (Boolean) -> Unit,
+    language: AppLanguage,
+    onLanguageChange: (AppLanguage) -> Unit,
     showUpdateDialogs: Boolean,
     onShowUpdateDialogsChange: (Boolean) -> Unit,
     currentVersion: String,
@@ -2272,6 +2320,8 @@ private fun TaskWorkspacePanel(
             SettingsPanel(
                 darkTheme = darkTheme,
                 onDarkThemeChange = onDarkThemeChange,
+                language = language,
+                onLanguageChange = onLanguageChange,
                 showUpdateDialogs = showUpdateDialogs,
                 onShowUpdateDialogsChange = onShowUpdateDialogsChange,
                 currentVersion = currentVersion,
@@ -2387,6 +2437,8 @@ private fun TaskWorkspacePanel(
 private fun SettingsPanel(
     darkTheme: Boolean,
     onDarkThemeChange: (Boolean) -> Unit,
+    language: AppLanguage,
+    onLanguageChange: (AppLanguage) -> Unit,
     showUpdateDialogs: Boolean,
     onShowUpdateDialogsChange: (Boolean) -> Unit,
     currentVersion: String,
@@ -2413,15 +2465,19 @@ private fun SettingsPanel(
     val colors = PixelDoneColors.current
     val scrollState = rememberScrollState()
     val updateActionText = when (updateUiState.status) {
-        UpdateUiStatus.Available -> "UPDATE"
-        UpdateUiStatus.Checking -> "CHECKING"
-        UpdateUiStatus.Downloading -> "DOWNLOADING"
-        UpdateUiStatus.Installing -> "INSTALL"
-        else -> "CHECK"
+        UpdateUiStatus.Available -> stringResource(R.string.update)
+        UpdateUiStatus.Checking -> stringResource(R.string.checking_update)
+        UpdateUiStatus.Downloading -> stringResource(R.string.downloading_update)
+        UpdateUiStatus.Installing -> stringResource(R.string.install_updates)
+        else -> stringResource(R.string.check_update)
     }
     val updateActionEnabled = updateUiState.status != UpdateUiStatus.Checking &&
         updateUiState.status != UpdateUiStatus.Downloading &&
         updateUiState.status != UpdateUiStatus.Installing
+    val lightThemeLabel = stringResource(R.string.theme_light)
+    val darkThemeLabel = stringResource(R.string.theme_dark)
+    val onLabel = stringResource(R.string.on)
+    val offLabel = stringResource(R.string.off)
 
     PixelPanel(modifier = modifier) {
         Column(
@@ -2430,7 +2486,7 @@ private fun SettingsPanel(
                 .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(32.dp),
         ) {
-            SettingsSection(title = "CLOUD") {
+            SettingsSection(title = stringResource(R.string.settings_cloud)) {
                 SettingsCloudPanel(
                     authSession = authSession,
                     authInput = authInput,
@@ -2443,20 +2499,24 @@ private fun SettingsPanel(
                     onOpenConflictDialog = onOpenConflictDialog,
                 )
             }
-            SettingsSection(title = "DISPLAY") {
+            SettingsSection(title = stringResource(R.string.settings_display)) {
+                SettingsLanguageSelector(
+                    value = language,
+                    onSelected = onLanguageChange,
+                )
                 SettingsSegmentedRow(
-                    title = "THEME",
+                    title = stringResource(R.string.settings_theme),
                     value = darkTheme,
                     options = listOf(false, true),
-                    label = { if (it) "DARK" else "LIGHT" },
+                    label = { if (it) darkThemeLabel else lightThemeLabel },
                     onSelected = onDarkThemeChange,
                 )
             }
 
-            SettingsSection(title = "DOCK") {
+            SettingsSection(title = stringResource(R.string.settings_dock)) {
                 DockSettingsPreview(dockConfig = dockConfig)
                 SettingsSegmentedRow(
-                    title = "PLUS",
+                    title = stringResource(R.string.plus),
                     value = dockConfig.plusPlacement,
                     options = listOf(
                         DockPlusPlacement.CENTER,
@@ -2475,64 +2535,64 @@ private fun SettingsPanel(
             }
 
 
-            SettingsSection(title = "UPDATES") {
+            SettingsSection(title = stringResource(R.string.settings_updates)) {
                 SettingsSegmentedRow(
-                    title = "UPDATE POPUP",
+                    title = stringResource(R.string.update_popup),
                     value = showUpdateDialogs,
                     options = listOf(true, false),
-                    label = { if (it) "ON" else "OFF" },
+                    label = { if (it) onLabel else offLabel },
                     onSelected = onShowUpdateDialogsChange,
                 )
                 SettingsActionRow(
-                    title = "CHECK UPDATE",
-                    value = updateUiState.message ?: "current: v$currentVersion",
+                    title = stringResource(R.string.check_update),
+                    value = updateUiState.message ?: stringResource(R.string.current_version, currentVersion),
                     actionText = updateActionText,
                     onAction = onUpdateClick,
                     enabled = updateActionEnabled,
                 )
             }
 
-            SettingsSection(title = "PERMISSIONS") {
+            SettingsSection(title = stringResource(R.string.settings_permissions)) {
                 SettingsPermissionRow(
-                    title = "NOTIFICATIONS",
+                    title = stringResource(R.string.notifications),
                     granted = permissionState.notificationsGranted,
                     onAction = onRequestNotificationPermission,
                 )
                 SettingsPermissionRow(
-                    title = "EXACT ALARM",
+                    title = stringResource(R.string.exact_alarm),
                     granted = permissionState.exactAlarmGranted,
                     onAction = onRequestExactAlarmPermission,
                 )
                 SettingsPermissionRow(
-                    title = "FULL SCREEN",
+                    title = stringResource(R.string.full_screen),
                     granted = permissionState.fullScreenIntentGranted,
                     onAction = onRequestFullScreenIntentPermission,
                 )
                 SettingsPermissionRow(
-                    title = "INSTALL UPDATES",
+                    title = stringResource(R.string.install_updates),
                     granted = permissionState.installUpdatesGranted,
                     onAction = onRequestInstallUpdatesPermission,
                 )
             }
 
-            SettingsSection(title = "ABOUT") {
+            SettingsSection(title = stringResource(R.string.settings_about)) {
                 SettingsAboutTextRow(
-                    title = "APP",
+                    title = stringResource(R.string.app),
                     value = "PixelDone",
                 )
                 SettingsAboutTextRow(
-                    title = "MAKER",
+                    title = stringResource(R.string.maker),
                     value = "CODEX & XUE",
                     valueColor = colors.primary,
                 )
                 SettingsAboutTextRow(
-                    title = "SYNC",
+                    title = stringResource(R.string.sync),
                     value = syncStatusText,
                     valueColor = colors.primaryInteractive,
                 )
                 SettingsAboutTextRow(
-                    title = "UPDATE PERMISSIONS",
-                    value = "same package + signature",
+                    title = stringResource(R.string.update_permissions),
+                    value = stringResource(R.string.same_package_signature),
                 )
             }
         }
@@ -2554,9 +2614,9 @@ private fun SettingsCloudPanel(
 ) {
     val colors = PixelDoneColors.current
     val accountLabel = when {
-        !authSession.cloudAvailable -> "NEEDS SETUP"
-        authSession.signedIn -> authSession.userEmail ?: authSession.userId ?: "SIGNED IN"
-        else -> "SIGNED OUT"
+        !authSession.cloudAvailable -> stringResource(R.string.needs_setup)
+        authSession.signedIn -> authSession.userEmail ?: authSession.userId ?: stringResource(R.string.signed_in)
+        else -> stringResource(R.string.signed_out)
     }
     Column(
         modifier = modifier
@@ -2572,29 +2632,29 @@ private fun SettingsCloudPanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SettingsRowText(
-                title = "ACCOUNT",
+                title = stringResource(R.string.account),
                 value = accountLabel,
                 modifier = Modifier.weight(1f),
             )
             when {
-                authSession.signedIn -> SettingsTextAction(
-                    text = "OUT",
+                authSession.signedIn -> CloudIconAction(
+                    icon = CloudActionIcon.LOGOUT,
+                    contentDescription = stringResource(R.string.sign_out),
                     onClick = onSignOut,
                     enabled = !authInput.busy,
-                    modifier = Modifier.width(72.dp),
                 )
-                authSession.cloudAvailable -> SettingsTextAction(
-                    text = if (authInput.busy) "..." else "SIGN IN",
+                authSession.cloudAvailable -> CloudIconAction(
+                    icon = CloudActionIcon.LOGIN,
+                    contentDescription = stringResource(R.string.sign_in),
                     onClick = onOpenCloudSignIn,
                     enabled = !authInput.busy,
-                    modifier = Modifier.width(88.dp),
                 )
             }
         }
 
         if (!authSession.cloudAvailable) {
             Text(
-                text = authSession.configurationError ?: "Cloud sync is local only.",
+                text = authSession.configurationError ?: stringResource(R.string.cloud_local_only_detail),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textSecondary,
             )
@@ -2605,24 +2665,23 @@ private fun SettingsCloudPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 SettingsRowText(
-                    title = "SYNC",
+                    title = stringResource(R.string.sync),
                     value = syncStatusText,
                     modifier = Modifier.weight(1f),
                     valueColor = syncStatus.settingsValueColor(colors),
                 )
                 if (authSession.signedIn) {
-                    PixelButton(
-                        text = if (syncStatus == SyncCoordinatorStatus.SYNCING) "..." else "SYNC",
+                    CloudIconAction(
+                        icon = CloudActionIcon.SYNC,
+                        contentDescription = stringResource(R.string.sync_now),
                         onClick = onSyncNow,
                         enabled = syncStatus != SyncCoordinatorStatus.SYNCING && !authInput.busy,
-                        modifier = Modifier.width(72.dp),
-                        primary = false,
                     )
                 }
             }
             if (authSession.signedIn && syncRunState.pendingCount > 0) {
                 SettingsRowText(
-                    title = "PENDING",
+                    title = stringResource(R.string.pending),
                     value = syncRunState.pendingCount.toString(),
                     valueColor = colors.textSecondary,
                 )
@@ -2634,13 +2693,13 @@ private fun SettingsCloudPanel(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     SettingsRowText(
-                        title = "CONFLICTS",
+                        title = stringResource(R.string.conflicts),
                         value = syncRunState.conflictCount.toString(),
-                        valueColor = colors.error,
+                        valueColor = colors.primary,
                         modifier = Modifier.weight(1f),
                     )
-                    SettingsTextAction(
-                        text = "REVIEW",
+                    ClayReviewButton(
+                        text = stringResource(R.string.review),
                         onClick = onOpenConflictDialog,
                         modifier = Modifier.width(88.dp),
                     )
@@ -2650,11 +2709,80 @@ private fun SettingsCloudPanel(
 
         if (authSession.signedIn) authInput.error?.let { error ->
             Text(
-                text = error,
+                text = localizedAuthText(error),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.error,
             )
         }
+    }
+}
+
+private enum class CloudActionIcon { LOGIN, LOGOUT, SYNC }
+
+@Composable
+private fun CloudIconAction(
+    icon: CloudActionIcon,
+    contentDescription: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PixelDoneColors.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val iconColor = if (enabled) colors.textSecondary else colors.disabledText
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .background(if (pressed && enabled) colors.selectedSurface else Color.Transparent)
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(22.dp)) {
+            val stroke = 2.dp.toPx()
+            when (icon) {
+                CloudActionIcon.LOGIN, CloudActionIcon.LOGOUT -> {
+                    val outward = icon == CloudActionIcon.LOGOUT
+                    val doorX = if (outward) 6.dp.toPx() else 16.dp.toPx()
+                    drawLine(iconColor, Offset(doorX, 3.dp.toPx()), Offset(doorX, 19.dp.toPx()), stroke)
+                    val startX = if (outward) 4.dp.toPx() else 18.dp.toPx()
+                    val endX = if (outward) 18.dp.toPx() else 4.dp.toPx()
+                    drawLine(iconColor, Offset(startX, 11.dp.toPx()), Offset(endX, 11.dp.toPx()), stroke)
+                    val headX = if (outward) 14.dp.toPx() else 8.dp.toPx()
+                    drawLine(iconColor, Offset(headX, 7.dp.toPx()), Offset(endX, 11.dp.toPx()), stroke)
+                    drawLine(iconColor, Offset(headX, 15.dp.toPx()), Offset(endX, 11.dp.toPx()), stroke)
+                }
+                CloudActionIcon.SYNC -> {
+                    drawArc(iconColor, -55f, 220f, false, style = Stroke(stroke))
+                    drawArc(iconColor, 125f, 220f, false, style = Stroke(stroke))
+                    drawLine(iconColor, Offset(17.dp.toPx(), 3.dp.toPx()), Offset(19.dp.toPx(), 8.dp.toPx()), stroke)
+                    drawLine(iconColor, Offset(17.dp.toPx(), 3.dp.toPx()), Offset(12.dp.toPx(), 4.dp.toPx()), stroke)
+                    drawLine(iconColor, Offset(5.dp.toPx(), 19.dp.toPx()), Offset(3.dp.toPx(), 14.dp.toPx()), stroke)
+                    drawLine(iconColor, Offset(5.dp.toPx(), 19.dp.toPx()), Offset(10.dp.toPx(), 18.dp.toPx()), stroke)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClayReviewButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = PixelDoneColors.current
+    Box(
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .background(colors.primary, RectangleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = text },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge, color = colors.onPrimary)
     }
 }
 
@@ -2691,6 +2819,59 @@ private fun SettingsTextAction(
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+@Composable
+private fun SettingsLanguageSelector(
+    value: AppLanguage,
+    onSelected: (AppLanguage) -> Unit,
+) {
+    val colors = PixelDoneColors.current
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        SettingsRowText(title = stringResource(R.string.settings_language), value = value.displayName())
+        AppLanguage.entries.forEach { language ->
+            val selected = language == value
+            val languageLabel = language.displayName()
+            val selectionLabel = if (selected) stringResource(R.string.selected) else stringResource(R.string.not_selected)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .background(if (selected) colors.selectedSurface else Color.Transparent)
+                    .clickable { onSelected(language) }
+                    .semantics {
+                        contentDescription = languageLabel
+                        stateDescription = selectionLabel
+                    }
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Canvas(Modifier.size(14.dp)) {
+                    drawRect(if (selected) colors.primary else colors.borderWeak)
+                    if (selected) {
+                        drawRect(colors.surface, topLeft = Offset(4.dp.toPx(), 4.dp.toPx()), size = Size(6.dp.toPx(), 6.dp.toPx()))
+                    }
+                }
+                Text(
+                    text = languageLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (selected) colors.textPrimary else colors.textSecondary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppLanguage.displayName(): String = when (this) {
+    AppLanguage.SYSTEM -> stringResource(R.string.language_system)
+    AppLanguage.ENGLISH -> stringResource(R.string.language_english)
+    AppLanguage.SIMPLIFIED_CHINESE -> stringResource(R.string.language_chinese)
+    AppLanguage.ARABIC -> stringResource(R.string.language_arabic)
+    AppLanguage.FRENCH -> stringResource(R.string.language_french)
+    AppLanguage.RUSSIAN -> stringResource(R.string.language_russian)
+    AppLanguage.SPANISH -> stringResource(R.string.language_spanish)
 }
 @Composable
 private fun settingsTextFieldColors(colors: PixelDonePalette) = OutlinedTextFieldDefaults.colors(
@@ -2738,7 +2919,7 @@ private fun DockSettingsPreview(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         SettingsRowText(
-            title = "PREVIEW",
+            title = stringResource(R.string.preview),
             value = dockConfig.previewLabel(),
         )
         BottomActionDock(
@@ -2768,8 +2949,12 @@ private fun DockActionSettingsList(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         SettingsRowText(
-            title = "FUNCTIONS",
-            value = "${normalizedConfig.actions.size}/$MaxDockActions SELECTED",
+            title = stringResource(R.string.functions),
+            value = stringResource(
+                R.string.selected_count,
+                normalizedConfig.actions.size,
+                MaxDockActions,
+            ),
         )
         AllDockActions.forEach { action ->
             DockActionSettingsRow(
@@ -2913,15 +3098,17 @@ private fun movedDockActions(
     return normalizedActions
 }
 
+@Composable
 private fun DockConfig.previewLabel(): String {
     val normalizedConfig = normalized()
     return "${normalizedConfig.plusPlacement.settingsLabel()}  ${normalizedConfig.actions.size}/$MaxDockActions"
 }
 
+@Composable
 private fun DockPlusPlacement.settingsLabel(): String = when (this) {
-    DockPlusPlacement.CENTER -> "CENTER"
-    DockPlusPlacement.LEFT_EDGE -> "LEFT"
-    DockPlusPlacement.RIGHT_EDGE -> "RIGHT"
+    DockPlusPlacement.CENTER -> stringResource(R.string.center)
+    DockPlusPlacement.LEFT_EDGE -> stringResource(R.string.left)
+    DockPlusPlacement.RIGHT_EDGE -> stringResource(R.string.right)
 }
 
 @Composable
@@ -2969,7 +3156,7 @@ private fun SettingsActionRow(
             enabled = enabled,
             modifier = Modifier.width(104.dp),
             primary = false,
-            selected = value == "NEEDS SETUP",
+            selected = false,
         )
     }
 }
@@ -3007,6 +3194,8 @@ private fun PermissionStatusButton(
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
+    val grantedDescription = stringResource(R.string.permission_granted)
+    val setupDescription = stringResource(R.string.permission_needs_setup)
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val glyphColor = if (granted) colors.success else colors.error
@@ -3020,7 +3209,7 @@ private fun PermissionStatusButton(
                 onClick = onClick,
             )
             .semantics {
-                contentDescription = if (granted) "PERMISSION GRANTED" else "PERMISSION NEEDS SETUP"
+                contentDescription = if (granted) grantedDescription else setupDescription
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -3095,7 +3284,7 @@ private fun <T> SettingsSegmentedRow(
     title: String,
     value: T,
     options: List<T>,
-    label: (T) -> String,
+    label: @Composable (T) -> String,
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -3147,22 +3336,26 @@ private fun SettingsRowText(
     }
 }
 
+@Composable
 private fun Boolean.permissionLabel(): String =
-    if (this) "GRANTED" else "NEEDS SETUP"
+    if (this) stringResource(R.string.granted) else stringResource(R.string.needs_setup)
 
+@Composable
 private fun SyncCoordinatorStatus.settingsLabel(): String = when (this) {
-    SyncCoordinatorStatus.LOCAL_ONLY -> "LOCAL ONLY"
-    SyncCoordinatorStatus.NOT_CONFIGURED -> "NEEDS SETUP"
-    SyncCoordinatorStatus.SIGNED_OUT -> "SIGNED OUT"
-    SyncCoordinatorStatus.IDLE -> "READY"
-    SyncCoordinatorStatus.SYNCING -> "SYNCING"
-    SyncCoordinatorStatus.SYNCED -> "SYNCED"
-    SyncCoordinatorStatus.CONFLICT -> "CONFLICT"
-    SyncCoordinatorStatus.ERROR -> "ERROR"
+    SyncCoordinatorStatus.LOCAL_ONLY -> stringResource(R.string.local_only)
+    SyncCoordinatorStatus.NOT_CONFIGURED -> stringResource(R.string.needs_setup)
+    SyncCoordinatorStatus.SIGNED_OUT -> stringResource(R.string.signed_out)
+    SyncCoordinatorStatus.IDLE -> stringResource(R.string.ready)
+    SyncCoordinatorStatus.SYNCING -> stringResource(R.string.syncing)
+    SyncCoordinatorStatus.SYNCED -> stringResource(R.string.synced)
+    SyncCoordinatorStatus.CONFLICT -> stringResource(R.string.conflict)
+    SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED -> stringResource(R.string.server_update_required)
+    SyncCoordinatorStatus.ERROR -> stringResource(R.string.error)
 }
 
 internal fun SyncCoordinatorStatus.settingsValueColor(colors: PixelDonePalette): Color = when (this) {
     SyncCoordinatorStatus.ERROR,
+    SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED,
     SyncCoordinatorStatus.CONFLICT -> colors.error
     SyncCoordinatorStatus.SYNCED -> colors.success
     else -> colors.textSecondary
@@ -3212,12 +3405,12 @@ private fun TaskEditorPanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (isEditing) "EDIT TASK" else "NEW TASK",
+                text = if (isEditing) stringResource(R.string.edit_task) else stringResource(R.string.new_task),
                 style = MaterialTheme.typography.labelLarge,
                 color = colors.textSecondary,
             )
             Text(
-                text = if (isEditing) "CANCEL" else "CLOSE",
+                text = if (isEditing) stringResource(R.string.cancel) else stringResource(R.string.close),
                 style = MaterialTheme.typography.labelLarge,
                 color = colors.primaryInteractive,
             )
@@ -3236,7 +3429,7 @@ private fun TaskEditorPanel(
                 singleLine = true,
                 shape = RectangleShape,
                 textStyle = MaterialTheme.typography.bodyLarge,
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.name)) },
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Sentences,
                     imeAction = ImeAction.Done,
@@ -3263,7 +3456,7 @@ private fun TaskEditorPanel(
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "PRIORITY",
+                text = stringResource(R.string.field_priority),
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.textSecondary,
             )
@@ -3274,7 +3467,7 @@ private fun TaskEditorPanel(
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "TIME / ALARM",
+                text = stringResource(R.string.time_alarm),
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.textSecondary,
             )
@@ -3295,7 +3488,7 @@ private fun TaskEditorPanel(
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "REPEAT",
+                text = stringResource(R.string.field_repeat),
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.textSecondary,
             )
@@ -3309,7 +3502,7 @@ private fun TaskEditorPanel(
             if (isEditing) {
                 Spacer(modifier = Modifier.height(12.dp))
                 PixelButton(
-                    text = "DELETE TASK",
+                    text = stringResource(R.string.delete_task),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         onDeleteTodo()
@@ -3321,7 +3514,7 @@ private fun TaskEditorPanel(
             Spacer(modifier = Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PixelButton(
-                    text = if (isEditing) "SAVE" else "ADD",
+                text = if (isEditing) stringResource(R.string.save) else stringResource(R.string.add),
                     onClick = {
                         if (onSubmitTodo()) {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -3335,7 +3528,7 @@ private fun TaskEditorPanel(
                 )
                 if (isEditing) {
                     PixelButton(
-                        text = "CANCEL",
+                        text = stringResource(R.string.cancel),
                         onClick = {
                             focusManager.clearFocus()
                             onCancelEdit()
@@ -3367,10 +3560,10 @@ private fun CloudAuthEditorPanel(
     val verticalGap = if (compactForKeyboard) 8.dp else 12.dp
     val submitAuth = if (authInput.mode == CloudAuthMode.SIGN_UP) onSignUp else onSignIn
     val submitText = when {
-        authInput.busy && authInput.mode == CloudAuthMode.SIGN_UP -> "SIGNING UP"
-        authInput.busy -> "SIGNING"
-        authInput.mode == CloudAuthMode.SIGN_UP -> "SIGN UP"
-        else -> "SIGN IN"
+        authInput.busy && authInput.mode == CloudAuthMode.SIGN_UP -> stringResource(R.string.signing_up)
+        authInput.busy -> stringResource(R.string.signing_in)
+        authInput.mode == CloudAuthMode.SIGN_UP -> stringResource(R.string.sign_up)
+        else -> stringResource(R.string.sign_in)
     }
     var passwordVisible by remember { mutableStateOf(false) }
     val passwordTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation()
@@ -3393,7 +3586,7 @@ private fun CloudAuthEditorPanel(
                 color = colors.textSecondary,
             )
             Text(
-                text = "CANCEL",
+                text = stringResource(R.string.cancel),
                 style = MaterialTheme.typography.labelLarge,
                 color = colors.primaryInteractive,
             )
@@ -3421,7 +3614,7 @@ private fun CloudAuthEditorPanel(
                 singleLine = true,
                 shape = RectangleShape,
                 textStyle = MaterialTheme.typography.bodyLarge,
-                label = { Text("Email") },
+                label = { Text(stringResource(R.string.email)) },
                 enabled = !authInput.busy,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Email,
@@ -3438,12 +3631,12 @@ private fun CloudAuthEditorPanel(
                 isError = authInput.error != null,
                 shape = RectangleShape,
                 textStyle = MaterialTheme.typography.bodyLarge,
-                label = { Text("Password") },
+                label = { Text(stringResource(R.string.password)) },
                 enabled = !authInput.busy,
                 visualTransformation = passwordTransformation,
                 trailingIcon = {
                     SettingsTextAction(
-                        text = if (passwordVisible) "HIDE" else "SHOW",
+                    text = if (passwordVisible) stringResource(R.string.hide) else stringResource(R.string.show),
                         onClick = { passwordVisible = !passwordVisible },
                         enabled = !authInput.busy,
                         modifier = Modifier.width(56.dp),
@@ -3459,7 +3652,7 @@ private fun CloudAuthEditorPanel(
             authInput.error?.let { error ->
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = error,
+                    text = localizedAuthText(error),
                     style = MaterialTheme.typography.labelSmall,
                     color = colors.error,
                 )
@@ -3467,7 +3660,7 @@ private fun CloudAuthEditorPanel(
             if (authInput.mode == CloudAuthMode.SIGN_IN) {
                 Spacer(modifier = Modifier.height(6.dp))
                 SettingsTextAction(
-                    text = "RESET",
+                    text = stringResource(R.string.reset),
                     onClick = onResetPassword,
                     enabled = !authInput.busy,
                     modifier = Modifier.width(72.dp),
@@ -3486,7 +3679,7 @@ private fun CloudAuthEditorPanel(
                     primary = true,
                 )
                 PixelButton(
-                    text = "CANCEL",
+                    text = stringResource(R.string.cancel),
                     onClick = {
                         focusManager.clearFocus()
                         onCancelAuth()
@@ -3499,14 +3692,16 @@ private fun CloudAuthEditorPanel(
     }
 }
 
+@Composable
 private fun CloudAuthMode.cloudAuthLabel(): String = when (this) {
-    CloudAuthMode.SIGN_IN -> "SIGN IN"
-    CloudAuthMode.SIGN_UP -> "SIGN UP"
+        CloudAuthMode.SIGN_IN -> stringResource(R.string.sign_in)
+        CloudAuthMode.SIGN_UP -> stringResource(R.string.sign_up)
 }
 
+@Composable
 private fun CloudAuthMode.cloudAuthTitle(): String = when (this) {
-    CloudAuthMode.SIGN_IN -> "SYNC SIGN IN"
-    CloudAuthMode.SIGN_UP -> "SYNC SIGN UP"
+        CloudAuthMode.SIGN_IN -> stringResource(R.string.sync_sign_in)
+        CloudAuthMode.SIGN_UP -> stringResource(R.string.sync_sign_up)
 }
 @Composable
 private fun ChecklistEditorPanel(
@@ -3540,12 +3735,12 @@ private fun ChecklistEditorPanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (isEditing) "EDIT LIST" else "NEW LIST",
+                text = if (isEditing) stringResource(R.string.edit_list) else stringResource(R.string.new_list),
                 style = MaterialTheme.typography.labelLarge,
                 color = colors.textSecondary,
             )
             Text(
-                text = "CANCEL",
+                text = stringResource(R.string.cancel),
                 style = MaterialTheme.typography.labelLarge,
                 color = colors.primaryInteractive,
             )
@@ -3565,7 +3760,7 @@ private fun ChecklistEditorPanel(
                 isError = errorText != null,
                 shape = RectangleShape,
                 textStyle = MaterialTheme.typography.bodyLarge,
-                label = { Text("List name") },
+                label = { Text(stringResource(R.string.list_name)) },
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.Characters,
                     imeAction = ImeAction.Done,
@@ -3605,7 +3800,7 @@ private fun ChecklistEditorPanel(
             Spacer(modifier = Modifier.height(12.dp))
             if (isEditing) {
                 PixelButton(
-                    text = if (canDeleteChecklist) "DELETE LIST" else "KEEP ONE LIST",
+                    text = if (canDeleteChecklist) stringResource(R.string.delete_list) else stringResource(R.string.keep_one_list),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         onDeleteChecklist()
@@ -3618,7 +3813,7 @@ private fun ChecklistEditorPanel(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PixelButton(
-                    text = "SAVE",
+                    text = stringResource(R.string.save),
                     onClick = {
                         if (onSubmitChecklist()) {
                             hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -3631,7 +3826,7 @@ private fun ChecklistEditorPanel(
                     primary = true,
                 )
                 PixelButton(
-                    text = "CANCEL",
+                    text = stringResource(R.string.cancel),
                     onClick = {
                         focusManager.clearFocus()
                         onCancelEdit()
@@ -3817,8 +4012,15 @@ private fun TodoListPanel(
 
     PixelPanel(modifier = modifier) {
         if (isTrashSelected) {
+            Text(
+                text = stringResource(R.string.trash_retention),
+                style = MaterialTheme.typography.labelSmall,
+                color = PixelDoneColors.current.textSecondary,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
             PixelButton(
-                text = "DELETE ALL",
+                text = stringResource(R.string.delete_all),
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                     onDeleteAllTrash()
@@ -3837,11 +4039,11 @@ private fun TodoListPanel(
             if (visibleItems.isEmpty()) {
                 EmptyState(
                     text = if (isTrashSelected) {
-                        "Trash is empty."
+                        stringResource(R.string.trash_empty)
                     } else if (todos.isEmpty()) {
-                        "Add a task to begin."
+            stringResource(R.string.add_task_to_begin)
                     } else {
-                        "Done tasks are hidden."
+            stringResource(R.string.done_tasks_hidden)
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -4048,7 +4250,7 @@ private fun BatchMoveBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "$selectedCount SELECTED",
+                text = "$selectedCount ${stringResource(R.string.selected)}",
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.textPrimary,
                 maxLines = 1,
@@ -4056,14 +4258,14 @@ private fun BatchMoveBar(
                 modifier = Modifier.weight(1f),
             )
             PixelButton(
-                text = "MOVE",
+                text = stringResource(R.string.move),
                 onClick = onMove,
                 enabled = selectedCount > 0,
                 primary = selectedCount > 0,
                 modifier = Modifier.width(96.dp),
             )
             PixelButton(
-                text = "CANCEL",
+                text = stringResource(R.string.cancel),
                 onClick = onCancel,
                 modifier = Modifier.width(104.dp),
             )
@@ -4086,10 +4288,10 @@ private fun BatchMoveTargetPanel(
         contentPadding = PaddingValues(8.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            PanelLabel("TARGET LIST")
+            PanelLabel(stringResource(R.string.target_list))
             if (targetChecklists.isEmpty()) {
                 Text(
-                    text = "NO TARGET LIST",
+                    text = stringResource(R.string.no_target_list),
                     style = MaterialTheme.typography.labelMedium,
                     color = colors.textSecondary,
                     textAlign = TextAlign.Center,
@@ -4113,7 +4315,7 @@ private fun BatchMoveTargetPanel(
                 }
             }
             PixelButton(
-                text = "CANCEL",
+                text = stringResource(R.string.cancel),
                 onClick = onCancel,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -4203,6 +4405,8 @@ private fun TodoRow(
     } else {
         ""
     }
+    val priorityText = item.priority.uiLabel()
+    val deadlineText = localizedDeadlineCountdown(item.dueAtMillis, nowMillis)
     val showXHighAlarmIcon = item.priority == TodoPriority.XHIGH && !item.completed
     val rowPadding = if (item.completed) {
         PaddingValues(horizontal = 8.dp, vertical = 6.dp)
@@ -4276,6 +4480,8 @@ private fun TodoRow(
                             dueDateTime = dueDateTime,
                             dueDateTimeColor = dueDateTimeColor,
                             repeatText = repeatText,
+                            priorityText = priorityText,
+                            deadlineText = deadlineText,
                             showDeadlineCountdown = showDeadlineCountdown,
                         ),
                         style = MaterialTheme.typography.labelSmall,
@@ -4361,7 +4567,7 @@ private fun TrashTodoRow(
             if (!item.completed) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "FROM $sourceName",
+                    text = stringResource(R.string.from_list, sourceName),
                     style = MaterialTheme.typography.labelSmall,
                     color = colors.textSecondary,
                     maxLines = 1,
@@ -4401,6 +4607,7 @@ private fun Footer(
 ) {
     val colors = PixelDoneColors.current
     val message = updateUiState.message
+    val updateContentDescription = updateUiState.status.localizedContentDescription()
     if (message != null) {
         val messageColor = when (updateUiState.status) {
             UpdateUiStatus.Offline -> colors.error
@@ -4418,7 +4625,7 @@ private fun Footer(
                     enabled = updateUiState.status == UpdateUiStatus.Available,
                     onClick = onUpdateClick,
                 )
-                .semantics { contentDescription = updateUiState.contentDescription },
+                .semantics { contentDescription = updateContentDescription },
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -4474,6 +4681,32 @@ private fun Footer(
 }
 
 @Composable
+private fun UpdateUiStatus.localizedContentDescription(): String = when (this) {
+    UpdateUiStatus.Idle -> stringResource(R.string.check_update)
+    UpdateUiStatus.Checking -> stringResource(R.string.checking_update)
+    UpdateUiStatus.Latest -> stringResource(R.string.latest_version)
+    UpdateUiStatus.Available -> stringResource(R.string.update_available)
+    UpdateUiStatus.Offline -> stringResource(R.string.update_failed)
+    UpdateUiStatus.Downloading -> stringResource(R.string.downloading_update)
+    UpdateUiStatus.Installing -> stringResource(R.string.install_updates)
+}
+
+@Composable
+private fun localizedAuthText(text: String): String = when (text) {
+    "Signed in." -> stringResource(R.string.auth_signed_in)
+    "Sign in failed." -> stringResource(R.string.auth_sign_in_failed)
+    "Signed up." -> stringResource(R.string.auth_signed_up)
+    "Sign up failed." -> stringResource(R.string.auth_sign_up_failed)
+    "Email and password are required." -> stringResource(R.string.auth_email_password_required)
+    "Signed out." -> stringResource(R.string.auth_signed_out)
+    "Sign out failed." -> stringResource(R.string.auth_sign_out_failed)
+    "Email is required." -> stringResource(R.string.auth_email_required)
+    "Reset email sent." -> stringResource(R.string.auth_reset_sent)
+    "Reset failed." -> stringResource(R.string.auth_reset_failed)
+    else -> text
+}
+
+@Composable
 private fun UpdateMark(
     state: AppUpdateUiState,
     onClick: () -> Unit,
@@ -4490,6 +4723,7 @@ private fun UpdateMark(
         else -> idleColor
     }
     val displayColor = if (pressed && state.status != UpdateUiStatus.Checking) activeColor else color
+    val updateContentDescription = state.status.localizedContentDescription()
 
     Row(
         modifier = modifier.height(PixelDoneFooterHeight),
@@ -4507,7 +4741,7 @@ private fun UpdateMark(
                     indication = null,
                     onClick = onClick,
                 )
-                .semantics { contentDescription = state.contentDescription },
+                .semantics { contentDescription = updateContentDescription },
             contentAlignment = Alignment.Center,
         ) {
             UpdateGlyph(
@@ -4614,7 +4848,7 @@ private fun SyncConflictDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Sync conflicts",
+                text = stringResource(R.string.sync_conflicts),
                 style = MaterialTheme.typography.titleMedium,
                 color = colors.textPrimary,
             )
@@ -4622,7 +4856,7 @@ private fun SyncConflictDialog(
         text = {
             if (conflicts.isEmpty()) {
                 Text(
-                    text = "NO CONFLICTS",
+                    text = stringResource(R.string.no_conflicts),
                     style = MaterialTheme.typography.labelLarge,
                     color = colors.textSecondary,
                 )
@@ -4662,7 +4896,7 @@ private fun SyncConflictDialog(
         },
         confirmButton = {
             DialogTextActionButton(
-                text = "CLOSE",
+                text = stringResource(R.string.close),
                 onClick = onDismiss,
             )
         },
@@ -4688,80 +4922,33 @@ private fun SyncConflictReviewItem(
             .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = conflict.recordType.conflictTypeLabel(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.primaryInteractive,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = conflict.title,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colors.textPrimary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(
-                text = conflict.fields.joinToString(" / ").ifBlank { "FIELDS" },
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.error,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.End,
-            )
-        }
-
         Text(
-            text = conflict.message,
-            style = MaterialTheme.typography.labelSmall,
-            color = colors.textSecondary,
-            maxLines = 2,
+            text = conflict.title,
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.textPrimary,
+            maxLines = 3,
             overflow = TextOverflow.Ellipsis,
         )
-
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            if (maxWidth >= 420.dp) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    SyncConflictVersionBlock(
-                        title = "LOCAL",
-                        values = conflict.localValues,
-                        modifier = Modifier.weight(1f),
-                    )
-                    SyncConflictVersionBlock(
-                        title = "CLOUD",
-                        values = conflict.cloudValues,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SyncConflictVersionBlock(title = "LOCAL", values = conflict.localValues)
-                    SyncConflictVersionBlock(title = "CLOUD", values = conflict.cloudValues)
-                }
-            }
+        conflict.fields.forEach { field ->
+            val localValue = conflict.localValues.firstOrNull { it.label == field }?.value.orEmpty()
+            val cloudValue = conflict.cloudValues.firstOrNull { it.label == field }?.value.orEmpty()
+            SyncConflictFieldRow(
+                field = field,
+                localValue = localValue,
+                cloudValue = cloudValue,
+            )
         }
 
         DialogActionRow(modifier = Modifier.fillMaxWidth()) {
             PixelButton(
-                text = if (resolving) "..." else "KEEP LOCAL",
+                text = if (resolving) "..." else stringResource(R.string.keep_local),
                 onClick = onKeepLocal,
                 enabled = !resolving,
                 modifier = Modifier.weight(1f),
                 primary = false,
             )
             PixelButton(
-                text = if (resolving) "..." else "KEEP CLOUD",
+                text = if (resolving) "..." else stringResource(R.string.keep_cloud),
                 onClick = onKeepCloud,
                 enabled = !resolving,
                 modifier = Modifier.weight(1f),
@@ -4772,9 +4959,10 @@ private fun SyncConflictReviewItem(
 }
 
 @Composable
-private fun SyncConflictVersionBlock(
-    title: String,
-    values: List<SyncConflictValue>,
+private fun SyncConflictFieldRow(
+    field: String,
+    localValue: String,
+    cloudValue: String,
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
@@ -4786,43 +4974,48 @@ private fun SyncConflictVersionBlock(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text(
-            text = title,
-            style = MaterialTheme.typography.labelMedium,
-            color = colors.textPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            text = conflictFieldLabel(field),
+            style = MaterialTheme.typography.labelSmall,
+            color = colors.error,
         )
-        values.forEach { value ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Text(
-                    text = value.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textSecondary,
-                    modifier = Modifier.width(64.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = value.value,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textPrimary,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.local) + "  " + localValue,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textPrimary,
+                modifier = Modifier.weight(1f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = stringResource(R.string.cloud) + "  " + cloudValue,
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textPrimary,
+                modifier = Modifier.weight(1f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
 
-private fun String.conflictTypeLabel(): String = when (this) {
-    "item" -> "TODO"
-    "checklist" -> "LIST"
-    else -> uppercase(Locale.US)
+@Composable
+private fun conflictFieldLabel(field: String): String = when (field) {
+    "name" -> stringResource(R.string.field_name)
+    "sort" -> stringResource(R.string.field_sort)
+    "checklist" -> stringResource(R.string.field_checklist)
+    "title" -> stringResource(R.string.field_title)
+    "priority" -> stringResource(R.string.field_priority)
+    "due" -> stringResource(R.string.field_due)
+    "completed" -> stringResource(R.string.field_completed)
+    "repeat" -> stringResource(R.string.field_repeat)
+    "image" -> stringResource(R.string.field_image)
+    "trash" -> stringResource(R.string.field_trash)
+    "language" -> stringResource(R.string.field_language)
+    else -> field
 }
 @Composable
 private fun UpdateAvailableDialog(
@@ -4835,12 +5028,14 @@ private fun UpdateAvailableDialog(
 ) {
     if (info == null) return
     val colors = PixelDoneColors.current
+    val enabledDescription = stringResource(R.string.enabled)
+    val disabledDescription = stringResource(R.string.disabled)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Update available",
+                text = stringResource(R.string.update_available),
                 style = MaterialTheme.typography.titleMedium,
                 color = colors.textPrimary,
             )
@@ -4848,7 +5043,7 @@ private fun UpdateAvailableDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "PixelDone can update from v$currentVersion to v${info.version}.",
+                    text = stringResource(R.string.update_available_detail, currentVersion, info.version),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.textSecondary,
                 )
@@ -4860,10 +5055,14 @@ private fun UpdateAvailableDialog(
                             onValueChange = onNeverShowUpdateDialogChange,
                         )
                         .semantics {
-                            stateDescription = if (neverShowUpdateDialog) "enabled" else "disabled"
+                            stateDescription = if (neverShowUpdateDialog) {
+                                enabledDescription
+                            } else {
+                                disabledDescription
+                            }
                         }
                         .padding(vertical = 2.dp),
-                    text = "DO NOT SHOW AGAIN",
+                    text = stringResource(R.string.do_not_show_again),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (neverShowUpdateDialog) colors.primaryInteractive else colors.textSecondary,
                     fontWeight = if (neverShowUpdateDialog) FontWeight.Bold else FontWeight.Normal,
@@ -4875,11 +5074,11 @@ private fun UpdateAvailableDialog(
         confirmButton = {
             DialogActionRow {
                 DialogTextActionButton(
-                    text = "LATER",
+                    text = stringResource(R.string.later),
                     onClick = onDismiss,
                 )
                 PixelButton(
-                    text = "UPDATE",
+                    text = stringResource(R.string.update),
                     onClick = { onUpdate(info) },
                     primary = true,
                 )
@@ -4900,13 +5099,14 @@ private fun UpdateDownloadProgressDialog(
     if (download == null) return
 
     val colors = PixelDoneColors.current
-    val message = updateUiState.message ?: formatUpdateDownloadMessage(download.version)
+    val context = LocalContext.current
+    val message = updateUiState.message ?: formatLocalizedUpdateDownloadMessage(context, download.version)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Downloading update",
+                text = stringResource(R.string.downloading_update),
                 style = MaterialTheme.typography.titleMedium,
                 color = colors.textPrimary,
             )
@@ -4923,7 +5123,7 @@ private fun UpdateDownloadProgressDialog(
                 )
                 UpdateProgressBar(progress = updateUiState.progress)
                 Text(
-                    text = "You can close this dialog. The update will keep downloading silently.",
+                    text = stringResource(R.string.download_continues_silently),
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary,
                 )
@@ -4931,7 +5131,7 @@ private fun UpdateDownloadProgressDialog(
         },
         confirmButton = {
             DialogTextActionButton(
-                text = "CLOSE",
+                text = stringResource(R.string.close),
                 onClick = onDismiss,
             )
         },
@@ -5038,14 +5238,14 @@ private fun TodoImagePreviewDialog(
             ) {
                 Text(
                     modifier = Modifier.weight(1f),
-                    text = "Task image",
+                    text = stringResource(R.string.task_image),
                     style = MaterialTheme.typography.titleMedium,
                     color = colors.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 DialogTextActionButton(
-                    text = "CLOSE",
+                    text = stringResource(R.string.close),
                     onClick = onDismiss,
                 )
             }
@@ -5078,14 +5278,14 @@ private fun TodoImagePreviewDialog(
                     when (val state = imageLoadState) {
                         TodoImagePreviewLoadState.Loading -> {
                             Text(
-                                text = "Loading image...",
+                                text = stringResource(R.string.loading_image),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = colors.textSecondary,
                             )
                         }
                         TodoImagePreviewLoadState.Unavailable -> {
                             Text(
-                                text = "Image unavailable.",
+                                text = stringResource(R.string.image_unavailable),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = colors.textSecondary,
                             )
@@ -5093,7 +5293,7 @@ private fun TodoImagePreviewDialog(
                         is TodoImagePreviewLoadState.Ready -> {
                             Image(
                                 bitmap = state.bitmap,
-                                contentDescription = "Task image preview",
+                                contentDescription = stringResource(R.string.task_image_preview),
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .graphicsLayer {
@@ -5112,12 +5312,12 @@ private fun TodoImagePreviewDialog(
         confirmButton = {
             DialogActionRow {
                 PixelButton(
-                    text = "CHANGE",
+                    text = stringResource(R.string.change),
                     onClick = { onChange(item) },
                     clayOutline = true,
                 )
                 PixelButton(
-                    text = "REMOVE",
+                    text = stringResource(R.string.remove),
                     onClick = { onRemove(item) },
                     destructive = true,
                 )
@@ -5217,18 +5417,30 @@ private fun DeleteConfirmationDialog(
     val hapticFeedback = LocalHapticFeedback.current
     val colors = PixelDoneColors.current
     val titleText = when (confirmation) {
-        is DeleteConfirmation.SingleTodo -> "Delete task?"
-        is DeleteConfirmation.CompletedTodos -> "Delete done tasks?"
-        is DeleteConfirmation.Checklist -> "Delete list?"
-        is DeleteConfirmation.TrashTodos -> "Delete trash?"
+        is DeleteConfirmation.SingleTodo -> stringResource(R.string.delete_task_title)
+        is DeleteConfirmation.CompletedTodos -> stringResource(R.string.delete_done_title)
+        is DeleteConfirmation.Checklist -> stringResource(R.string.delete_list_title)
+        is DeleteConfirmation.TrashTodos -> stringResource(R.string.delete_trash_title)
     }
     val bodyText = when (confirmation) {
-        is DeleteConfirmation.SingleTodo -> "This will move \"${confirmation.title}\" to TRASH."
-        is DeleteConfirmation.CompletedTodos -> "This will move ${confirmation.count} completed task(s) to TRASH."
-        is DeleteConfirmation.Checklist ->
-            "This will move \"${confirmation.name}\" and ${confirmation.todoCount} task(s) to TRASH."
-        is DeleteConfirmation.TrashTodos ->
-            "This will permanently delete ${confirmation.count} task(s)."
+        is DeleteConfirmation.SingleTodo ->
+            stringResource(R.string.move_task_to_trash, confirmation.title)
+        is DeleteConfirmation.CompletedTodos -> pluralStringResource(
+            R.plurals.move_completed_to_trash,
+            confirmation.count,
+            confirmation.count,
+        )
+        is DeleteConfirmation.Checklist -> pluralStringResource(
+            R.plurals.move_list_to_trash,
+            confirmation.todoCount,
+            confirmation.name,
+            confirmation.todoCount,
+        )
+        is DeleteConfirmation.TrashTodos -> pluralStringResource(
+            R.plurals.permanently_delete_tasks,
+            confirmation.count,
+            confirmation.count,
+        )
     }
 
     AlertDialog(
@@ -5250,11 +5462,11 @@ private fun DeleteConfirmationDialog(
         confirmButton = {
             DialogActionRow {
                 DialogTextActionButton(
-                    text = "CLOSE",
+                    text = stringResource(R.string.close),
                     onClick = onDismiss,
                 )
                 PixelButton(
-                    text = "DELETE",
+                    text = stringResource(R.string.delete),
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.Confirm)
                         onConfirm()
@@ -5272,6 +5484,25 @@ private fun DeleteConfirmationDialog(
 private val DateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 private val TimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 private val DateTimeUiFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
+private fun formatLocalizedUpdateDownloadMessage(
+    context: Context,
+    version: String,
+    progress: AppUpdateDownloadProgress = AppUpdateDownloadProgress(),
+): String {
+    progress.percent?.let { percent ->
+        return context.getString(R.string.downloading_version_percent, version, percent)
+    }
+    return if (progress.bytesDownloaded > 0L) {
+        context.getString(
+            R.string.downloading_version_size,
+            version,
+            formatDownloadedMegabytes(progress.bytesDownloaded),
+        )
+    } else {
+        context.getString(R.string.downloading_version, version)
+    }
+}
 
 internal fun defaultDueAtMillis(nowMillis: Long = System.currentTimeMillis()): Long {
     return nowMillis.toLocalDateTime()
@@ -5333,6 +5564,29 @@ internal fun formatDeadlineCountdown(dueAtMillis: Long, nowMillis: Long): String
     }
 }
 
+@Composable
+private fun localizedDeadlineCountdown(dueAtMillis: Long, nowMillis: Long): String {
+    if (dueAtMillis <= 0L) return stringResource(R.string.deadline_none)
+
+    val millisUntilDue = dueAtMillis - nowMillis
+    val absoluteMillis = kotlin.math.abs(millisUntilDue)
+    val totalMinutes = absoluteMillis / 60_000L
+    val days = totalMinutes / (24L * 60L)
+    val hours = (totalMinutes % (24L * 60L)) / 60L
+    val minutes = totalMinutes % 60L
+    val value = stringResource(
+        R.string.deadline_duration,
+        days,
+        hours.toTwoDigits(),
+        minutes.toTwoDigits(),
+    )
+    return if (millisUntilDue <= 0L) {
+        stringResource(R.string.deadline_overdue_value, value)
+    } else {
+        stringResource(R.string.deadline_remaining_value, value)
+    }
+}
+
 private fun Long.toTwoDigits(): String {
     return toString().padStart(2, '0')
 }
@@ -5342,14 +5596,16 @@ private fun TodoItem.subtitleText(
     dueDateTime: String,
     dueDateTimeColor: Color,
     repeatText: String,
+    priorityText: String,
+    deadlineText: String,
     showDeadlineCountdown: Boolean,
 ) = buildAnnotatedString {
     if (showDeadlineCountdown) {
         withStyle(SpanStyle(color = dueDateTimeColor)) {
-            append(formatDeadlineCountdown(dueAtMillis, nowMillis))
+            append(deadlineText)
         }
     } else {
-        append(priority.uiLabel())
+        append(priorityText)
         append("  ")
         withStyle(SpanStyle(color = dueDateTimeColor)) {
             append(dueDateTime)
@@ -5440,6 +5696,8 @@ private fun PhonePreview() {
             onUpdateClick = {},
             darkTheme = false,
             onDarkThemeChange = {},
+            language = AppLanguage.SYSTEM,
+            onLanguageChange = {},
             showUpdateDialogs = true,
             onShowUpdateDialogsChange = {},
             currentVersion = "2.9.0",
@@ -5545,6 +5803,8 @@ private fun TabletPreview() {
             onUpdateClick = {},
             darkTheme = false,
             onDarkThemeChange = {},
+            language = AppLanguage.SYSTEM,
+            onLanguageChange = {},
             showUpdateDialogs = true,
             onShowUpdateDialogsChange = {},
             currentVersion = "2.7.0",

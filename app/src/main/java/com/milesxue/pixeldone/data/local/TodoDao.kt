@@ -15,6 +15,9 @@ interface TodoDao {
     @Query("SELECT * FROM todo_items ORDER BY checklistLocalId ASC, sortIndex ASC, createdAtMillis ASC")
     suspend fun getItems(): List<TodoItemEntity>
 
+    @Query("SELECT * FROM sync_tombstones ORDER BY deletedAtMillis ASC")
+    suspend fun getTombstones(): List<SyncTombstoneEntity>
+
     @Query("SELECT * FROM todo_state_metadata WHERE id = :id LIMIT 1")
     suspend fun getMetadata(id: String = TodoStateMetadataId): TodoStateMetadataEntity?
 
@@ -35,6 +38,9 @@ interface TodoDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertItems(items: List<TodoItemEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTombstones(tombstones: List<SyncTombstoneEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMetadata(metadata: TodoStateMetadataEntity)
@@ -84,6 +90,9 @@ interface TodoDao {
     @Query("DELETE FROM todo_state_metadata")
     suspend fun deleteMetadata()
 
+    @Query("DELETE FROM sync_tombstones")
+    suspend fun deleteTombstones()
+
     @Transaction
     suspend fun replaceState(entitySet: TodoEntitySet) {
         deleteItems()
@@ -91,6 +100,8 @@ interface TodoDao {
         deleteMetadata()
         insertChecklists(entitySet.checklists)
         insertItems(entitySet.items)
+        deleteTombstones()
+        if (entitySet.tombstones.isNotEmpty()) insertTombstones(entitySet.tombstones)
         insertMetadata(entitySet.metadata)
     }
 
@@ -107,6 +118,7 @@ interface TodoDao {
             metadata = metadata,
             checklists = getChecklists(),
             items = getItems(),
+            tombstones = getTombstones(),
         )
     }
 }

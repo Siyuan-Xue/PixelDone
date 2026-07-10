@@ -11,5 +11,8 @@ import com.milesxue.pixeldone.domain.todo.TodoChecklistState
 interface TodoStateStore {
     fun loadTodoState(nowMillis: Long = System.currentTimeMillis()): TodoChecklistState
     fun saveTodoState(state: TodoChecklistState)
+    fun updateTodoState(transform: (TodoChecklistState) -> TodoChecklistState): TodoChecklistState {
+        return transform(loadTodoState()).also(::saveTodoState)
+    }
     fun observeTodoState(onChange: () -> Unit): () -> Unit
 }

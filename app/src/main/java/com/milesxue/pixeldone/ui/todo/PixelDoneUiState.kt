@@ -6,6 +6,7 @@ import com.milesxue.pixeldone.domain.sync.SyncConflictEntry
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncRunState
 import com.milesxue.pixeldone.domain.todo.DockConfig
+import com.milesxue.pixeldone.domain.todo.AppLanguage
 import com.milesxue.pixeldone.domain.todo.PixelDoneSettings
 import com.milesxue.pixeldone.domain.todo.SortMode
 import com.milesxue.pixeldone.domain.todo.TodoChecklistState
@@ -64,6 +65,7 @@ sealed interface PixelDoneAction {
     data class SetDeadlineCountdownVisible(val visible: Boolean) : PixelDoneAction
     data class SetDarkTheme(val enabled: Boolean) : PixelDoneAction
     data class SetDockConfig(val config: DockConfig) : PixelDoneAction
+    data class SetLanguage(val language: AppLanguage) : PixelDoneAction
     data class SetShowUpdateDialogs(val showDialogs: Boolean) : PixelDoneAction
     data class SetAuthEmail(val email: String) : PixelDoneAction
     data class SetAuthPassword(val password: String) : PixelDoneAction

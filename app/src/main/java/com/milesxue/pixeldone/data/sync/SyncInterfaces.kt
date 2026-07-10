@@ -82,6 +82,7 @@ internal interface SettingsSyncLocalStore {
     suspend fun loadSettingsForSync(nowMillis: Long): LocalSettingsSyncRecord
     suspend fun applyRemoteSettings(record: RemoteUserSettingsRecord, syncedAtMillis: Long)
     suspend fun markSettingsSynced(record: RemoteUserSettingsRecord, syncedAtMillis: Long)
+    suspend fun applyLocalSettingsForUpload(record: RemoteUserSettingsRecord)
     suspend fun markSettingsSyncError(message: String)
 }
 
@@ -102,6 +103,7 @@ class LocalOnlySyncCoordinator : SyncCoordinator {
 
 class SyncConfigurationException(message: String) : Exception(message)
 class SyncRemoteException(message: String, val statusCode: Int? = null) : Exception(message)
+class SyncSchemaMismatchException(message: String) : Exception(message)
 
 @Serializable
 data class RemoteTodoSnapshot(
@@ -111,7 +113,8 @@ data class RemoteTodoSnapshot(
 
 @Serializable
 data class RemoteChangeBatch(
-    val serverVersion: Long,
+    @kotlinx.serialization.SerialName("schema_version") val schemaVersion: String,
+    @kotlinx.serialization.SerialName("server_version") val serverVersion: Long,
     val checklists: List<RemoteChecklistRecord> = emptyList(),
     val items: List<RemoteTodoItemRecord> = emptyList(),
     val settings: RemoteUserSettingsRecord? = null,
@@ -123,14 +126,17 @@ data class RemoteMutationBatch(
     val mutationUuid: String,
     val snapshot: RemoteTodoSnapshot = RemoteTodoSnapshot(),
     val settings: RemoteUserSettingsRecord? = null,
+    val tombstones: List<RemoteTombstoneRecord> = emptyList(),
 )
 
 @Serializable
 data class RemotePushResult(
+    @kotlinx.serialization.SerialName("schema_version") val schemaVersion: String,
     val accepted: RemoteTodoSnapshot = RemoteTodoSnapshot(),
     val settings: RemoteUserSettingsRecord? = null,
+    val tombstones: List<RemoteTombstoneRecord> = emptyList(),
     val conflicts: List<RemoteConflictRecord> = emptyList(),
-    val serverVersion: Long,
+    @kotlinx.serialization.SerialName("server_version") val serverVersion: Long,
 )
 
 @Serializable
@@ -138,6 +144,7 @@ data class SyncMutationRecord(
     val mutationUuid: String,
     val snapshot: RemoteTodoSnapshot = RemoteTodoSnapshot(),
     val settings: RemoteUserSettingsRecord? = null,
+    val tombstones: List<RemoteTombstoneRecord> = emptyList(),
     val createdAtMillis: Long,
     val attempts: Int = 0,
     val lastError: String? = null,
@@ -157,69 +164,65 @@ data class LocalSyncConflictRecord(
 
 @Serializable
 data class RemoteConflictRecord(
-    val recordType: String,
-    val localId: String,
+    @kotlinx.serialization.SerialName("record_type") val recordType: String,
+    @kotlinx.serialization.SerialName("local_id") val localId: String,
     val message: String,
 )
 
 @Serializable
 data class RemoteTombstoneRecord(
-    val recordType: String,
-    val localId: String,
-    val remoteVersion: Long,
+    @kotlinx.serialization.SerialName("owner_user_id") val ownerUserId: String? = null,
+    @kotlinx.serialization.SerialName("record_type") val recordType: String,
+    @kotlinx.serialization.SerialName("local_id") val localId: String,
+    @kotlinx.serialization.SerialName("deleted_at_millis") val deletedAtMillis: Long,
+    @kotlinx.serialization.SerialName("remote_version") val remoteVersion: Long? = null,
 )
 
 @Serializable
 data class RemoteChecklistRecord(
-    val localId: String,
-    val remoteId: String? = null,
-    val ownerUserId: String,
-    val sortIndex: Int,
+    @kotlinx.serialization.SerialName("local_id") val localId: String,
+    @kotlinx.serialization.SerialName("id") val remoteId: String? = null,
+    @kotlinx.serialization.SerialName("owner_user_id") val ownerUserId: String,
+    @kotlinx.serialization.SerialName("sort_index") val sortIndex: Int,
     val name: String,
-    val createdAtMillis: Long,
-    val updatedAtMillis: Long,
-    val deletedAtMillis: Long? = null,
-    val remoteVersion: Long? = null,
+    @kotlinx.serialization.SerialName("created_at_millis") val createdAtMillis: Long,
+    @kotlinx.serialization.SerialName("updated_at_millis") val updatedAtMillis: Long,
+    @kotlinx.serialization.SerialName("remote_version") val remoteVersion: Long? = null,
 )
 
 @Serializable
 data class RemoteTodoItemRecord(
-    val localId: String,
-    val remoteId: String? = null,
-    val ownerUserId: String,
-    val checklistLocalId: String,
-    val sortIndex: Int,
+    @kotlinx.serialization.SerialName("local_id") val localId: String,
+    @kotlinx.serialization.SerialName("id") val remoteId: String? = null,
+    @kotlinx.serialization.SerialName("owner_user_id") val ownerUserId: String,
+    @kotlinx.serialization.SerialName("checklist_local_id") val checklistLocalId: String,
+    @kotlinx.serialization.SerialName("sort_index") val sortIndex: Int,
     val title: String,
     val priority: String,
-    val dueAtMillis: Long,
+    @kotlinx.serialization.SerialName("due_at_millis") val dueAtMillis: Long,
     val completed: Boolean,
-    val createdAtMillis: Long,
-    val updatedAtMillis: Long,
-    val deletedAtMillis: Long? = null,
-    val reminderRepeat: String,
-    val imageLocalName: String? = null,
-    val imageRemotePath: String? = null,
-    val imageSyncState: String,
-    val trashedFromChecklistId: String? = null,
-    val trashedFromChecklistName: String? = null,
-    val trashedAtMillis: Long? = null,
-    val remoteVersion: Long? = null,
+    @kotlinx.serialization.SerialName("created_at_millis") val createdAtMillis: Long,
+    @kotlinx.serialization.SerialName("updated_at_millis") val updatedAtMillis: Long,
+    @kotlinx.serialization.SerialName("reminder_repeat") val reminderRepeat: String,
+    @kotlinx.serialization.SerialName("image_local_name") val imageLocalName: String? = null,
+    @kotlinx.serialization.SerialName("image_remote_path") val imageRemotePath: String? = null,
+    @kotlinx.serialization.SerialName("image_sync_state") val imageSyncState: String,
+    @kotlinx.serialization.SerialName("trashed_from_checklist_id") val trashedFromChecklistId: String? = null,
+    @kotlinx.serialization.SerialName("trashed_from_checklist_name") val trashedFromChecklistName: String? = null,
+    @kotlinx.serialization.SerialName("trashed_at_millis") val trashedAtMillis: Long? = null,
+    @kotlinx.serialization.SerialName("remote_version") val remoteVersion: Long? = null,
 )
 
 @Serializable
 data class RemoteUserSettingsRecord(
-    val ownerUserId: String,
-    val darkTheme: Boolean,
-    val dockPlusPlacement: String,
-    val dockActions: List<String>,
-    val updatedAtMillis: Long,
-    val remoteVersion: Long? = null,
+    @kotlinx.serialization.SerialName("owner_user_id") val ownerUserId: String? = null,
+    @kotlinx.serialization.SerialName("language_mode") val languageMode: String,
+    @kotlinx.serialization.SerialName("updated_at_millis") val updatedAtMillis: Long,
+    @kotlinx.serialization.SerialName("remote_version") val remoteVersion: Long? = null,
 )
 
 data class LocalSettingsSyncRecord(
-    val darkTheme: Boolean,
-    val dockPlusPlacement: String,
-    val dockActions: List<String>,
+    val languageMode: String,
     val updatedAtMillis: Long,
     val syncState: String,
     val lastSyncedAtMillis: Long? = null,
@@ -228,9 +231,7 @@ data class LocalSettingsSyncRecord(
 ) {
     fun toRemoteRecord(ownerUserId: String): RemoteUserSettingsRecord = RemoteUserSettingsRecord(
         ownerUserId = ownerUserId,
-        darkTheme = darkTheme,
-        dockPlusPlacement = dockPlusPlacement,
-        dockActions = dockActions,
+        languageMode = languageMode,
         updatedAtMillis = updatedAtMillis,
         remoteVersion = remoteVersion,
     )
@@ -240,3 +241,5 @@ interface RemoteTodoDataSource {
     suspend fun pullChanges(session: AuthSession, sinceVersion: Long?): RemoteChangeBatch
     suspend fun pushMutations(session: AuthSession, batch: RemoteMutationBatch): RemotePushResult
 }
+
+const val ExpectedRemoteSchemaVersion = "3.1"

@@ -31,11 +31,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.domain.todo.DockAction
 import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.DockItem
@@ -223,6 +225,8 @@ private fun DockIconButton(
         pressed -> colors.surfaceRaised
         else -> colors.selectedSurface
     }
+    val actionDescription = action.contentDescription()
+    val sortStateDescription = if (active) stringResource(R.string.time) else stringResource(R.string.field_priority)
 
     Box(
         modifier = modifier
@@ -236,9 +240,9 @@ private fun DockIconButton(
                 onClick = onClick,
             )
             .semantics {
-                contentDescription = action.contentDescription()
+                contentDescription = actionDescription
                 if (action == DockAction.SORT) {
-                    stateDescription = if (active) "TIME" else "PRIORITY"
+                    stateDescription = sortStateDescription
                 }
             },
         contentAlignment = Alignment.Center,
@@ -376,26 +380,29 @@ internal fun DockActionIcon(
     }
 }
 
+@Composable
 internal fun DockAction.settingsTitle(): String = when (this) {
-    DockAction.SORT -> "SORT"
-    DockAction.DEADLINE -> "DDL"
-    DockAction.HIDE_DONE -> "HIDE DONE"
-    DockAction.DELETE_DONE -> "CLEAN DONE"
-    DockAction.BATCH_DELETE -> "QUICK DELETE"
+    DockAction.SORT -> stringResource(R.string.sort)
+    DockAction.DEADLINE -> stringResource(R.string.deadline_short)
+    DockAction.HIDE_DONE -> stringResource(R.string.hide_done)
+    DockAction.DELETE_DONE -> stringResource(R.string.clean_done)
+    DockAction.BATCH_DELETE -> stringResource(R.string.quick_delete)
 }
 
+@Composable
 internal fun DockAction.settingsValue(): String = when (this) {
-    DockAction.SORT -> "priority / time"
-    DockAction.DEADLINE -> "deadline countdown"
-    DockAction.HIDE_DONE -> "completed visibility"
-    DockAction.DELETE_DONE -> "completed batch cleanup"
-    DockAction.BATCH_DELETE -> "row delete mode"
+    DockAction.SORT -> stringResource(R.string.sort_detail)
+    DockAction.DEADLINE -> stringResource(R.string.deadline_detail)
+    DockAction.HIDE_DONE -> stringResource(R.string.hide_done_detail)
+    DockAction.DELETE_DONE -> stringResource(R.string.clean_done_detail)
+    DockAction.BATCH_DELETE -> stringResource(R.string.quick_delete_detail)
 }
 
+@Composable
 private fun DockAction.contentDescription(): String = when (this) {
-    DockAction.SORT -> "TOGGLE SORT"
-    DockAction.DEADLINE -> "TOGGLE DEADLINE"
-    DockAction.HIDE_DONE -> "TOGGLE DONE VISIBILITY"
-    DockAction.DELETE_DONE -> "CLEAN COMPLETED TASKS"
-    DockAction.BATCH_DELETE -> "TOGGLE ROW QUICK DELETE"
+    DockAction.SORT -> stringResource(R.string.toggle_sort)
+    DockAction.DEADLINE -> stringResource(R.string.toggle_deadline)
+    DockAction.HIDE_DONE -> stringResource(R.string.toggle_done_visibility)
+    DockAction.DELETE_DONE -> stringResource(R.string.clean_completed_tasks)
+    DockAction.BATCH_DELETE -> stringResource(R.string.toggle_quick_delete)
 }

@@ -6,6 +6,11 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.ui.graphics.toArgb
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import com.milesxue.pixeldone.di.pixelDoneAppContainer
+import com.milesxue.pixeldone.domain.todo.AppLanguage
 import com.milesxue.pixeldone.ui.theme.ClaudeIvory
 import com.milesxue.pixeldone.ui.theme.ClaudeSlateDark
 import com.milesxue.pixeldone.ui.todo.PixelDoneApp
@@ -16,13 +21,23 @@ import com.milesxue.pixeldone.ui.todo.PixelDoneApp
  * MainActivity owns lifecycle setup, system bars, and the top-level Compose host only.
  * Storage, reminders, and update dependencies are created by the Application/DI layer.
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        applyPixelDoneLanguage(pixelDoneAppContainer().settingsStore.loadSettings().languageMode)
         super.onCreate(savedInstanceState)
         applyPixelDoneSystemBars()
         setContent {
             PixelDoneApp()
         }
+    }
+}
+
+internal fun applyPixelDoneLanguage(language: AppLanguage) {
+    val locales = language.localeTag
+        ?.let(LocaleListCompat::forLanguageTags)
+        ?: LocaleListCompat.getEmptyLocaleList()
+    if (AppCompatDelegate.getApplicationLocales().toLanguageTags() != locales.toLanguageTags()) {
+        AppCompatDelegate.setApplicationLocales(locales)
     }
 }
 

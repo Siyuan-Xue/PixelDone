@@ -1,6 +1,6 @@
 # Product Line Specification
 
-This document governs PixelDone's product-line positioning, brand consistency, naming, platform scope, developer identity, and cross-product rules within this standalone repository.
+This document governs product-line positioning, brand consistency, naming, platform scope, developer identity, and cross-product details for all subprojects under the current directory.
 
 This document is the highest-level entry point for brand and product-line constraints. Visual details are defined in `DESIGN_SPEC.md`; engineering workflow is defined in `PROJECT_SPEC.md`.
 
@@ -184,7 +184,16 @@ Before creating any new product, confirm:
 - UI will follow `DESIGN_SPEC.md`.
 - Engineering will follow `PROJECT_SPEC.md`.
 
-## 10. Sources
+## 10. Language Product Contract
+
+- Products that enable multilingual UI must support a clearly declared, finite locale set and a `System` option.
+- The standard PixelPark international set is the six official United Nations languages: Arabic, Chinese, English, French, Russian, and Spanish. Products may ship a smaller set only when their own product scope explicitly documents it.
+- English is the deterministic fallback for an unsupported system locale.
+- Language is a user setting. If the product offers multi-device cloud settings, the selected language mode is eligible for sync; visual theme, layout personalization, update preferences, and other device-local behavior remain local unless a product contract explicitly says otherwise.
+- Syncing `System` synchronizes the mode, not a resolved locale. Each device continues to follow its own operating-system language.
+- Product copy, notifications, alarms, accessibility labels, update/auth/sync surfaces, and release notes that are presented in-app belong to the same localization scope.
+
+## 11. Sources
 
 - [Anthropic official site](https://www.anthropic.com/)
 - [Claude Code product page](https://claude.com/product/claude-code)

@@ -14,6 +14,7 @@ import com.milesxue.pixeldone.data.sync.SupabaseAuthSessionRepository
 import com.milesxue.pixeldone.data.sync.SupabaseConfig
 import com.milesxue.pixeldone.data.sync.SupabaseHttpClient
 import com.milesxue.pixeldone.data.sync.SupabaseRemoteTodoDataSource
+import com.milesxue.pixeldone.data.sync.SupabaseRealtimeSyncController
 import com.milesxue.pixeldone.data.sync.SyncCoordinator
 import com.milesxue.pixeldone.data.sync.TodoSyncCoordinator
 import com.milesxue.pixeldone.data.sync.WorkManagerSyncScheduler
@@ -63,10 +64,21 @@ internal class PixelDoneAppContainer(context: Context) {
             localStore = todoStateStore,
             remoteDataSource = SupabaseRemoteTodoDataSource(supabaseHttpClient),
             clockProvider = clockProvider,
+            settingsStore = settingsStore,
             workScheduler = WorkManagerSyncScheduler(appContext),
         )
     } else {
         LocalOnlySyncCoordinator()
+    }
+    @Suppress("unused")
+    private val realtimeSyncController = if (supabaseConfig.isConfigured) {
+        SupabaseRealtimeSyncController(
+            config = supabaseConfig,
+            authRepository = authSessionRepository,
+            coordinator = syncCoordinator,
+        )
+    } else {
+        null
     }
     val todoImageStore: TodoImageStore = TodoImageStore(appContext)
     val appUpdateDownloader: AppUpdateDownloader = AppUpdateDownloader(appContext)

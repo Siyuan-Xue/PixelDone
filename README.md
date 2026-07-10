@@ -67,9 +67,13 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep Android 14+ full-screen intent permission checks tied to the system grant and preserve STOP/SNOOZE access when Android denies full-screen launch.
 - Treat a direct return from Android's Full Screen access page as no grant instead of repeatedly reopening the permission page.
 - Keep borderless dialog text actions vertically centered with filled dialog buttons across custom dialogs.
-- Use the `SETTINGS` list to switch LIGHT/DARK display mode, configure the dock, control cloud sync, show pending/conflict sync counts, control update prompts, reconfigure permissions, check for updates, and view the current version.
+- Use the `SETTINGS` list to choose System or one of the six United Nations official languages, switch LIGHT/DARK display mode, configure the dock, control cloud sync, show pending/conflict sync counts, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Sign up, sign in, sign out, request password reset email, and manually sync todos/checklists through the low-key Settings `CLOUD` area.
-- Debounce automatic todo/checklist sync requests, enqueue WorkManager background sync, preserve sync cursors/pristine payloads/mutation UUIDs, and protect local edits/deletes from stale remote merge write-back during active sync.
+- Subscribe to Supabase Realtime while foregrounded and signed in so another device's checklist/todo/settings/tombstone changes trigger a debounced transactional cursor pull without manual refresh.
+- Keep unresolved conflicts persistent and globally reviewable: dismissing the dialog does not resolve them, and a later conflict reopens the dialog with every unresolved item. Only actual conflicting fields and item content are shown.
+- Three-way merge non-overlapping local/cloud field edits, exclude conflicts from upload, and make tombstones win over active content.
+- Retain recoverable Trash items for exactly 30 days; restore clears the timer, retrashing restarts it, and expiry scrubs content into an indefinitely retained minimal tombstone.
+- Debounce automatic sync requests, enqueue WorkManager fallback sync, preserve one global cursor/pristine payloads/mutation UUIDs, and commit UI edits through an atomic Room transform to avoid stale Realtime write-back.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
 - Use five atomic dock functions for `SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, and `QUICK DELETE`.
 - Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph and a line-drawn trash can for `QUICK DELETE`.
@@ -96,6 +100,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - AlarmManager notifications
 - Manual dependency injection
 - Supabase Auth and PostgREST via native Android HTTP
+- Supabase Kotlin Realtime 3.6.0 with Ktor CIO WebSockets
 - Android Keystore-backed session storage
 - WorkManager background sync
 
@@ -107,8 +112,8 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - `domain/todo/`: pure Kotlin todo, checklist, sorting, and reminder rules with no Android or Compose imports.
 - `data/todo/`: todo repository boundary and legacy SharedPreferences JSON migration reader.
 - `data/local/`: Room database, DAO, entities, and mappers for local-first todo/checklist storage.
-- `data/settings/`: DataStore-backed local settings for theme, Dock configuration, update prompts, and future sync toggle placeholder.
-- `data/sync/` and `domain/sync/`: backend-agnostic auth/sync seams, Supabase Auth/PostgREST implementations, and pure Kotlin conflict-resolution rules.
+- `data/settings/`: DataStore-backed settings; language mode syncs through Cloud while theme, Dock, and update preferences remain local.
+- `data/sync/` and `domain/sync/`: Supabase Auth, 3.1 transaction RPCs, Realtime invalidation subscriptions, persistent conflicts, field merges, mutation UUIDs, cursors, and tombstones.
 - `data/image/`: private image-copying, safe file-path handling, and preview bitmap sampling.
 - `data/update/`: GitHub-first release checks, synced Gitee fallback, DownloadManager integration, and install-intent preparation.
 - `reminder/`: AlarmManager, notification, boot, receiver, foreground service, and XHigh full-screen alarm integration.
@@ -124,6 +129,7 @@ Windows:
 
 ```powershell
 .\gradlew.bat testDebugUnitTest
+.\gradlew.bat lintDebug
 .\gradlew.bat assembleDebug
 .\gradlew.bat assembleRelease
 ```
@@ -132,6 +138,7 @@ macOS/Linux:
 
 ```sh
 ./gradlew testDebugUnitTest
+./gradlew lintDebug
 ./gradlew assembleDebug
 ./gradlew assembleRelease
 ```
@@ -147,6 +154,8 @@ pixeldone.requireCloudConfig=true
 ```
 
 Formal and debug builds intentionally allow the current direct-IP HTTP Supabase endpoint. Keep using HTTPS when it becomes available, but do not disable Cloud solely because the configured Supabase URL uses `http://`.
+
+Before running a 3.1 client, the operator must manually execute `docs/pixeldone-supabase-3.1.0-rc.1-migration.sql` and return its verification output. The client intentionally has no legacy schema fallback.
 
 ## Release And Update Source
 
@@ -173,7 +182,7 @@ app/build/outputs/apk/release/PixelDone-3.0.3-release.apk
 The latest beta RC debug APK is:
 
 ```text
-app/build/outputs/apk/debug/PixelDone-3.0.2-rc.2-debug.apk
+app/build/outputs/apk/debug/PixelDone-3.1.0-rc.1-debug.apk
 ```
 
 ## Install
@@ -187,7 +196,7 @@ adb install -r app/build/outputs/apk/release/PixelDone-3.0.3-release.apk
 Install the latest beta RC debug build with:
 
 ```sh
-adb install -r app/build/outputs/apk/debug/PixelDone-3.0.2-rc.2-debug.apk
+adb install -r app/build/outputs/apk/debug/PixelDone-3.1.0-rc.1-debug.apk
 ```
 
 The formal package name is:
@@ -204,4 +213,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.0.3 formal release fixes Cloud availability for the current HTTP Supabase deployment, adds the current remote schema SQL script, and keeps the 3.0.2 conflict review and incremental local/cloud sync hardening. Theme and Dock preferences are local-only; cloud sync covers checklists and todos only.
+3.1.0-rc.1 is the current release-candidate target. It introduces the Supabase 3.1 transaction contract, Realtime multi-device invalidation, durable aggregated conflict review, field-level three-way merge, minimal tombstones, 30-day Trash cleanup, and System plus Arabic/Chinese/English/French/Russian/Spanish language modes. The formal 3.0.3 release remains the latest formal version until this RC is validated and promoted.

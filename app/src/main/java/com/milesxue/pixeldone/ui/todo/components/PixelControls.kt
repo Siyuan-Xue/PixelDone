@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -47,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.domain.todo.ReminderRepeat
 import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.ui.theme.GoogleBlue
@@ -70,12 +72,14 @@ internal fun PixelBatchDeleteDoneButton(
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
+    val description = stringResource(R.string.clean_completed_tasks)
     Box(
         modifier = modifier
             .size(44.dp)
             .border(1.dp, if (enabled) colors.error else colors.borderWeak, RectangleShape)
             .background(if (enabled) colors.destructiveSurface else colors.disabledSurface)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         PixelTrashIcon(color = if (enabled) colors.textPrimary else colors.disabledText)
@@ -94,13 +98,14 @@ internal fun PixelSettingsButton(
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
+    val description = stringResource(R.string.edit_list)
     Box(
         modifier = modifier
             .size(36.dp)
             .border(1.dp, colors.borderWeak, RectangleShape)
             .background(colors.surfaceRaised)
             .clickable(onClick = onClick)
-            .semantics { contentDescription = "EDIT LIST" },
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         PixelSettingsIcon(color = colors.textPrimary)
@@ -113,13 +118,14 @@ internal fun PixelItemDeleteButton(
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
+    val description = stringResource(R.string.delete_task)
     Box(
         modifier = modifier
             .size(36.dp)
             .border(1.dp, colors.borderWeak, RectangleShape)
             .background(colors.surfaceRaised)
             .clickable(onClick = onClick)
-            .semantics { contentDescription = "DELETE TASK" },
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         PixelTrashIcon(color = colors.error)
@@ -136,6 +142,11 @@ internal fun PixelItemImageButton(
     val borderColor = if (hasImage) colors.primaryInteractive else colors.borderWeak
     val backgroundColor = if (hasImage) colors.selectedSurface else colors.surfaceRaised
     val iconColor = if (hasImage) colors.primaryInteractive else colors.textSecondary
+    val description = if (hasImage) {
+        stringResource(R.string.view_task_image)
+    } else {
+        stringResource(R.string.add_task_image)
+    }
 
     Box(
         modifier = modifier
@@ -144,7 +155,7 @@ internal fun PixelItemImageButton(
             .background(backgroundColor)
             .clickable(onClick = onClick)
             .semantics {
-                contentDescription = if (hasImage) "VIEW TASK IMAGE" else "ADD TASK IMAGE"
+                contentDescription = description
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -158,13 +169,14 @@ internal fun PixelRestoreButton(
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
+    val description = stringResource(R.string.restore_task)
     Box(
         modifier = modifier
             .size(36.dp)
             .border(1.dp, colors.primaryInteractive, RectangleShape)
             .background(colors.selectedSurface)
             .clickable(onClick = onClick)
-            .semantics { contentDescription = "RESTORE TASK" },
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         PixelRestoreIcon(color = colors.primaryInteractive)
@@ -329,6 +341,7 @@ internal fun FloatingNewTaskButton(
     val pressed by interactionSource.collectIsPressedAsState()
     val hapticFeedback = LocalHapticFeedback.current
     val colors = PixelDoneColors.current
+    val description = stringResource(R.string.new_task_or_list)
 
     Box(
         modifier = modifier
@@ -344,7 +357,7 @@ internal fun FloatingNewTaskButton(
                     onLongClick()
                 },
             )
-            .semantics { contentDescription = "NEW TASK OR LIST" },
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -456,7 +469,7 @@ internal fun PixelPanel(
 internal fun <T> PixelSegmentedControl(
     options: List<T>,
     selected: T,
-    label: (T) -> String,
+    label: @Composable (T) -> String,
     onSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -602,12 +615,13 @@ internal fun PixelButton(
     }
 }
 
+@Composable
 internal fun TodoPriority.uiLabel(): String {
     return when (this) {
-        TodoPriority.XHIGH -> "XHIGH"
-        TodoPriority.HIGH -> "HIGH"
-        TodoPriority.MEDIUM -> "MID"
-        TodoPriority.LOW -> "LOW"
+        TodoPriority.XHIGH -> stringResource(R.string.priority_xhigh)
+        TodoPriority.HIGH -> stringResource(R.string.priority_high)
+        TodoPriority.MEDIUM -> stringResource(R.string.priority_medium)
+        TodoPriority.LOW -> stringResource(R.string.priority_low)
     }
 }
 
@@ -620,10 +634,11 @@ internal fun TodoPriority.priorityColor(): Color {
     }
 }
 
+@Composable
 internal fun ReminderRepeat.uiLabel(): String {
     return when (this) {
-        ReminderRepeat.NONE -> "NONE"
-        ReminderRepeat.DAILY -> "DAILY"
-        ReminderRepeat.WEEKLY -> "WEEKLY"
+        ReminderRepeat.NONE -> stringResource(R.string.repeat_none)
+        ReminderRepeat.DAILY -> stringResource(R.string.repeat_daily)
+        ReminderRepeat.WEEKLY -> stringResource(R.string.repeat_weekly)
     }
 }

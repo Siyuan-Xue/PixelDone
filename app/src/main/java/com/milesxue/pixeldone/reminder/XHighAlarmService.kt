@@ -12,6 +12,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
+import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.domain.todo.DefaultSnoozeIntervalMillis
 import com.milesxue.pixeldone.domain.todo.ReminderRepeat
 import com.milesxue.pixeldone.domain.todo.TodoItem
@@ -192,7 +193,7 @@ class XHighAlarmService : Service() {
         return todoIds.mapIndexed { index, todoId ->
             TodoItem(
                 id = todoId,
-                title = titles.getOrNull(index)?.takeIf { it.isNotBlank() } ?: "Todo due",
+                title = titles.getOrNull(index)?.takeIf { it.isNotBlank() } ?: getString(R.string.todo_due),
                 priority = TodoPriority.XHIGH,
                 dueAtMillis = dueAtMillis,
                 completed = false,
@@ -214,7 +215,7 @@ class XHighAlarmService : Service() {
         return todoIds.mapIndexed { index, todoId ->
             TodoItem(
                 id = todoId,
-                title = titles.getOrNull(index)?.takeIf { it.isNotBlank() } ?: "Todo due",
+                title = titles.getOrNull(index)?.takeIf { it.isNotBlank() } ?: getString(R.string.todo_due),
                 priority = priorities.getOrNull(index)
                     ?.let { name -> TodoPriority.entries.firstOrNull { it.name == name } }
                     ?: TodoPriority.MEDIUM,

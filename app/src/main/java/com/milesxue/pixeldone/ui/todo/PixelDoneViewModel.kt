@@ -14,6 +14,7 @@ import com.milesxue.pixeldone.data.todo.TodoRepository
 import com.milesxue.pixeldone.domain.todo.ReminderCapability
 import com.milesxue.pixeldone.domain.todo.TodoChecklistState
 import com.milesxue.pixeldone.domain.todo.normalTodos
+import com.milesxue.pixeldone.domain.todo.mergeUserTodoStateChange
 import com.milesxue.pixeldone.reminder.ReminderScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +46,7 @@ class PixelDoneViewModel(
         ),
     )
     val uiState: StateFlow<PixelDoneUiState> = _uiState.asStateFlow()
+    private var lastPresentedConflictSignature: Int? = null
 
     init {
         unregisterTodoObserver = todoRepository.observeTodoState {
@@ -71,6 +73,21 @@ class PixelDoneViewModel(
                     syncStatus = runState.status,
                     syncRunState = runState,
                 )
+                if (runState.conflictCount > 0 || runState.status == SyncCoordinatorStatus.CONFLICT) {
+                    val conflicts = syncCoordinator.loadConflicts()
+                    val signature = conflicts.hashCode()
+                    val isNewBatch = conflicts.isNotEmpty() && signature != lastPresentedConflictSignature
+                    if (isNewBatch) {
+                        lastPresentedConflictSignature = signature
+                        _uiState.value = _uiState.value.copy(
+                            syncConflicts = conflicts,
+                            conflictDialogVisible = true,
+                            resolvingConflictKey = null,
+                        )
+                    } else if (conflicts.isNotEmpty()) {
+                        _uiState.value = _uiState.value.copy(syncConflicts = conflicts)
+                    }
+                }
             }
         }
     }
@@ -92,6 +109,11 @@ class PixelDoneViewModel(
             is PixelDoneAction.SetDockConfig -> {
                 settingsStore.saveDockConfig(action.config)
                 refreshSettingsState()
+            }
+            is PixelDoneAction.SetLanguage -> {
+                settingsStore.saveLanguage(action.language)
+                refreshSettingsState()
+                syncCoordinator.requestSync()
             }
             is PixelDoneAction.SetShowUpdateDialogs -> {
                 settingsStore.saveNeverShowUpdateDialog(!action.showDialogs)
@@ -117,13 +139,15 @@ class PixelDoneViewModel(
     }
 
     fun replaceChecklistState(updatedState: TodoChecklistState): Set<ReminderCapability> {
-        val previousState = _uiState.value.checklistState
-        val previousTodos = normalTodos(previousState)
-        val updatedTodos = normalTodos(updatedState)
-        todoRepository.saveTodoState(updatedState)
-        val missingCapabilities = reminderScheduler.sync(previousTodos, updatedTodos)
-        _uiState.value = _uiState.value.copy(checklistState = updatedState)
-        if (previousState.lists != updatedState.lists) {
+        val uiBefore = _uiState.value.checklistState
+        var committedBefore = uiBefore
+        val committed = todoRepository.updateTodoState { latest ->
+            committedBefore = latest
+            mergeUserTodoStateChange(uiBefore, updatedState, latest)
+        }
+        val missingCapabilities = reminderScheduler.sync(normalTodos(committedBefore), normalTodos(committed))
+        _uiState.value = _uiState.value.copy(checklistState = committed)
+        if (committedBefore.lists != committed.lists) {
             syncCoordinator.requestSync()
         }
         return missingCapabilities
@@ -231,6 +255,7 @@ class PixelDoneViewModel(
                 conflictDialogVisible = true,
                 resolvingConflictKey = null,
             )
+            lastPresentedConflictSignature = conflicts.hashCode()
         }
     }
 
@@ -251,6 +276,7 @@ class PixelDoneViewModel(
                 choice = action.choice,
             )
             val conflicts = syncCoordinator.loadConflicts()
+            lastPresentedConflictSignature = conflicts.takeIf { it.isNotEmpty() }?.hashCode()
             _uiState.value = _uiState.value.copy(
                 syncStatus = status,
                 syncRunState = syncCoordinator.runState.value,
@@ -308,5 +334,6 @@ private fun com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.settingsMes
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SYNCING -> "Syncing."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SYNCED -> "Synced."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.CONFLICT -> "Sync conflicts."
+    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED -> "Server update required."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.ERROR -> "Sync failed."
 }

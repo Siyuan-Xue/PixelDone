@@ -14,8 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncPristineRecordEntity::class,
         SyncConflictRecordEntity::class,
         SyncMutationEntity::class,
+        SyncTombstoneEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class PixelDoneDatabase : RoomDatabase() {
@@ -87,6 +88,125 @@ internal object PixelDoneMigrations {
                 )
                 """.trimIndent(),
             )
+        }
+    }
+
+    val Migration4To5: Migration = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS sync_tombstones (
+                    ownerUserId TEXT NOT NULL,
+                    recordType TEXT NOT NULL,
+                    localId TEXT NOT NULL,
+                    deletedAtMillis INTEGER NOT NULL,
+                    remoteVersion INTEGER,
+                    syncState TEXT NOT NULL,
+                    lastSyncedAtMillis INTEGER,
+                    lastSyncError TEXT,
+                    PRIMARY KEY(ownerUserId, recordType, localId)
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT OR REPLACE INTO sync_tombstones(
+                    ownerUserId, recordType, localId, deletedAtMillis, remoteVersion,
+                    syncState, lastSyncedAtMillis, lastSyncError
+                )
+                SELECT ownerUserId, 'checklist', localId,
+                       COALESCE(deletedAtMillis, updatedAtMillis), remoteVersion,
+                       'NOT_SYNCED', lastSyncedAtMillis, NULL
+                FROM todo_checklists
+                WHERE ownerUserId IS NOT NULL AND deletedAtMillis IS NOT NULL
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT OR REPLACE INTO sync_tombstones(
+                    ownerUserId, recordType, localId, deletedAtMillis, remoteVersion,
+                    syncState, lastSyncedAtMillis, lastSyncError
+                )
+                SELECT ownerUserId, 'item', localId,
+                       COALESCE(locallyPurgedAtMillis, updatedAtMillis), remoteVersion,
+                       'NOT_SYNCED', lastSyncedAtMillis, NULL
+                FROM todo_items
+                WHERE ownerUserId IS NOT NULL AND locallyPurgedAtMillis IS NOT NULL
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE todo_checklists_v5 (
+                    localId TEXT NOT NULL PRIMARY KEY,
+                    sortIndex INTEGER NOT NULL,
+                    remoteId TEXT,
+                    ownerUserId TEXT,
+                    name TEXT NOT NULL,
+                    createdAtMillis INTEGER NOT NULL,
+                    updatedAtMillis INTEGER NOT NULL,
+                    syncState TEXT NOT NULL,
+                    lastSyncedAtMillis INTEGER,
+                    remoteVersion INTEGER,
+                    lastSyncError TEXT
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO todo_checklists_v5
+                SELECT localId, sortIndex, remoteId, ownerUserId, name, createdAtMillis,
+                       updatedAtMillis, syncState, lastSyncedAtMillis, remoteVersion, lastSyncError
+                FROM todo_checklists
+                WHERE deletedAtMillis IS NULL
+                """.trimIndent(),
+            )
+            db.execSQL("DROP TABLE todo_checklists")
+            db.execSQL("ALTER TABLE todo_checklists_v5 RENAME TO todo_checklists")
+
+            db.execSQL(
+                """
+                CREATE TABLE todo_items_v5 (
+                    localId TEXT NOT NULL PRIMARY KEY,
+                    checklistLocalId TEXT NOT NULL,
+                    sortIndex INTEGER NOT NULL,
+                    remoteId TEXT,
+                    ownerUserId TEXT,
+                    title TEXT NOT NULL,
+                    priority TEXT NOT NULL,
+                    dueAtMillis INTEGER NOT NULL,
+                    completed INTEGER NOT NULL,
+                    createdAtMillis INTEGER NOT NULL,
+                    updatedAtMillis INTEGER NOT NULL,
+                    reminderRepeat TEXT NOT NULL,
+                    imageLocalName TEXT,
+                    imageRemotePath TEXT,
+                    imageSyncState TEXT NOT NULL,
+                    trashedFromChecklistId TEXT,
+                    trashedFromChecklistName TEXT,
+                    trashedAtMillis INTEGER,
+                    syncState TEXT NOT NULL,
+                    lastSyncedAtMillis INTEGER,
+                    remoteVersion INTEGER,
+                    lastSyncError TEXT
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO todo_items_v5
+                SELECT localId, checklistLocalId, sortIndex, remoteId, ownerUserId, title,
+                       priority, dueAtMillis, completed, createdAtMillis, updatedAtMillis,
+                       reminderRepeat, imageLocalName, imageRemotePath, imageSyncState,
+                       trashedFromChecklistId, trashedFromChecklistName,
+                       COALESCE(trashedAtMillis, deletedAtMillis), syncState,
+                       lastSyncedAtMillis, remoteVersion, lastSyncError
+                FROM todo_items
+                WHERE locallyPurgedAtMillis IS NULL
+                """.trimIndent(),
+            )
+            db.execSQL("DROP TABLE todo_items")
+            db.execSQL("ALTER TABLE todo_items_v5 RENAME TO todo_items")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_checklistLocalId ON todo_items(checklistLocalId)")
         }
     }
 }

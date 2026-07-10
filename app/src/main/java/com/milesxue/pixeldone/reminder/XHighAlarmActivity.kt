@@ -37,6 +37,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.ui.theme.ClaudeClayInteractive
@@ -139,13 +142,13 @@ class XHighAlarmActivity : ComponentActivity() {
 
     private fun Intent.todoTitles(count: Int): List<String> {
         val batchTitles = getStringArrayListExtra(XHighAlarmService.EXTRA_BATCH_TODO_TITLES)
-            ?.map { title -> title.takeIf { it.isNotBlank() } ?: "Todo due" }
+            ?.map { title -> title.takeIf { it.isNotBlank() } ?: getString(R.string.todo_due) }
             .orEmpty()
         val fallbackTitle = getStringExtra(TodoAlarmScheduler.EXTRA_TODO_TITLE)
             ?.takeIf { it.isNotBlank() }
-            ?: "Todo due"
+            ?: getString(R.string.todo_due)
         val titles = if (batchTitles.isNotEmpty()) batchTitles else listOf(fallbackTitle)
-        return List(maxOf(count, titles.size, 1)) { index -> titles.getOrNull(index) ?: "Todo due" }
+        return List(maxOf(count, titles.size, 1)) { index -> titles.getOrNull(index) ?: getString(R.string.todo_due) }
     }
 
     companion object {
@@ -168,7 +171,7 @@ class XHighAlarmActivity : ComponentActivity() {
                 ?: listOf(
                     TodoItem(
                         id = "xhigh-alarm",
-                        title = "Todo due",
+                        title = context.getString(R.string.todo_due),
                         priority = TodoPriority.XHIGH,
                         dueAtMillis = firedDueAtMillis,
                         completed = false,
@@ -207,7 +210,7 @@ private fun XHighAlarmScreen(
     onStop: () -> Unit,
     onSnooze: () -> Unit,
 ) {
-    val safeTitles = titles.ifEmpty { listOf("Todo due") }
+    val safeTitles = titles.ifEmpty { listOf(stringResource(R.string.todo_due)) }
     val selectedIndexState = remember { mutableStateOf(0) }
     val selectedIndex = selectedIndexState.value.coerceIn(0, safeTitles.lastIndex)
     val title = safeTitles[selectedIndex]
@@ -233,7 +236,7 @@ private fun XHighAlarmScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = if (count == 1) "XHIGH TASK DUE" else "$count XHIGH TASKS DUE",
+                    text = pluralStringResource(R.plurals.xhigh_tasks_due, count, count),
                     color = PixelError,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 14.sp,
@@ -256,7 +259,7 @@ private fun XHighAlarmScreen(
                 if (count > 1) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "TASK ${selectedIndex + 1}/$count",
+                        text = stringResource(R.string.alarm_task_position, selectedIndex + 1, count),
                         color = ClaudeSlateLight,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
@@ -305,13 +308,13 @@ private fun XHighAlarmScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     AlarmActionButton(
-                        text = if (count == 1) "SNOOZE 10" else "SNOOZE ALL 10",
+                        text = stringResource(if (count == 1) R.string.snooze_10 else R.string.snooze_all_10),
                         onClick = onSnooze,
                         modifier = Modifier.weight(1f),
                         primary = false,
                     )
                     AlarmActionButton(
-                        text = if (count == 1) "STOP" else "STOP ALL",
+                        text = stringResource(if (count == 1) R.string.stop else R.string.stop_all),
                         onClick = onStop,
                         modifier = Modifier.weight(1f),
                         primary = true,

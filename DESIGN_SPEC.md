@@ -1,6 +1,6 @@
 # UI/UX Design Specification
 
-This document governs PixelDone visual design, interaction experience, pixel-style components, Claude/Anthropic color usage, layout, and visual quality within this standalone repository.
+This document governs visual design, interaction experience, pixel-style components, Claude/Anthropic color usage, layout, and visual quality for all Android subprojects under the current directory.
 
 This document does not define product-line positioning, product naming, developer identity, or package naming rules. Those belong to `PRODUCT_LINE_SPEC.md`. This document also does not define engineering workflow. That belongs to `PROJECT_SPEC.md`.
 
@@ -387,7 +387,16 @@ App icons should use one clear symbolic subject tied to the tool's core task.
 
 Use Android adaptive icon requirements and Google Play icon specifications as hard platform constraints. Use Apple, Google, X.com, Anthropic / Claude, and OpenAI brand practices as calibration for restraint: simple marks, clear hierarchy, generous negative space, and protected proportions.
 
-## 10. Visual QA Checklist
+## 10. Localization And Bidirectional Layout
+
+- Layouts must expand for translated text without clipping, overlap, unreachable controls, or fixed-width assumptions. Prefer flexible rows, wrapping, and content-driven height.
+- Arabic must be verified in real RTL layout direction. Directional icons, row order, padding, alignment, and navigation affordances must mirror when their meaning is directional; non-directional product marks and media must not be mirrored.
+- Keep touch targets at least `44dp` in every locale. Do not shrink type below the product typography baseline to force a translation into a fixed control.
+- Use localized plurals and date/time/number formatting. Avoid manual uppercase transformations for scripts where casing is not meaningful.
+- Accessibility descriptions, state descriptions, semantic action names, notifications, channels, alarms, dialogs, empty states, auth, sync, and update UI must receive the same locale and RTL QA as visible screen text.
+- Visual QA must cover English, the longest supported Latin/Cyrillic labels, Simplified Chinese, and Arabic RTL on at least one phone viewport. Tablet QA is required when the product supports tablets.
+
+## 11. Visual QA Checklist
 
 Before release, every project must check:
 
@@ -400,8 +409,10 @@ Before release, every project must check:
 - Do long text, long results, and error messages avoid breaking layout?
 - Does every clickable element have clear feedback?
 - If both dark and light themes exist, are semantic colors consistent?
+- Do all declared languages render without fallback English caused by a missing resource?
+- Does Arabic RTL preserve hierarchy, touch targets, and intuitive directional behavior?
 
-## 11. Sources
+## 12. Sources
 
 - [Anthropic official site](https://www.anthropic.com/)
 - [Claude Code product page](https://claude.com/product/claude-code)

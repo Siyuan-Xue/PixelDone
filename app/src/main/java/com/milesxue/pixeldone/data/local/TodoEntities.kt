@@ -21,7 +21,6 @@ data class TodoChecklistEntity(
     val name: String,
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
-    val deletedAtMillis: Long? = null,
     val syncState: String = SyncRecordState.LOCAL_ONLY.name,
     val lastSyncedAtMillis: Long? = null,
     val remoteVersion: Long? = null,
@@ -44,7 +43,6 @@ data class TodoItemEntity(
     val completed: Boolean,
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
-    val deletedAtMillis: Long? = null,
     val reminderRepeat: String,
     val imageLocalName: String? = null,
     val imageRemotePath: String? = null,
@@ -52,10 +50,24 @@ data class TodoItemEntity(
     val trashedFromChecklistId: String? = null,
     val trashedFromChecklistName: String? = null,
     val trashedAtMillis: Long? = null,
-    val locallyPurgedAtMillis: Long? = null,
     val syncState: String = SyncRecordState.LOCAL_ONLY.name,
     val lastSyncedAtMillis: Long? = null,
     val remoteVersion: Long? = null,
+    val lastSyncError: String? = null,
+)
+
+@Entity(
+    tableName = "sync_tombstones",
+    primaryKeys = ["ownerUserId", "recordType", "localId"],
+)
+data class SyncTombstoneEntity(
+    val ownerUserId: String,
+    val recordType: String,
+    val localId: String,
+    val deletedAtMillis: Long,
+    val remoteVersion: Long? = null,
+    val syncState: String = SyncRecordState.NOT_SYNCED.name,
+    val lastSyncedAtMillis: Long? = null,
     val lastSyncError: String? = null,
 )
 
@@ -111,3 +123,4 @@ data class SyncMutationEntity(
 const val TodoStateMetadataId = "todo_state"
 const val SyncRecordTypeChecklist = "checklist"
 const val SyncRecordTypeItem = "item"
+const val SyncRecordTypeSettings = "settings"

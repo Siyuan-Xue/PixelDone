@@ -46,7 +46,7 @@ class TodoEntityMapperTest {
         assertNull(trashItem.ownerUserId)
         assertNull(trashItem.lastSyncedAtMillis)
         assertNull(trashItem.remoteVersion)
-        assertEquals(3_000L, trashItem.deletedAtMillis)
+        assertEquals(3_000L, trashItem.trashedAtMillis)
         assertEquals(TrashChecklistId, trashItem.checklistLocalId)
         assertEquals("image.jpg", trashItem.imageLocalName)
     }
@@ -95,7 +95,7 @@ class TodoEntityMapperTest {
     }
 
     @Test
-    fun clearingTrashRetainsCloudTombstoneButHidesItFromDomainState() {
+    fun clearingTrashCreatesMinimalTombstoneAndRemovesActiveContent() {
         val initial = createInitialChecklistState(
             items = listOf(
                 TodoItem(
@@ -128,7 +128,7 @@ class TodoEntityMapperTest {
             nowMillis = 5_000L,
             previousEntitySet = previous,
         )
-        val hiddenTombstone = saved.items.single { it.localId == "todo-1" }
+        val tombstone = saved.tombstones.single { it.localId == "todo-1" }
         val restored = todoEntitiesToState(
             metadata = saved.metadata,
             checklists = saved.checklists,
@@ -136,10 +136,10 @@ class TodoEntityMapperTest {
             fallbackCreatedAtMillis = 5_000L,
         )!!
 
-        assertEquals(3_000L, hiddenTombstone.deletedAtMillis)
-        assertEquals(3_000L, hiddenTombstone.trashedAtMillis)
-        assertEquals(5_000L, hiddenTombstone.locallyPurgedAtMillis)
-        assertEquals(SyncRecordState.NOT_SYNCED.name, hiddenTombstone.syncState)
+        assertEquals(emptyList<com.milesxue.pixeldone.data.local.TodoItemEntity>(), saved.items.filter { it.localId == "todo-1" })
+        assertEquals(5_000L, tombstone.deletedAtMillis)
+        assertEquals(2_000L, tombstone.remoteVersion)
+        assertEquals(SyncRecordState.NOT_SYNCED.name, tombstone.syncState)
         assertEquals(emptyList<TodoItem>(), restored.lists.first { it.id == TrashChecklistId }.items)
     }
 

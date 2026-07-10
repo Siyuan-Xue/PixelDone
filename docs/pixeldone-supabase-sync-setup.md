@@ -1,60 +1,64 @@
-# PixelDone Supabase Sync Setup
+# PixelDone Supabase 3.1 Sync Setup
 
-PixelDone now has a local-first cloud sync implementation for todos and checklists. The app still works without any cloud configuration. When Supabase configuration is present, the Settings screen exposes email/password sign-up, sign-in, sign-out, and manual sync. Local todo edits request background sync through the app container.
+PixelDone 3.1 is a hard remote-schema cutover. The Android client requires schema contract `3.1` and uses only the transactional `pixeldone_pull_changes` and `pixeldone_apply_mutation` RPCs. It does not fall back to the pre-3.1 direct-table protocol.
+
+## Manual Migration Checkpoint
+
+Run `docs/pixeldone-supabase-3.1.0-rc.1-migration.sql` once in the Supabase SQL editor as the database owner. The operator performs this step manually. Do not tag or publish a 3.1 RC until the final verification queries return:
+
+- `pixeldone_schema_metadata.schema_version = 3.1`;
+- all three functions: pull, apply, and cleanup;
+- `todo_checklists`, `todo_items`, `user_settings`, and `sync_tombstones` in `supabase_realtime`;
+- one active `pixeldone-expired-trash-daily` cron at `15 3 * * *` UTC.
+
+The client shows `SERVER UPDATE REQUIRED` if these RPCs are absent or return another schema version.
 
 ## Runtime Configuration
 
-Set these values after the Tencent Cloud Lighthouse host and standalone Supabase instance are ready:
-
-- `PIXELDONE_SUPABASE_URL` Gradle property, environment variable, or `local.properties` key `pixeldone.supabaseUrl`.
-- `PIXELDONE_SUPABASE_PUBLISHABLE_KEY` Gradle property, environment variable, or `local.properties` key `pixeldone.supabasePublishableKey`.
-
-Self-hosted Supabase deployments may still expose a legacy anon key. PixelDone keeps `PIXELDONE_SUPABASE_ANON_KEY` / `pixeldone.supabaseAnonKey` as a fallback, but new setup notes should use the publishable-key name.
-
-Example `local.properties` entries:
+Configure public client values through Gradle properties, environment variables, or uncommitted `local.properties`:
 
 ```properties
 pixeldone.supabaseUrl=http://SERVER_IP:8000
-pixeldone.supabasePublishableKey=YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY
+pixeldone.supabasePublishableKey=YOUR_PUBLISHABLE_OR_LEGACY_ANON_KEY
 pixeldone.requireCloudConfig=true
 ```
 
-`local.properties`, signing files, and CI secret values must not be committed. Release APKs do not receive a runtime `.env` file from users; the developer or CI injects the public Supabase URL and publishable/anon key at build time. These values are client configuration and can be extracted from an APK, so do not place service-role keys, secret keys, database passwords, signing keys, or signing passwords in the Android app.
+PixelDone currently allows the trusted direct-IP HTTP deployment. Move to HTTPS when available. Never place a service-role key, database password, signing secret, or user password in the APK, repository, or CI logs.
 
-Debug and formal release builds allow cleartext HTTP for the current direct-IP Supabase endpoint. Keep `PIXELDONE_REQUIRE_CLOUD_CONFIG=true` or `pixeldone.requireCloudConfig=true` for cloud release builds so missing URL/key values fail the build. Move the configured URL to HTTPS when the service is ready, but do not disable Cloud solely because the current URL uses `http://`.
+## 3.1 Data Contract
 
-## Supabase Auth
+- `todo_checklists` and `todo_items` contain active/recoverable content only.
+- During the one-time cutover, legacy checklist rows already marked deleted become minimal checklist tombstones, while legacy deleted todo rows remain recoverable Trash items so no user content is silently lost.
+- `trashed_at_millis` means the item is recoverable in Trash. Restore clears it; moving the item to Trash again writes a new timestamp and restarts the exact `30 * 24 hour` retention period.
+- `deleted_at_millis` exists only in `sync_tombstones`. Tombstones contain owner, record type, local ID, deletion time, and version; no todo/list content survives permanent deletion.
+- Minimal tombstones are retained indefinitely. Do not physically clean them until the protocol has per-device acknowledgement or an equivalent safe-watermark design.
+- `user_settings` syncs only `language_mode`: `system`, `en`, `zh-Hans`, `ar`, `fr`, `ru`, or `es`. Theme, Dock, and update preferences remain device-local.
+- `system` syncs as a mode; every device resolves it against its own operating-system locale. Unsupported system locales fall back to English.
 
-PixelDone uses Supabase Auth email/password sign-up and sign-in inside the Settings `CLOUD` bottom panel. Sign-up expects the self-hosted Supabase Auth service to auto-confirm email accounts, so the app receives a session immediately after registration. Configure the server with `ENABLE_EMAIL_SIGNUP=true`, `ENABLE_EMAIL_AUTOCONFIRM=true`, and `DISABLE_SIGNUP=false`, then restart the Auth service. Do not implement auto-confirm in the Android app and never ship a service-role key in the APK.
+All millisecond fields use PostgreSQL `bigint` / `int8`. A signed 64-bit integer holds about 292 million years at millisecond resolution, so ordinary epoch milliseconds will not overflow. The practical risks are wrong units, invalid negative values, and JavaScript precision in non-Android clients—not `int8` capacity.
 
-Access tokens are stored with Android Keystore-backed AES-GCM encryption in private app storage. Passwords are never persisted.
+## Transaction And Realtime Rules
 
-## Tables
+The pull RPC returns all changed record types plus one consistent high-water mark. Pulls, mutation commits, and cleanup share a PostgreSQL advisory transaction lock so sequence allocation cannot create a commit-order cursor gap.
 
-Run `docs/pixeldone-supabase-remote-schema-update.sql` in the Supabase SQL editor after the project is initialized or when updating the remote schema. The script owns the current PostgREST tables, remote version sequence, triggers, indexes, RLS policies, and grants used by the Android app. Theme and Dock preferences are local-only; current clients do not read or write a `user_settings` table.
+The apply RPC derives ownership from `auth.uid()`, applies mutations atomically, stores an idempotent response by mutation UUID, performs optimistic remote-version checks, and applies tombstones first. Authenticated clients have table `SELECT` for RLS-filtered Realtime delivery but no direct table-write grants. The cleanup SECURITY DEFINER function is not executable by app roles; only the database owner/cron job runs it.
 
-## Current Scope
+Supabase Realtime events are invalidation signals only. While the app is foregrounded and signed in, INSERT/UPDATE events are debounced and trigger the normal cursor pull. Login, foreground resume, token refresh, subscription restart, and Realtime reconnect also trigger catch-up. Background and sign-out tear down the subscription; WorkManager/manual sync remain fallbacks.
 
-Included now:
+## Cleanup Rule
 
-- Email/password sign-up, sign-in, sign-out, and password reset email requests.
-- Local-first incremental todo/checklist sync through Supabase Auth and PostgREST. Theme and Dock settings remain local-only on each device.
-- Cursor-based pull by `remote_version`, idempotent mutation batches, and three-way conflict detection using local pristine payloads.
-- Local Room metadata preservation for `remoteId`, `ownerUserId`, `syncState`, `lastSyncedAtMillis`, `remoteVersion`, `lastSyncError`, sync cursors, pristine payloads, and queued mutation UUIDs.
-- Debug and formal release cleartext HTTP support for the current direct-IP Supabase phase.
+`pixeldone_cleanup_expired_trash()` runs daily at 03:15 UTC through `pg_cron`. It selects items whose `trashed_at_millis` is at least 30 days old, inserts/updates minimal tombstones, and deletes active content in one locked transaction. Restored items are not eligible because restore clears `trashed_at_millis`.
 
-Not included yet:
+No cron deletes tombstones. Establish device acknowledgement and a documented offline-device bound before proposing tombstone cleanup.
 
-- Image upload or Supabase Storage sync.
-- Realtime push subscriptions.
+## RC Device Verification
 
+After the SQL checkpoint, validate with two signed-in devices:
 
-## Android Networking And CORS
-
-PixelDone uses native Android network requests for Supabase Auth and PostgREST. Browser CORS restrictions do not apply to these native requests, so the Android app does not need `Access-Control-Allow-Origin` for sync. CORS would matter only if a future feature loaded web content in a WebView and executed browser-style JavaScript requests.
-
-The relevant Android controls are the `INTERNET` permission, network security config, cleartext HTTP policy, TLS certificate trust, Supabase Auth JWTs, and Postgres RLS policies.
-
-## Operational Notes
-
-Use the publishable key, or a legacy anon key when that is what the self-hosted Supabase deployment exposes, in the Android app. Never use the service role key in Android code, `local.properties`, release assets, or public CI logs. RLS must be enabled before using a shared server. If the Supabase instance is exposed over HTTP, keep it on trusted infrastructure and networks. PixelDone formal releases intentionally allow the current direct-IP HTTP endpoint; move the configured URL to HTTPS when the service is ready.
+1. Create, edit, reorder, complete, Trash, restore, and permanently delete items and lists.
+2. Confirm the other foreground device updates without manual refresh.
+3. Confirm background/resume and token refresh perform catch-up.
+4. Dismiss a conflict, create another conflict, and confirm the reopened dialog contains all unresolved conflicts.
+5. Confirm non-overlapping field edits merge automatically and overlapping fields require review.
+6. Change language, confirm it syncs, and confirm `System` follows each device independently.
+7. Verify Arabic RTL, notifications, alarm actions, plurals, and the 30-day Trash message.

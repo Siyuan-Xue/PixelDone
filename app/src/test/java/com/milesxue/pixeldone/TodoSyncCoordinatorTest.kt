@@ -63,7 +63,6 @@ class TodoSyncCoordinatorTest {
                 item.copy(
                     checklistLocalId = "trash",
                     updatedAtMillis = 2_000L,
-                    deletedAtMillis = 2_000L,
                     trashedFromChecklistId = "main",
                     trashedFromChecklistName = "MAIN",
                     trashedAtMillis = 2_000L,
@@ -78,11 +77,10 @@ class TodoSyncCoordinatorTest {
 
         val savedItem = localStore.entitySet.items.single { it.localId == "todo-1" }
         assertEquals("trash", savedItem.checklistLocalId)
-        assertEquals(2_000L, savedItem.deletedAtMillis)
         assertEquals(2_000L, savedItem.trashedAtMillis)
         assertEquals(SyncRecordState.SYNCED.name, savedItem.syncState)
         assertEquals(1, remote.pushedSnapshots.size)
-        assertEquals(2_000L, remote.pushedSnapshots.single().items.single().deletedAtMillis)
+        assertEquals(2_000L, remote.pushedSnapshots.single().items.single().trashedAtMillis)
     }
 
     @Test
@@ -158,6 +156,60 @@ class TodoSyncCoordinatorTest {
         assertEquals(3_000L, conflict.remoteVersion)
         assertEquals(true, conflict.localPayloadJson.contains("Local title"))
         assertEquals(true, conflict.remotePayloadJson.contains("Cloud title"))
+    }
+
+    @Test
+    fun unresolvedConflictIsNotUploadedAfterEmptyIncrementalPull() = runTest {
+        val localItem = syncedActiveItem().copy(
+            title = "Local title",
+            updatedAtMillis = 2_000L,
+            syncState = SyncRecordState.NOT_SYNCED.name,
+        )
+        val localStore = FakeTodoSyncLocalStore(entitySetWith(item = localItem)).apply {
+            pristineSnapshot = RemoteTodoSnapshot(
+                checklists = listOf(remoteMainChecklist()),
+                items = listOf(remoteActiveItem()),
+            )
+        }
+        val remote = FakeRemoteTodoDataSource(RemoteTodoSnapshot(
+            items = listOf(remoteActiveItem().copy(title = "Cloud title", remoteVersion = 3_000L)),
+        ))
+        val coordinator = coordinator(localStore = localStore, remote = remote)
+        advanceUntilIdle()
+        assertEquals(SyncCoordinatorStatus.CONFLICT, coordinator.status.value)
+        remote.pullSnapshot = RemoteTodoSnapshot()
+        remote.resetCounts()
+
+        val status = coordinator.syncNow()
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.CONFLICT, status)
+        assertEquals(0, remote.pushCount)
+        assertEquals(SyncRecordState.CONFLICT.name, localStore.entitySet.items.single().syncState)
+        assertEquals(1, localStore.conflicts.size)
+    }
+
+    @Test
+    fun nonOverlappingLocalAndCloudFieldsMergeWithoutConflict() = runTest {
+        val local = syncedActiveItem().copy(
+            title = "Local title",
+            updatedAtMillis = 2_000L,
+            syncState = SyncRecordState.NOT_SYNCED.name,
+        )
+        val store = FakeTodoSyncLocalStore(entitySetWith(item = local)).apply {
+            pristineSnapshot = RemoteTodoSnapshot(items = listOf(remoteActiveItem()))
+        }
+        val remote = FakeRemoteTodoDataSource(RemoteTodoSnapshot(
+            items = listOf(remoteActiveItem().copy(completed = true, updatedAtMillis = 3_000L, remoteVersion = 3_000L)),
+        ))
+        val coordinator = coordinator(localStore = store, remote = remote)
+        advanceUntilIdle()
+
+        val merged = store.entitySet.items.single()
+        assertEquals(SyncCoordinatorStatus.SYNCED, coordinator.status.value)
+        assertEquals("Local title", merged.title)
+        assertEquals(true, merged.completed)
+        assertEquals(emptyList<LocalSyncConflictRecord>(), store.conflicts)
     }
 
     @Test
@@ -431,6 +483,7 @@ private class FakeRemoteTodoDataSource(
         if (!pullStarted.isCompleted) pullStarted.complete(Unit)
         pullGate?.await()
         return RemoteChangeBatch(
+            schemaVersion = "3.1",
             serverVersion = 1_000L,
             checklists = pullSnapshot.checklists,
             items = pullSnapshot.items,
@@ -458,6 +511,7 @@ private class FakeRemoteTodoDataSource(
             },
         )
         return RemotePushResult(
+            schemaVersion = "3.1",
             accepted = accepted,
             settings = batch.settings,
             serverVersion = 2_000L,

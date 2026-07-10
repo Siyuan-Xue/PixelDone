@@ -32,8 +32,6 @@ class TodoRepository(private val store: TodoStateStore) {
     }
 
     fun updateTodoState(transform: (TodoChecklistState) -> TodoChecklistState): TodoChecklistState {
-        val updated = transform(loadTodoState())
-        saveTodoState(updated)
-        return updated
+        return store.updateTodoState(transform).also { _state.value = it }
     }
 }
