@@ -1,16 +1,16 @@
-PixelDone v3.1.0 is the formal signed release for shared Android and Windows Cloud sync.
+PixelDone v3.1.1-rc.1 is the beta release candidate for Android full-screen intent access preservation.
 
 Highlights:
-- Introduces the Supabase 3.1 atomic mutation, global cursor, CAS, tombstone, Realtime invalidation, and durable conflict-review contract.
-- Adds System plus Arabic, Chinese, English, French, Russian, and Spanish language modes, with a compact two-column selector and each concrete language shown using its native name.
-- Redraws the Cloud sign-in, sign-out, and sync controls as restrained PixelDone line icons.
-- Keeps language mode synced while theme, Dock, update preferences, and local task images remain device-local.
-- Reschedules Android reminders whenever a Cloud pull changes task timing or state.
-- Retains recoverable Trash items for 30 days before scrubbing them into minimal sync tombstones.
-- Uses GitHub Releases as the primary update source with the user-managed Gitee mirror as fallback.
+- Replaces the generic sideload install intent with an Android PackageInstaller session for PixelDone's in-app updater.
+- Preserves the existing Android 14+ full-screen intent access state across in-app upgrades: granted remains granted and denied remains denied.
+- Keeps the system-controlled install confirmation and install-unknown-apps access flow.
+- Keeps denied full-screen intent behavior on the existing expanded heads-up notification fallback.
+
+Upgrade note:
+- An app version older than 3.1.1 still launches Android's generic sideload installer, so upgrading from 3.1.0 may turn Full Screen access off one final time. Re-enable it after installing 3.1.1; later PixelDone in-app updates preserve that choice.
 
 Distribution:
-- The attached `PixelDone-3.1.0-release.apk` is the signed formal package for `com.milesxue.pixeldone`.
+- The attached `PixelDone-3.1.1-rc.1-debug.apk` is the beta package for `com.milesxue.pixeldone.debug` and can coexist with the formal app.
 - PixelDone intentionally connects to the configured direct-IP Supabase deployment over cleartext HTTP. HTTP does not provide transport confidentiality or server identity verification, and no HTTPS migration is planned.
 - Task images remain local to each device and are not uploaded to Supabase Storage.
 

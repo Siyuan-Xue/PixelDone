@@ -63,6 +63,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Clean stale or already-installed update APK files from the app-private update directory.
 - Open the system install confirmation after an in-app update APK finishes downloading.
 - Open Android's install-unknown-apps settings first when update installation permission is missing.
+- Install in-app updates through Android PackageInstaller sessions and preserve the existing Android 14+ full-screen intent access choice across upgrades.
 - Check quietly for the latest release on every app start without suppressing an available update.
 - Keep Android 14+ full-screen intent permission checks tied to the system grant and preserve STOP/SNOOZE access when Android denies full-screen launch.
 - Treat a direct return from Android's Full Screen access page as no grant instead of repeatedly reopening the permission page.
@@ -117,7 +118,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - `data/settings/`: DataStore-backed settings; language mode syncs through Cloud while theme, Dock, and update preferences remain local.
 - `data/sync/` and `domain/sync/`: Supabase Auth, 3.1 transaction RPCs, Realtime invalidation subscriptions, persistent conflicts, field merges, mutation UUIDs, cursors, and tombstones.
 - `data/image/`: private image-copying, safe file-path handling, and preview bitmap sampling.
-- `data/update/`: GitHub-first release checks, synced Gitee fallback, DownloadManager integration, and install-intent preparation.
+- `data/update/`: GitHub-first release checks, synced Gitee fallback, DownloadManager integration, and state-preserving PackageInstaller sessions.
 - `reminder/`: AlarmManager, notification, boot, receiver, foreground service, and XHigh full-screen alarm integration.
 - `ui/todo/`: screen route, Dock presentation, update/permission presentation rules, UI state holder, and ViewModel teaching entry point.
 - `ui/todo/components/`: reusable pixel-style Compose controls and icons.
@@ -181,6 +182,12 @@ The current formal signed release APK is:
 app/build/outputs/apk/release/PixelDone-3.1.0-release.apk
 ```
 
+The current beta RC debug APK is:
+
+```text
+app/build/outputs/apk/debug/PixelDone-3.1.1-rc.1-debug.apk
+```
+
 ## Install
 
 Install the current formal signed release build with:
@@ -203,4 +210,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.1.0 is the current formal release target. It introduces the Supabase 3.1 transaction contract, Realtime multi-device invalidation, durable aggregated conflict review, field-level three-way merge, minimal tombstones, 30-day Trash cleanup, native-name language selection, and shared Android/Windows account data. Task images remain local-only on both platforms.
+3.1.1-rc.1 is the beta validation target for preserving Android 14+ full-screen intent access across PixelDone in-app updates. PixelDone 3.1.0 remains the current formal release until RC device verification succeeds.

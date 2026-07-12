@@ -1,13 +1,17 @@
 package com.milesxue.pixeldone.data.update
 
+import android.Manifest
 import android.app.DownloadManager
-import android.content.ClipData
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
-import androidx.core.content.FileProvider
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -140,6 +144,23 @@ internal sealed interface AppUpdateDownloadResult {
     data object Failed : AppUpdateDownloadResult
 }
 
+internal enum class AppUpdateInstallStartResult {
+    Requested,
+    Failed,
+}
+
+internal fun fullScreenIntentPermissionStateForUpdate(
+    sdkInt: Int,
+    currentlyGranted: Boolean,
+): Int? {
+    if (sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return null
+    return if (currentlyGranted) {
+        PackageInstaller.SessionParams.PERMISSION_STATE_GRANTED
+    } else {
+        PackageInstaller.SessionParams.PERMISSION_STATE_DENIED
+    }
+}
+
 internal enum class AppUpdateDownloadCompletion {
     Success,
     Failed,
@@ -258,26 +279,75 @@ internal class AppUpdateDownloader(context: Context) {
         return cleaned
     }
 
-    fun openInstallPrompt(download: AppUpdateDownload): Boolean {
-        return try {
-            val file = downloadedApkFile(download.fileName)
-            if (!file.isFile || file.length() <= 0L) return false
-            val uri = FileProvider.getUriForFile(
-                appContext,
-                "${appContext.packageName}.fileprovider",
-                file,
-            )
-            val intent = Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, UpdateApkMimeType)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            intent.clipData = ClipData.newUri(appContext.contentResolver, download.fileName, uri)
-            appContext.startActivity(intent)
+    suspend fun requestInstall(download: AppUpdateDownload): AppUpdateInstallStartResult {
+        val fullScreenIntentGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            appContext.getSystemService(NotificationManager::class.java)
+                ?.canUseFullScreenIntent() == true
+        } else {
             true
-        } catch (error: CancellationException) {
-            throw error
-        } catch (_: Exception) {
-            false
+        }
+        return withContext(Dispatchers.IO) {
+            val file = downloadedApkFile(download.fileName)
+            if (!file.isFile || file.length() <= 0L) {
+                return@withContext AppUpdateInstallStartResult.Failed
+            }
+
+            val packageInstaller = appContext.packageManager.packageInstaller
+            var sessionId: Int? = null
+            var committed = false
+            try {
+                val params = PackageInstaller.SessionParams(
+                    PackageInstaller.SessionParams.MODE_FULL_INSTALL,
+                ).apply {
+                    setAppPackageName(appContext.packageName)
+                    setSize(file.length())
+                    setInstallReason(PackageManager.INSTALL_REASON_USER)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        setPackageSource(PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        val state = checkNotNull(
+                            fullScreenIntentPermissionStateForUpdate(
+                                sdkInt = Build.VERSION.SDK_INT,
+                                currentlyGranted = fullScreenIntentGranted,
+                            ),
+                        )
+                        setPermissionState(Manifest.permission.USE_FULL_SCREEN_INTENT, state)
+                    }
+                }
+                sessionId = packageInstaller.createSession(params)
+                packageInstaller.openSession(sessionId).use { session ->
+                    file.inputStream().buffered().use { input ->
+                        session.openWrite("base.apk", 0L, file.length()).use { output ->
+                            input.copyTo(output)
+                            session.fsync(output)
+                        }
+                    }
+                    val callbackIntent = Intent(appContext, UpdateInstallActivity::class.java).apply {
+                        action = UpdateInstallActivity.ACTION_INSTALL_STATUS
+                    }
+                    val callback = PendingIntent.getActivity(
+                        appContext,
+                        sessionId,
+                        callbackIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+                    )
+                    session.commit(callback.intentSender)
+                    committed = true
+                }
+                AppUpdateInstallStartResult.Requested
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                AppUpdateInstallStartResult.Failed
+            } finally {
+                if (!committed) {
+                    sessionId?.let { id -> runCatching { packageInstaller.abandonSession(id) } }
+                }
+            }
         }
     }
 

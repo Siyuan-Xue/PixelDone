@@ -156,6 +156,7 @@ import com.milesxue.pixeldone.data.update.AppUpdateDownload
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadCompletion
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadProgress
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadResult
+import com.milesxue.pixeldone.data.update.AppUpdateInstallStartResult
 import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
@@ -1326,7 +1327,19 @@ internal fun PixelDoneApp() {
         }
 
         pendingUpdateInstallDownload = null
-        return updateService.openInstallPrompt(download)
+        updateUiState = AppUpdateUiState(
+            status = UpdateUiStatus.Installing,
+            message = String.format(Locale.getDefault(), installingVersionTemplate, download.version),
+        )
+        updateScope.launch {
+            if (updateService.requestInstall(download) == AppUpdateInstallStartResult.Failed) {
+                updateUiState = AppUpdateUiState(
+                    status = UpdateUiStatus.Offline,
+                    message = updateFailedText,
+                )
+            }
+        }
+        return true
     }
 
     fun startUpdateDownload(info: AppUpdateInfo, revealProgressDialog: Boolean = false) {
@@ -1466,18 +1479,7 @@ internal fun PixelDoneApp() {
                     reminderScheduler.sync(currentTodos, currentTodos)
                     val pendingInstall = pendingUpdateInstallDownload
                     if (pendingInstall != null && hasInstallUpdatePermission()) {
-                        pendingUpdateInstallDownload = null
-                        updateUiState = if (updateService.openInstallPrompt(pendingInstall)) {
-                            AppUpdateUiState(
-                                status = UpdateUiStatus.Installing,
-                                message = String.format(Locale.getDefault(), installingVersionTemplate, pendingInstall.version),
-                            )
-                        } else {
-                            AppUpdateUiState(
-                                status = UpdateUiStatus.Offline,
-                                message = updateFailedText,
-                            )
-                        }
+                        openDownloadedUpdate(pendingInstall)
                     }
                     val fullScreenFollowUpTodoId = pendingFullScreenPermissionTodoId
                     pendingFullScreenPermissionTodoId = null

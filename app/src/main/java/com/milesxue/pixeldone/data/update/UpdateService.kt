@@ -25,8 +25,8 @@ internal class UpdateService(
     ): AppUpdateDownloadCompletion =
         downloader.awaitCompletion(download, onProgress)
 
-    fun openInstallPrompt(download: AppUpdateDownload): Boolean =
-        downloader.openInstallPrompt(download)
+    suspend fun requestInstall(download: AppUpdateDownload): AppUpdateInstallStartResult =
+        downloader.requestInstall(download)
 
     fun cleanupInstalledUpdate(currentVersion: String): Boolean =
         downloader.cleanupInstalledUpdate(currentVersion)

@@ -1,5 +1,6 @@
 package com.milesxue.pixeldone
 
+import android.content.pm.PackageInstaller
 import com.milesxue.pixeldone.data.update.AppUpdateDownload
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadSource
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadProgress
@@ -7,6 +8,7 @@ import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.data.update.AppUpdateSource
 import com.milesxue.pixeldone.data.update.activeUpdateDownloadMatchesLatest
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
+import com.milesxue.pixeldone.data.update.fullScreenIntentPermissionStateForUpdate
 import com.milesxue.pixeldone.data.update.isPixelDoneUpdateApkFileName
 import com.milesxue.pixeldone.data.update.isUpdateDownloadStalled
 import com.milesxue.pixeldone.data.update.shouldCleanInstalledUpdate
@@ -242,6 +244,40 @@ class AppUpdateDownloaderTest {
         assertEquals(
             UpdateInstallPermissionAction.OpenInstaller,
             updateInstallPermissionAction(hasInstallUpdatePermission = true),
+        )
+    }
+
+    @Test
+    fun fullScreenIntentPermissionStateForUpdate_isUnsetBeforeAndroid14() {
+        assertNull(
+            fullScreenIntentPermissionStateForUpdate(
+                sdkInt = 33,
+                currentlyGranted = true,
+            ),
+        )
+        assertNull(
+            fullScreenIntentPermissionStateForUpdate(
+                sdkInt = 33,
+                currentlyGranted = false,
+            ),
+        )
+    }
+
+    @Test
+    fun fullScreenIntentPermissionStateForUpdate_preservesAndroid14AndLaterState() {
+        assertEquals(
+            PackageInstaller.SessionParams.PERMISSION_STATE_GRANTED,
+            fullScreenIntentPermissionStateForUpdate(
+                sdkInt = 34,
+                currentlyGranted = true,
+            ),
+        )
+        assertEquals(
+            PackageInstaller.SessionParams.PERMISSION_STATE_DENIED,
+            fullScreenIntentPermissionStateForUpdate(
+                sdkInt = 37,
+                currentlyGranted = false,
+            ),
         )
     }
 }
