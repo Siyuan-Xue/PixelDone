@@ -1,4 +1,4 @@
-PixelDone v3.1.1-rc.1 is the beta release candidate for Android full-screen intent access preservation.
+PixelDone v3.1.1 is the formal signed patch release for Android full-screen intent access preservation.
 
 Highlights:
 - Replaces the generic sideload install intent with an Android PackageInstaller session for PixelDone's in-app updater.
@@ -10,7 +10,7 @@ Upgrade note:
 - An app version older than 3.1.1 still launches Android's generic sideload installer, so upgrading from 3.1.0 may turn Full Screen access off one final time. Re-enable it after installing 3.1.1; later PixelDone in-app updates preserve that choice.
 
 Distribution:
-- The attached `PixelDone-3.1.1-rc.1-debug.apk` is the beta package for `com.milesxue.pixeldone.debug` and can coexist with the formal app.
+- The attached `PixelDone-3.1.1-release.apk` is the signed formal package for `com.milesxue.pixeldone`.
 - PixelDone intentionally connects to the configured direct-IP Supabase deployment over cleartext HTTP. HTTP does not provide transport confidentiality or server identity verification, and no HTTPS migration is planned.
 - Task images remain local to each device and are not uploaded to Supabase Storage.
 

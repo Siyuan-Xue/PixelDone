@@ -179,13 +179,7 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.1.0-release.apk
-```
-
-The current beta RC debug APK is:
-
-```text
-app/build/outputs/apk/debug/PixelDone-3.1.1-rc.1-debug.apk
+app/build/outputs/apk/release/PixelDone-3.1.1-release.apk
 ```
 
 ## Install
@@ -193,7 +187,7 @@ app/build/outputs/apk/debug/PixelDone-3.1.1-rc.1-debug.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.1.0-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.1.1-release.apk
 ```
 
 The formal package name is:
@@ -210,4 +204,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.1.1-rc.1 is the beta validation target for preserving Android 14+ full-screen intent access across PixelDone in-app updates. PixelDone 3.1.0 remains the current formal release until RC device verification succeeds.
+3.1.1 is the current formal patch release. It preserves the existing Android 14+ full-screen intent access choice across later PixelDone in-app updates; users upgrading from an older updater may need to enable Full Screen access one final time after this upgrade.
