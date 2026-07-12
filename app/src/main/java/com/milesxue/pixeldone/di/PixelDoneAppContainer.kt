@@ -48,6 +48,7 @@ internal class PixelDoneAppContainer(context: Context) {
         publishableKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY,
         allowInsecureHttp = BuildConfig.ALLOW_INSECURE_SUPABASE_HTTP,
     )
+    private val syncWorkScheduler = WorkManagerSyncScheduler(appContext)
     private val supabaseHttpClient = SupabaseHttpClient(supabaseConfig)
     val authSessionRepository: AuthSessionRepository = if (supabaseConfig.isConfigured) {
         SupabaseAuthSessionRepository(
@@ -65,7 +66,7 @@ internal class PixelDoneAppContainer(context: Context) {
             remoteDataSource = SupabaseRemoteTodoDataSource(supabaseHttpClient),
             clockProvider = clockProvider,
             settingsStore = settingsStore,
-            workScheduler = WorkManagerSyncScheduler(appContext),
+            workScheduler = syncWorkScheduler,
         )
     } else {
         LocalOnlySyncCoordinator()

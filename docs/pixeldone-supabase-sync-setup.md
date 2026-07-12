@@ -43,7 +43,7 @@ The pull RPC returns all changed record types plus one consistent high-water mar
 
 The apply RPC derives ownership from `auth.uid()`, applies mutations atomically, stores an idempotent response by mutation UUID, performs optimistic remote-version checks, and applies tombstones first. Authenticated clients have table `SELECT` for RLS-filtered Realtime delivery but no direct table-write grants. The cleanup SECURITY DEFINER function is not executable by app roles; only the database owner/cron job runs it.
 
-Supabase Realtime events are invalidation signals only. While the app is foregrounded and signed in, INSERT/UPDATE events are debounced and trigger the normal cursor pull. Login, foreground resume, token refresh, subscription restart, and Realtime reconnect also trigger catch-up. Background and sign-out tear down the subscription; WorkManager/manual sync remain fallbacks.
+Supabase Realtime events are invalidation signals only. While the app is foregrounded and signed in, INSERT/UPDATE events are debounced and trigger the normal cursor pull. Login, foreground resume, token refresh, subscription restart, and Realtime reconnect also trigger catch-up. Background and sign-out tear down the subscription. Local mutations may enqueue a one-time network-constrained WorkManager request, but PixelDone registers no periodic polling job; manual sync remains available.
 
 ## Cleanup Rule
 

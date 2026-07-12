@@ -4,11 +4,9 @@ import android.content.Context
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
@@ -19,6 +17,12 @@ internal class WorkManagerSyncScheduler(context: Context) : SyncWorkScheduler {
     private val appContext = context.applicationContext
     private val workManager = WorkManager.getInstance(appContext)
 
+    init {
+        // Remove the periodic job created by PixelDone 3.1 and earlier. Sync is now
+        // exclusively triggered by login/resume, local mutations, Realtime, or manual action.
+        workManager.cancelUniqueWork(LegacyPeriodicSyncWorkName)
+    }
+
     override fun requestSync() {
         val request = OneTimeWorkRequestBuilder<PixelDoneSyncWorker>()
             .setConstraints(SyncConstraints)
@@ -27,20 +31,10 @@ internal class WorkManagerSyncScheduler(context: Context) : SyncWorkScheduler {
         workManager.enqueueUniqueWork(OneTimeSyncWorkName, ExistingWorkPolicy.REPLACE, request)
     }
 
-    override fun ensurePeriodicSync() {
-        val request = PeriodicWorkRequestBuilder<PixelDoneSyncWorker>(PeriodicSyncMinutes, TimeUnit.MINUTES)
-            .setConstraints(SyncConstraints)
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, PeriodicBackoffMinutes, TimeUnit.MINUTES)
-            .build()
-        workManager.enqueueUniquePeriodicWork(PeriodicSyncWorkName, ExistingPeriodicWorkPolicy.KEEP, request)
-    }
-
     private companion object {
         const val OneTimeSyncWorkName = "PixelDoneCloudSyncNow"
-        const val PeriodicSyncWorkName = "PixelDoneCloudSyncPeriodic"
+        const val LegacyPeriodicSyncWorkName = "PixelDoneCloudSyncPeriodic"
         const val OneTimeBackoffMinutes = 1L
-        const val PeriodicBackoffMinutes = 5L
-        const val PeriodicSyncMinutes = 30L
         val SyncConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()

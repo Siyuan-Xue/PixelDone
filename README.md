@@ -76,7 +76,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep unresolved conflicts persistent and globally reviewable: dismissing the dialog does not resolve them, and a later conflict reopens the dialog with every unresolved item. Only actual conflicting fields and item content are shown.
 - Three-way merge non-overlapping local/cloud field edits, exclude conflicts from upload, and make tombstones win over active content.
 - Retain recoverable Trash items for exactly 30 days; restore clears the timer, retrashing restarts it, and expiry scrubs content into an indefinitely retained minimal tombstone.
-- Debounce automatic sync requests, enqueue WorkManager fallback sync, preserve one global cursor/pristine payloads/mutation UUIDs, and commit UI edits through an atomic Room transform to avoid stale Realtime write-back.
+- Debounce event-driven sync requests, enqueue one-time WorkManager sync only for explicit local changes, preserve one global cursor/pristine payloads/mutation UUIDs, and commit UI edits through an atomic Room transform to avoid stale Realtime write-back. No periodic synchronization job is registered.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
 - Use five atomic dock functions for `SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, and `QUICK DELETE`.
 - Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph and a line-drawn trash can for `QUICK DELETE`.
@@ -105,7 +105,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Supabase Auth and PostgREST via native Android HTTP
 - Supabase Kotlin Realtime 3.6.0 with Ktor CIO WebSockets
 - Android Keystore-backed session storage
-- WorkManager background sync
+- One-time, event-triggered WorkManager sync
 
 ## Architecture Map
 

@@ -50,12 +50,10 @@ interface SyncCoordinator {
 
 interface SyncWorkScheduler {
     fun requestSync()
-    fun ensurePeriodicSync()
 }
 
 object NoOpSyncWorkScheduler : SyncWorkScheduler {
     override fun requestSync() = Unit
-    override fun ensurePeriodicSync() = Unit
 }
 
 internal interface TodoSyncLocalStore {

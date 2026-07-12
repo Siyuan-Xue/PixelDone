@@ -38,7 +38,6 @@ internal class TodoSyncCoordinator(
     private var observedSession = false
 
     init {
-        workScheduler.ensurePeriodicSync()
         scope.launch {
             authSessionRepository.session.collectLatest { session ->
                 if (mutableStatus.value != SyncCoordinatorStatus.SYNCING) {

@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Realtime is an invalidation signal only. Every event is followed by the same
- * transactional cursor pull used by manual and WorkManager sync.
+ * transactional cursor pull used by manual and event-triggered WorkManager sync.
  */
 @OptIn(FlowPreview::class)
 internal class SupabaseRealtimeSyncController(
