@@ -136,7 +136,7 @@ class PixelDoneViewModel(
             PixelDoneAction.OpenConflictDialog -> openConflictDialog()
             PixelDoneAction.DismissConflictDialog -> dismissConflictDialog()
             is PixelDoneAction.ResolveConflict -> resolveConflict(action)
-            PixelDoneAction.ResetPassword -> resetPassword()
+            is PixelDoneAction.ChangePassword -> changePassword(action)
             PixelDoneAction.DismissAuthMessage -> updateAuthInput { it.copy(message = null, error = null) }
             PixelDoneAction.SystemActionConsumed -> {
                 _uiState.value = _uiState.value.copy(pendingSystemAction = null)
@@ -226,19 +226,38 @@ class PixelDoneViewModel(
         }
     }
 
-    private fun resetPassword() {
-        val email = _uiState.value.authInput.email.trim()
-        if (email.isBlank()) {
-            updateAuthInput { it.copy(error = "Email is required.", message = null) }
+    private fun changePassword(action: PixelDoneAction.ChangePassword) {
+        if (action.currentPassword.isBlank() || action.newPassword.isBlank() || action.confirmation.isBlank()) {
+            updatePasswordChangeState { it.copy(error = "All password fields are required.", message = null) }
+            return
+        }
+        if (action.newPassword != action.confirmation) {
+            updatePasswordChangeState { it.copy(error = "New passwords do not match.", message = null) }
+            return
+        }
+        if (action.currentPassword == action.newPassword) {
+            updatePasswordChangeState { it.copy(error = "Choose a different new password.", message = null) }
             return
         }
         viewModelScope.launch {
-            updateAuthInput { it.copy(busy = true, error = null, message = null) }
+            updatePasswordChangeState { it.copy(busy = true, error = null, message = null) }
             try {
-                authSessionRepository.resetPassword(email)
-                updateAuthInput { it.copy(busy = false, error = null, message = "Reset email sent.") }
+                val result = authSessionRepository.changePassword(action.currentPassword, action.newPassword)
+                updatePasswordChangeState {
+                    it.copy(
+                        busy = false,
+                        error = null,
+                        message = if (result.globalLogoutCompleted) {
+                            "Password changed. Sign in again."
+                        } else {
+                            "Password changed. This device signed out; some other sessions may still be active."
+                        },
+                    )
+                }
             } catch (error: Exception) {
-                updateAuthInput { it.copy(busy = false, error = error.message ?: "Reset failed.", message = null) }
+                updatePasswordChangeState {
+                    it.copy(busy = false, error = error.message ?: "Password change failed.", message = null)
+                }
             }
         }
     }
@@ -304,6 +323,12 @@ class PixelDoneViewModel(
 
     private fun updateAuthInput(transform: (AuthInputState) -> AuthInputState) {
         _uiState.value = _uiState.value.copy(authInput = transform(_uiState.value.authInput))
+    }
+
+    private fun updatePasswordChangeState(transform: (PasswordChangeState) -> PasswordChangeState) {
+        _uiState.value = _uiState.value.copy(
+            passwordChangeState = transform(_uiState.value.passwordChangeState),
+        )
     }
 
     override fun onCleared() {

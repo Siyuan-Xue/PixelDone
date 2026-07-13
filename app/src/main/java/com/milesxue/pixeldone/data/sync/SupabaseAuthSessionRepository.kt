@@ -68,17 +68,51 @@ internal class SupabaseAuthSessionRepository(
         return session
     }
 
-    override suspend fun resetPassword(email: String) {
+    override suspend fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+    ): PasswordChangeResult {
         config.configurationError()?.let { throw SyncConfigurationException(it) }
-        val body = json.encodeToString(
-            EmailOnlyRequest.serializer(),
-            EmailOnlyRequest(email = email.trim()),
-        )
-        httpClient.request(
+        val current = mutableSession.value
+        val email = current.userEmail?.trim().takeUnless { it.isNullOrBlank() }
+            ?: throw SyncConfigurationException("The signed-in account has no email address.")
+
+        // Reauthentication deliberately does not replace the stored session. A bad
+        // current password therefore leaves every existing device session untouched.
+        val reauthResponse = httpClient.request(
             method = "POST",
-            path = "/auth/v1/recover",
-            body = body,
+            path = "/auth/v1/token",
+            query = listOf("grant_type" to "password"),
+            body = json.encodeToString(
+                EmailPasswordRequest.serializer(),
+                EmailPasswordRequest(email = email, password = currentPassword),
+            ),
         )
+        val reauthenticated = json.decodeFromString(TokenResponse.serializer(), reauthResponse)
+        val reauthenticatedToken = reauthenticated.accessToken
+            ?: throw SyncRemoteException("Supabase password verification did not return a session.")
+
+        httpClient.request(
+            method = "PUT",
+            path = "/auth/v1/user",
+            bearerToken = reauthenticatedToken,
+            body = json.encodeToString(
+                PasswordUpdateRequest.serializer(),
+                PasswordUpdateRequest(password = newPassword),
+            ),
+        )
+
+        val globalLogoutCompleted = runCatching {
+            httpClient.request(
+                method = "POST",
+                path = "/auth/v1/logout",
+                bearerToken = reauthenticatedToken,
+                query = listOf("scope" to "global"),
+            )
+        }.isSuccess
+        sessionStore.clear()
+        mutableSession.value = signedOutSession()
+        return PasswordChangeResult(globalLogoutCompleted)
     }
 
     override suspend fun signOut() {
@@ -183,8 +217,8 @@ private data class EmailPasswordRequest(
 )
 
 @Serializable
-private data class EmailOnlyRequest(
-    val email: String,
+private data class PasswordUpdateRequest(
+    val password: String,
 )
 
 @Serializable

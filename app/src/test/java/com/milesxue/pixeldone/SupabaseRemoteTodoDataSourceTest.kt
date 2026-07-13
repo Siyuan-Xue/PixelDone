@@ -49,15 +49,18 @@ class SupabaseRemoteTodoDataSourceTest {
             ),
         )
 
-        assertEquals("3.1", result.schemaVersion)
+        assertEquals("3.2", result.schemaVersion)
         assertEquals("remote-list-1", result.accepted.checklists.single().remoteId)
         val request = client.requests.single()
         assertEquals("POST", request.method)
         assertEquals("/rest/v1/rpc/pixeldone_apply_mutation", request.path)
         val body = json.parseToJsonElement(requireNotNull(request.body)).jsonObject
         assertEquals("mutation-1", body.getValue("p_mutation_uuid").jsonPrimitive.content)
+        assertEquals("3.2", body.getValue("p_client_schema_version").jsonPrimitive.content)
         assertEquals(1, body.getValue("p_checklists").jsonArray.size)
         assertEquals(1, body.getValue("p_items").jsonArray.size)
+        assertEquals(0, body.getValue("p_attachments").jsonArray.size)
+        assertFalse(body.getValue("p_items").jsonArray.single().jsonObject.containsKey("image_sync_state"))
         assertEquals("fr", body.getValue("p_settings").jsonObject.getValue("language_mode").jsonPrimitive.content)
         assertEquals("item-old", body.getValue("p_tombstones").jsonArray.single().jsonObject.getValue("local_id").jsonPrimitive.content)
         assertFalse(client.requests.any { it.path.startsWith("/rest/v1/todo_") })
@@ -73,6 +76,7 @@ class SupabaseRemoteTodoDataSourceTest {
         assertEquals("/rest/v1/rpc/pixeldone_pull_changes", request.path)
         val body = json.parseToJsonElement(requireNotNull(request.body)).jsonObject
         assertEquals(42L, body.getValue("p_since_version").jsonPrimitive.content.toLong())
+        assertEquals("3.2", body.getValue("p_client_schema_version").jsonPrimitive.content)
         assertTrue(request.query.isEmpty())
     }
 
@@ -105,12 +109,12 @@ class SupabaseRemoteTodoDataSourceTest {
 
         private companion object {
             const val PullResponse = """
-                {"schema_version":"3.1","server_version":84,"checklists":[],"items":[],"settings":null,"tombstones":[]}
+                {"schema_version":"3.2","server_version":84,"checklists":[],"items":[],"attachments":[],"settings":null,"tombstones":[],"image_cleanup_paths":[]}
             """
             const val PushResponse = """
-                {"schema_version":"3.1","server_version":85,
-                 "accepted":{"checklists":[{"id":"remote-list-1","owner_user_id":"user-1","local_id":"list-1","sort_index":0,"name":"MAIN","created_at_millis":100,"updated_at_millis":200,"remote_version":85}],"items":[]},
-                 "settings":null,"tombstones":[],"conflicts":[]}
+                {"schema_version":"3.2","server_version":85,
+                 "accepted":{"checklists":[{"id":"remote-list-1","owner_user_id":"user-1","local_id":"list-1","sort_index":0,"name":"MAIN","created_at_millis":100,"updated_at_millis":200,"remote_version":85}],"items":[],"attachments":[]},
+                 "settings":null,"tombstones":[],"conflicts":[],"image_cleanup_paths":[]}
             """
         }
     }

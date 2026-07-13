@@ -1,14 +1,32 @@
-# PixelDone Supabase 3.1 Sync Setup
+# PixelDone Supabase 3.2 Sync And Storage Setup
 
-PixelDone 3.1 is a hard remote-schema cutover. The Android client requires schema contract `3.1` and uses only the transactional `pixeldone_pull_changes` and `pixeldone_apply_mutation` RPCs. It does not fall back to the pre-3.1 direct-table protocol.
+PixelDone 3.2 is a hard cutover from the 3.1 remote schema. Android and Windows require contract `3.2`, use the transactional `pixeldone_pull_changes` and `pixeldone_apply_mutation` RPCs, and use native Supabase Storage for private todo images. They do not fall back to 3.1 after the cutover.
 
 ## Manual Migration Checkpoint
 
-Run `docs/pixeldone-supabase-3.1.0-rc.1-migration.sql` once in the Supabase SQL editor as the database owner. The operator performs this step manually. Do not tag or publish a 3.1 RC until the final verification queries return:
+Back up PostgreSQL and the Storage volume. The official Supabase ownership model keeps `storage.objects` owned by `supabase_storage_admin`, so the migration intentionally has two steps. Do not change the owner of `storage.objects`.
 
-- `pixeldone_schema_metadata.schema_version = 3.1`;
-- all three functions: pull, apply, and cleanup;
-- `todo_checklists`, `todo_items`, `user_settings`, and `sync_tombstones` in `supabase_realtime`;
+1. Run `docs/pixeldone-supabase-3.2.0-storage-policies.sql` as the actual `storage.objects` owner. For the official Docker stack, open an interactive owner session (replace the container/database names if customized):
+
+   ```sh
+   docker exec -it supabase-db psql -h 127.0.0.1 -p 5432 -U supabase_storage_admin -d postgres -W -v ON_ERROR_STOP=1
+   ```
+
+   `-h 127.0.0.1` is required to avoid the container's Unix-socket `peer` authentication rule. Enter the deployment's `POSTGRES_PASSWORD` only at the prompt, then paste the Storage policy script. Its final query must show four policies and `applied_by = supabase_storage_admin`.
+
+   The policy script reads the request JWT subject directly from PostgREST's `request.jwt.claim.sub` / `request.jwt.claims` settings. It deliberately does not call `auth.uid()`, because the Storage owner should not be granted access to the managed `auth` schema. If an earlier policy attempt leaves the prompt as `postgres=!>`, run `ROLLBACK;` before pasting the current complete script again.
+
+2. Run `docs/pixeldone-supabase-3.2.0-migration.sql` in Studio SQL Editor, or as the owner of the existing PixelDone objects in `public`. The script refuses to cut over if the four Storage policies are absent.
+
+The earlier single-file candidate attempted `ALTER TABLE storage.objects` and could fail with `42501: must be owner of table objects` in Studio. Because it ran inside `BEGIN`/`COMMIT`, that failure rolled back the attempted migration; do not change the table owner to work around it.
+
+Do not tag or publish 3.2 until the final verification queries return:
+
+- `pixeldone_schema_metadata.schema_version = 3.2`;
+- both pull/apply overload pairs and the cleanup function;
+- private bucket `pixeldone-todo-images` with a 10 MiB limit and only JPEG/PNG/WebP MIME types;
+- four owner-scoped Storage policies (select, insert, update, and delete);
+- `todo_checklists`, `todo_items`, `todo_attachments`, `user_settings`, and `sync_tombstones` in `supabase_realtime`;
 - one active `pixeldone-expired-trash-daily` cron at `15 3 * * *` UTC.
 
 The client shows `SERVER UPDATE REQUIRED` if these RPCs are absent or return another schema version.
@@ -23,11 +41,14 @@ pixeldone.supabasePublishableKey=YOUR_PUBLISHABLE_OR_LEGACY_ANON_KEY
 pixeldone.requireCloudConfig=true
 ```
 
-PixelDone currently allows the trusted direct-IP HTTP deployment. Move to HTTPS when available. Never place a service-role key, database password, signing secret, or user password in the APK, repository, or CI logs.
+PixelDone intentionally allows the configured direct-IP HTTP deployment. HTTP/WS does not provide transport confidentiality, integrity, or server identity; this is an accepted deployment risk rather than an HTTPS migration plan. Never place a service-role key, database password, signing secret, or user password in either client, the repository, or CI logs.
 
-## 3.1 Data Contract
+## 3.2 Data Contract
 
 - `todo_checklists` and `todo_items` contain active/recoverable content only.
+- `todo_attachments` stores one descriptor per todo: attachment UUID, private object path, SHA-256, MIME type, byte size, update time, delete time, and remote version. Local filenames never enter the cloud contract.
+- `todo_image_cleanup_queue` retains replaced/deleted object paths until a client successfully deletes the Storage object and acknowledges the path through the mutation RPC.
+- Storage objects use `<owner UUID>/<todo local ID>/<attachment UUID>-<SHA-256>.<extension>` and remain private. Each client keeps only an app-private on-demand cache.
 - During the one-time cutover, legacy checklist rows already marked deleted become minimal checklist tombstones, while legacy deleted todo rows remain recoverable Trash items so no user content is silently lost.
 - `trashed_at_millis` means the item is recoverable in Trash. Restore clears it; moving the item to Trash again writes a new timestamp and restarts the exact `30 * 24 hour` retention period.
 - `deleted_at_millis` exists only in `sync_tombstones`. Tombstones contain owner, record type, local ID, deletion time, and version; no todo/list content survives permanent deletion.
@@ -39,7 +60,7 @@ All millisecond fields use PostgreSQL `bigint` / `int8`. A signed 64-bit integer
 
 ## Transaction And Realtime Rules
 
-The pull RPC returns all changed record types plus one consistent high-water mark. Pulls, mutation commits, and cleanup share a PostgreSQL advisory transaction lock so sequence allocation cannot create a commit-order cursor gap.
+The pull RPC returns all changed record types, attachment descriptors, pending image cleanup paths, and one consistent high-water mark. Pulls, mutation commits, and cleanup share a PostgreSQL advisory transaction lock so sequence allocation cannot create a commit-order cursor gap.
 
 The apply RPC derives ownership from `auth.uid()`, applies mutations atomically, stores an idempotent response by mutation UUID, performs optimistic remote-version checks, and applies tombstones first. Authenticated clients have table `SELECT` for RLS-filtered Realtime delivery but no direct table-write grants. The cleanup SECURITY DEFINER function is not executable by app roles; only the database owner/cron job runs it.
 
@@ -47,7 +68,7 @@ Supabase Realtime events are invalidation signals only. While the app is foregro
 
 ## Cleanup Rule
 
-`pixeldone_cleanup_expired_trash()` runs daily at 03:15 UTC through `pg_cron`. It selects items whose `trashed_at_millis` is at least 30 days old, inserts/updates minimal tombstones, and deletes active content in one locked transaction. Restored items are not eligible because restore clears `trashed_at_millis`.
+`pixeldone_cleanup_expired_trash()` runs daily at 03:15 UTC through `pg_cron`. It selects items whose `trashed_at_millis` is at least 30 days old, queues any current image object, inserts/updates minimal tombstones, and deletes active content in one locked transaction. Restored items are not eligible because restore clears `trashed_at_millis`.
 
 No cron deletes tombstones. Establish device acknowledgement and a documented offline-device bound before proposing tombstone cleanup.
 
@@ -62,3 +83,5 @@ After the SQL checkpoint, validate with two signed-in devices:
 5. Confirm non-overlapping field edits merge automatically and overlapping fields require review.
 6. Change language, confirm it syncs, and confirm `System` follows each device independently.
 7. Verify Arabic RTL, notifications, alarm actions, plurals, and the 30-day Trash message.
+8. Upload, replace, delete, and re-open JPEG/PNG/WebP images from both platforms; confirm original-byte hashes match, remote-only images download on demand, and cleanup paths disappear after acknowledgement.
+9. Change the password using the current password, confirm the initiating device signs out, and confirm previously issued sessions are globally revoked before signing in again.

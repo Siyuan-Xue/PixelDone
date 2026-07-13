@@ -23,6 +23,7 @@ internal class TodoSyncCoordinator(
     private val clockProvider: ClockProvider,
     private val settingsStore: SettingsSyncLocalStore? = null,
     private val workScheduler: SyncWorkScheduler = NoOpSyncWorkScheduler,
+    private val attachmentSyncService: TodoAttachmentSyncService? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val autoSyncDebounceMillis: Long = AutoSyncDebounceMillis,
 ) : SyncCoordinator {
@@ -160,25 +161,68 @@ internal class TodoSyncCoordinator(
         cursor = pulled.serverVersion
         localStore.saveSyncCursor(owner, cursor, clockProvider.nowMillis())
 
-        if (localStore.loadPendingMutations(owner).isEmpty()) createMutation(owner)
+        var cleanedImagePaths = attachmentSyncService
+            ?.deleteCleanupPaths(session, pulled.imageCleanupPaths)
+            .orEmpty()
+        attachmentSyncService?.preparePendingUploads(owner, session)
+
+        if (localStore.loadPendingMutations(owner).isEmpty()) {
+            createMutation(owner, cleanedImagePaths)
+            cleanedImagePaths = emptyList()
+        } else if (cleanedImagePaths.isNotEmpty()) {
+            localStore.recordPendingMutation(
+                owner,
+                SyncMutationRecord(
+                    mutationUuid = UUID.randomUUID().toString(),
+                    createdAtMillis = clockProvider.nowMillis(),
+                    cleanedImagePaths = cleanedImagePaths,
+                ),
+            )
+            cleanedImagePaths = emptyList()
+        }
         val conflictKeys = localStore.loadConflicts(owner).mapTo(mutableSetOf()) { it.key }
-        for (queued in localStore.loadPendingMutations(owner)) {
-            val mutation = queued.withoutConflicts(conflictKeys)
-            if (mutation.isEmpty()) {
+        var mutationPass = 0
+        while (mutationPass++ < MaxMutationPasses) {
+            val queuedMutations = localStore.loadPendingMutations(owner)
+            if (queuedMutations.isEmpty()) break
+            for (queued in queuedMutations) {
+                val mutation = queued.withoutConflicts(conflictKeys)
+                if (mutation.isEmpty()) {
+                    localStore.clearPendingMutation(owner, queued.mutationUuid)
+                    continue
+                }
+                val pushed = remoteDataSource.pushMutations(
+                    session,
+                    RemoteMutationBatch(
+                        mutationUuid = mutation.mutationUuid,
+                        snapshot = mutation.snapshot,
+                        settings = mutation.settings,
+                        tombstones = mutation.tombstones,
+                        cleanedImagePaths = mutation.cleanedImagePaths,
+                    ),
+                )
+                applyPush(owner, mutation, pushed)
                 localStore.clearPendingMutation(owner, queued.mutationUuid)
-                continue
+                val newlyCleaned = attachmentSyncService
+                    ?.deleteCleanupPaths(session, pushed.imageCleanupPaths)
+                    .orEmpty()
+                if (newlyCleaned.isNotEmpty()) {
+                    localStore.recordPendingMutation(
+                        owner,
+                        SyncMutationRecord(
+                            mutationUuid = UUID.randomUUID().toString(),
+                            createdAtMillis = clockProvider.nowMillis(),
+                            cleanedImagePaths = newlyCleaned,
+                        ),
+                    )
+                }
+                if (pushed.conflicts.isNotEmpty()) {
+                    pulled = remoteDataSource.pullChanges(session, cursor)
+                    applyRemote(owner, pulled)
+                    cursor = pulled.serverVersion
+                } else cursor = maxOf(cursor, pushed.serverVersion)
+                localStore.saveSyncCursor(owner, cursor, clockProvider.nowMillis())
             }
-            val pushed = remoteDataSource.pushMutations(session, RemoteMutationBatch(
-                mutation.mutationUuid, mutation.snapshot, mutation.settings, mutation.tombstones,
-            ))
-            applyPush(owner, mutation, pushed)
-            localStore.clearPendingMutation(owner, queued.mutationUuid)
-            if (pushed.conflicts.isNotEmpty()) {
-                pulled = remoteDataSource.pullChanges(session, cursor)
-                applyRemote(owner, pulled)
-                cursor = pulled.serverVersion
-            } else cursor = maxOf(cursor, pushed.serverVersion)
-            localStore.saveSyncCursor(owner, cursor, clockProvider.nowMillis())
         }
 
         val now = clockProvider.nowMillis()
@@ -193,8 +237,19 @@ internal class TodoSyncCoordinator(
         val pristine = localStore.loadPristineSnapshot(owner)
         val existing = localStore.loadConflicts(owner).associateBy { it.key }
         val found = mutableListOf<LocalSyncConflictRecord>()
+        val staleLocalImages = linkedSetOf<String>()
         localStore.updateEntitySetFromSync(now) { original ->
-            var state = original.withOwner(owner).applyTombstones(owner, batch.tombstones, now)
+            val owned = original.withOwner(owner)
+            val deletedItemIds = batch.tombstones
+                .filter { it.recordType == SyncRecordTypeItem }
+                .mapTo(mutableSetOf()) { it.localId }
+            val deletedChecklistIds = batch.tombstones
+                .filter { it.recordType == SyncRecordTypeChecklist }
+                .mapTo(mutableSetOf()) { it.localId }
+            owned.items.filter {
+                it.localId in deletedItemIds || it.checklistLocalId in deletedChecklistIds
+            }.mapNotNullTo(staleLocalImages) { it.imageLocalName }
+            var state = owned.applyTombstones(owner, batch.tombstones, now)
             val deleted = state.tombstones.mapTo(mutableSetOf()) { it.recordType + ":" + it.localId }
             batch.checklists.forEach { cloud ->
                 val key = SyncRecordTypeChecklist + ":" + cloud.localId
@@ -218,8 +273,22 @@ internal class TodoSyncCoordinator(
                     } + merged)
                 }
             }
+            batch.attachments.forEach { cloud ->
+                val localIndex = state.items.indexOfFirst {
+                    it.ownerUserId == owner && it.localId == cloud.todoLocalId
+                }
+                if (localIndex >= 0) {
+                    val local = state.items[localIndex]
+                    val merged = mergeAttachment(local, cloud, attachmentSyncService)
+                    if (local.imageLocalName != merged.imageLocalName) {
+                        local.imageLocalName?.let(staleLocalImages::add)
+                    }
+                    state = state.copy(items = state.items.toMutableList().also { it[localIndex] = merged })
+                }
+            }
             state
         }
+        staleLocalImages.forEach { attachmentSyncService?.deleteLocalImage(it) }
         found.forEach { localStore.recordConflict(owner, it) }
         mergeSettings(owner, batch.settings, existing[SyncRecordTypeSettings + ":language"], now)
     }
@@ -240,7 +309,7 @@ internal class TodoSyncCoordinator(
         }
     }
 
-    private suspend fun createMutation(owner: String) {
+    private suspend fun createMutation(owner: String, cleanedImagePaths: List<String> = emptyList()) {
         val now = clockProvider.nowMillis()
         val conflicts = localStore.loadConflicts(owner).mapTo(mutableSetOf()) { it.key }
         val state = localStore.loadEntitySetForSync(now).withOwner(owner)
@@ -251,9 +320,12 @@ internal class TodoSyncCoordinator(
         val settings = settingsStore?.loadSettingsForSync(now)
             ?.takeIf { it.syncState.isDirty() && (SyncRecordTypeSettings + ":language") !in conflicts }
             ?.toRemoteRecord(owner)
-        if (snapshot.checklists.isEmpty() && snapshot.items.isEmpty() && tombstones.isEmpty() && settings == null) return
+        if (
+            snapshot.checklists.isEmpty() && snapshot.items.isEmpty() && snapshot.attachments.isEmpty() &&
+            tombstones.isEmpty() && settings == null && cleanedImagePaths.isEmpty()
+        ) return
         localStore.recordPendingMutation(owner, SyncMutationRecord(
-            UUID.randomUUID().toString(), snapshot, settings, tombstones, now,
+            UUID.randomUUID().toString(), snapshot, settings, tombstones, now, cleanedImagePaths,
         ))
     }
 
@@ -370,6 +442,7 @@ internal class TodoSyncCoordinator(
     companion object {
         private const val AutoSyncDebounceMillis = 700L
         private const val MaxErrorLength = 280
+        private const val MaxMutationPasses = 4
         private const val LogTag = "PixelDoneSync"
     }
 }
@@ -449,11 +522,64 @@ private fun mergeItem(
         imageLocalName = local.imageLocalName,
         imageRemotePath = local.imageRemotePath,
         imageSyncState = local.imageSyncState,
+        imageAttachmentId = local.imageAttachmentId,
+        imageContentSha256 = local.imageContentSha256,
+        imageContentType = local.imageContentType,
+        imageByteSize = local.imageByteSize,
+        imageUpdatedAtMillis = local.imageUpdatedAtMillis,
+        imageRemoteVersion = local.imageRemoteVersion,
+        imageLastSyncError = local.imageLastSyncError,
         trashedFromChecklistId = if ("trash" in localFields) local.trashedFromChecklistId else merged.trashedFromChecklistId,
         trashedFromChecklistName = if ("trash" in localFields) local.trashedFromChecklistName else merged.trashedFromChecklistName,
         trashedAtMillis = if ("trash" in localFields) local.trashedAtMillis else merged.trashedAtMillis,
         updatedAtMillis = maxOf(local.updatedAtMillis, cloud.updatedAtMillis),
         lastSyncedAtMillis = local.lastSyncedAtMillis,
+    )
+}
+
+private fun mergeAttachment(
+    local: TodoItemEntity,
+    cloud: RemoteTodoAttachmentRecord,
+    service: TodoAttachmentSyncService?,
+): TodoItemEntity {
+    val localAttachmentDirty = local.imageSyncState in setOf(
+        TodoImageSyncState.LocalOnly,
+        TodoImageSyncState.PendingUpload,
+        TodoImageSyncState.MetadataPending,
+        TodoImageSyncState.PendingDelete,
+        TodoImageSyncState.Error,
+    )
+    val localUpdated = local.imageUpdatedAtMillis ?: Long.MIN_VALUE
+    if (localAttachmentDirty && localUpdated > cloud.updatedAtMillis) {
+        return local.copy(imageRemoteVersion = cloud.remoteVersion)
+    }
+    if (cloud.deletedAtMillis != null) {
+        return local.copy(
+            imageLocalName = null,
+            imageRemotePath = null,
+            imageSyncState = TodoImageSyncState.LocalOnly,
+            imageAttachmentId = null,
+            imageContentSha256 = null,
+            imageContentType = null,
+            imageByteSize = null,
+            imageUpdatedAtMillis = cloud.updatedAtMillis,
+            imageRemoteVersion = cloud.remoteVersion,
+            imageLastSyncError = null,
+        )
+    }
+    val localMatches = service?.localFileMatches(local.imageLocalName, cloud.contentSha256) == true
+    val cacheName = if (localMatches) local.imageLocalName else service?.cacheFileName(cloud)
+    return local.copy(
+        imageLocalName = cacheName,
+        imageRemotePath = cloud.objectPath,
+        imageSyncState = if (localMatches) TodoImageSyncState.Synced else TodoImageSyncState.RemoteOnly,
+        imageAttachmentId = cloud.attachmentId,
+        imageContentSha256 = cloud.contentSha256,
+        imageContentType = cloud.contentType,
+        imageByteSize = cloud.byteSize,
+        imageUpdatedAtMillis = cloud.updatedAtMillis,
+        imageRemoteVersion = cloud.remoteVersion,
+        imageLastSyncError = null,
     )
 }
 
@@ -488,9 +614,14 @@ private fun itemConflict(
 private fun TodoEntitySet.applyTombstones(owner: String, cloud: List<RemoteTombstoneRecord>, now: Long): TodoEntitySet {
     if (cloud.isEmpty()) return this
     val keys = cloud.mapTo(mutableSetOf()) { it.recordType + ":" + it.localId }
+    val deletedChecklistIds = cloud
+        .filter { it.recordType == SyncRecordTypeChecklist }
+        .mapTo(mutableSetOf()) { it.localId }
     return copy(
         checklists = checklists.filterNot { (SyncRecordTypeChecklist + ":" + it.localId) in keys },
-        items = items.filterNot { (SyncRecordTypeItem + ":" + it.localId) in keys },
+        items = items.filterNot {
+            (SyncRecordTypeItem + ":" + it.localId) in keys || it.checklistLocalId in deletedChecklistIds
+        },
         tombstones = tombstones.filterNot { (it.recordType + ":" + it.localId) in keys } + cloud.map {
             SyncTombstoneEntity(
                 owner, it.recordType, it.localId, it.deletedAtMillis, it.remoteVersion,
@@ -516,6 +647,11 @@ private fun TodoEntitySet.dirtySnapshot(owner: String, conflicts: Set<String>) =
     items = items.filter {
         it.ownerUserId == owner && it.syncState.isDirty() && (SyncRecordTypeItem + ":" + it.localId) !in conflicts
     }.map { it.toRemote(owner) },
+    attachments = items.filter {
+        it.ownerUserId == owner &&
+            it.imageSyncState in setOf(TodoImageSyncState.MetadataPending, TodoImageSyncState.PendingDelete) &&
+            (SyncRecordTypeAttachment + ":" + it.localId) !in conflicts
+    }.mapNotNull { it.toRemoteAttachment(owner) },
 )
 
 private fun TodoEntitySet.buildPristine(owner: String, previous: RemoteTodoSnapshot): RemoteTodoSnapshot {
@@ -535,6 +671,15 @@ private fun TodoEntitySet.buildPristine(owner: String, previous: RemoteTodoSnaps
                 (SyncRecordTypeItem + ":" + it.localId) !in deleted
         } + itemMap.values.filter { it.syncState == SyncRecordState.SYNCED.name }.map { it.toRemote(owner) })
             .distinctBy { it.localId },
+        attachments = (previous.attachments.filter { remote ->
+            val local = itemMap[remote.todoLocalId]
+            local != null && local.imageSyncState != TodoImageSyncState.Synced &&
+                (SyncRecordTypeItem + ":" + remote.todoLocalId) !in deleted
+        } + itemMap.values.mapNotNull { local ->
+            local.takeIf {
+                it.imageSyncState in setOf(TodoImageSyncState.Synced, TodoImageSyncState.RemoteOnly)
+            }?.toRemoteAttachment(owner)
+        }).distinctBy { it.todoLocalId },
     )
 }
 
@@ -548,6 +693,8 @@ private fun TodoEntitySet.acceptMetadata(
     val sourceItems = source.snapshot.items.associateBy { it.localId }
     val acceptedLists = result.accepted.checklists.associateBy { it.localId }
     val acceptedItems = result.accepted.items.associateBy { it.localId }
+    val sourceAttachments = source.snapshot.attachments.associateBy { it.todoLocalId }
+    val acceptedAttachments = result.accepted.attachments.associateBy { it.todoLocalId }
     val acceptedDeleted = result.tombstones.associateBy { it.recordType + ":" + it.localId }
     return copy(
         checklists = checklists.map { local ->
@@ -567,7 +714,7 @@ private fun TodoEntitySet.acceptMetadata(
         items = items.map { local ->
             val sent = sourceItems[local.localId]
             val accepted = acceptedItems[local.localId]
-            if (local.ownerUserId == owner && sent != null && accepted != null) {
+            val itemWithMetadata = if (local.ownerUserId == owner && sent != null && accepted != null) {
                 val unchanged = local.toRemote(owner).samePayload(sent)
                 local.copy(
                     remoteId = accepted.remoteId ?: local.remoteId,
@@ -577,6 +724,36 @@ private fun TodoEntitySet.acceptMetadata(
                     lastSyncError = null,
                 )
             } else local
+            val sentAttachment = sourceAttachments[local.localId]
+            val acceptedAttachment = acceptedAttachments[local.localId]
+            if (local.ownerUserId == owner && sentAttachment != null && acceptedAttachment != null) {
+                if (acceptedAttachment.deletedAtMillis != null) {
+                    itemWithMetadata.copy(
+                        imageLocalName = null,
+                        imageRemotePath = null,
+                        imageSyncState = TodoImageSyncState.LocalOnly,
+                        imageAttachmentId = null,
+                        imageContentSha256 = null,
+                        imageContentType = null,
+                        imageByteSize = null,
+                        imageUpdatedAtMillis = acceptedAttachment.updatedAtMillis,
+                        imageRemoteVersion = acceptedAttachment.remoteVersion,
+                        imageLastSyncError = null,
+                    )
+                } else {
+                    itemWithMetadata.copy(
+                        imageRemotePath = acceptedAttachment.objectPath,
+                        imageSyncState = TodoImageSyncState.Synced,
+                        imageAttachmentId = acceptedAttachment.attachmentId,
+                        imageContentSha256 = acceptedAttachment.contentSha256,
+                        imageContentType = acceptedAttachment.contentType,
+                        imageByteSize = acceptedAttachment.byteSize,
+                        imageUpdatedAtMillis = acceptedAttachment.updatedAtMillis,
+                        imageRemoteVersion = acceptedAttachment.remoteVersion,
+                        imageLastSyncError = null,
+                    )
+                }
+            } else itemWithMetadata
         },
         tombstones = tombstones.map { local ->
             val accepted = acceptedDeleted[local.recordType + ":" + local.localId]
@@ -594,13 +771,16 @@ private fun SyncMutationRecord.withoutConflicts(conflicts: Set<String>) = copy(
     snapshot = RemoteTodoSnapshot(
         checklists = snapshot.checklists.filter { (SyncRecordTypeChecklist + ":" + it.localId) !in conflicts },
         items = snapshot.items.filter { (SyncRecordTypeItem + ":" + it.localId) !in conflicts },
+        attachments = snapshot.attachments.filter {
+            (SyncRecordTypeAttachment + ":" + it.todoLocalId) !in conflicts
+        },
     ),
     settings = settings.takeIf { (SyncRecordTypeSettings + ":language") !in conflicts },
     tombstones = tombstones.filter { (it.recordType + ":" + it.localId) !in conflicts },
 )
 
 private fun SyncMutationRecord.isEmpty() = snapshot.checklists.isEmpty() && snapshot.items.isEmpty() &&
-    settings == null && tombstones.isEmpty()
+    snapshot.attachments.isEmpty() && settings == null && tombstones.isEmpty() && cleanedImagePaths.isEmpty()
 
 private fun TodoChecklistEntity.toRemote(owner: String) = RemoteChecklistRecord(
     localId, remoteId, owner, sortIndex, name, createdAtMillis, updatedAtMillis, remoteVersion,
@@ -628,6 +808,30 @@ private fun TodoItemEntity.toRemote(owner: String) = RemoteTodoItemRecord(
     remoteVersion = remoteVersion,
 )
 
+private fun TodoItemEntity.toRemoteAttachment(owner: String): RemoteTodoAttachmentRecord? {
+    val updatedAt = imageUpdatedAtMillis ?: updatedAtMillis
+    if (imageSyncState == TodoImageSyncState.PendingDelete) {
+        return RemoteTodoAttachmentRecord(
+            ownerUserId = owner,
+            todoLocalId = localId,
+            updatedAtMillis = updatedAt,
+            deletedAtMillis = updatedAt,
+            remoteVersion = imageRemoteVersion,
+        )
+    }
+    return RemoteTodoAttachmentRecord(
+        ownerUserId = owner,
+        todoLocalId = localId,
+        attachmentId = imageAttachmentId ?: return null,
+        objectPath = imageRemotePath ?: return null,
+        contentSha256 = imageContentSha256 ?: return null,
+        contentType = imageContentType ?: return null,
+        byteSize = imageByteSize ?: return null,
+        updatedAtMillis = updatedAt,
+        remoteVersion = imageRemoteVersion,
+    )
+}
+
 private fun SyncTombstoneEntity.toRemote() = RemoteTombstoneRecord(
     ownerUserId, recordType, localId, deletedAtMillis, remoteVersion,
 )
@@ -648,6 +852,13 @@ private fun TodoItemEntity.withLocalImageFrom(local: TodoItemEntity?) = copy(
     imageLocalName = local?.imageLocalName,
     imageRemotePath = local?.imageRemotePath,
     imageSyncState = local?.imageSyncState ?: SyncRecordState.LOCAL_ONLY.name,
+    imageAttachmentId = local?.imageAttachmentId,
+    imageContentSha256 = local?.imageContentSha256,
+    imageContentType = local?.imageContentType,
+    imageByteSize = local?.imageByteSize,
+    imageUpdatedAtMillis = local?.imageUpdatedAtMillis,
+    imageRemoteVersion = local?.imageRemoteVersion,
+    imageLastSyncError = local?.imageLastSyncError,
 )
 
 private fun TodoChecklistEntity.fieldsFrom(base: RemoteChecklistRecord) = buildSet {

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 interface AuthSessionRepository {
     val session: StateFlow<AuthSession>
@@ -17,10 +18,12 @@ interface AuthSessionRepository {
     suspend fun signUp(email: String, password: String): AuthSession
     suspend fun signOut()
     suspend fun refreshSessionIfNeeded(nowMillis: Long, force: Boolean = false): AuthSession
-    suspend fun resetPassword(email: String) {
-        throw SyncConfigurationException("Password reset is not configured.")
+    suspend fun changePassword(currentPassword: String, newPassword: String): PasswordChangeResult {
+        throw SyncConfigurationException("Password change is not configured.")
     }
 }
+
+data class PasswordChangeResult(val globalLogoutCompleted: Boolean)
 
 class LocalOnlyAuthSessionRepository : AuthSessionRepository {
     private val localOnlySession = MutableStateFlow(AuthSession())
@@ -107,6 +110,7 @@ class SyncSchemaMismatchException(message: String) : Exception(message)
 data class RemoteTodoSnapshot(
     val checklists: List<RemoteChecklistRecord> = emptyList(),
     val items: List<RemoteTodoItemRecord> = emptyList(),
+    val attachments: List<RemoteTodoAttachmentRecord> = emptyList(),
 )
 
 @Serializable
@@ -115,8 +119,10 @@ data class RemoteChangeBatch(
     @kotlinx.serialization.SerialName("server_version") val serverVersion: Long,
     val checklists: List<RemoteChecklistRecord> = emptyList(),
     val items: List<RemoteTodoItemRecord> = emptyList(),
+    val attachments: List<RemoteTodoAttachmentRecord> = emptyList(),
     val settings: RemoteUserSettingsRecord? = null,
     val tombstones: List<RemoteTombstoneRecord> = emptyList(),
+    @kotlinx.serialization.SerialName("image_cleanup_paths") val imageCleanupPaths: List<String> = emptyList(),
 )
 
 @Serializable
@@ -125,6 +131,7 @@ data class RemoteMutationBatch(
     val snapshot: RemoteTodoSnapshot = RemoteTodoSnapshot(),
     val settings: RemoteUserSettingsRecord? = null,
     val tombstones: List<RemoteTombstoneRecord> = emptyList(),
+    val cleanedImagePaths: List<String> = emptyList(),
 )
 
 @Serializable
@@ -135,6 +142,7 @@ data class RemotePushResult(
     val tombstones: List<RemoteTombstoneRecord> = emptyList(),
     val conflicts: List<RemoteConflictRecord> = emptyList(),
     @kotlinx.serialization.SerialName("server_version") val serverVersion: Long,
+    @kotlinx.serialization.SerialName("image_cleanup_paths") val imageCleanupPaths: List<String> = emptyList(),
 )
 
 @Serializable
@@ -144,6 +152,7 @@ data class SyncMutationRecord(
     val settings: RemoteUserSettingsRecord? = null,
     val tombstones: List<RemoteTombstoneRecord> = emptyList(),
     val createdAtMillis: Long,
+    val cleanedImagePaths: List<String> = emptyList(),
     val attempts: Int = 0,
     val lastError: String? = null,
 )
@@ -202,12 +211,26 @@ data class RemoteTodoItemRecord(
     @kotlinx.serialization.SerialName("created_at_millis") val createdAtMillis: Long,
     @kotlinx.serialization.SerialName("updated_at_millis") val updatedAtMillis: Long,
     @kotlinx.serialization.SerialName("reminder_repeat") val reminderRepeat: String,
-    @kotlinx.serialization.SerialName("image_local_name") val imageLocalName: String? = null,
-    @kotlinx.serialization.SerialName("image_remote_path") val imageRemotePath: String? = null,
-    @kotlinx.serialization.SerialName("image_sync_state") val imageSyncState: String,
+    @Transient val imageLocalName: String? = null,
+    @Transient val imageRemotePath: String? = null,
+    @Transient val imageSyncState: String = "LOCAL_ONLY",
     @kotlinx.serialization.SerialName("trashed_from_checklist_id") val trashedFromChecklistId: String? = null,
     @kotlinx.serialization.SerialName("trashed_from_checklist_name") val trashedFromChecklistName: String? = null,
     @kotlinx.serialization.SerialName("trashed_at_millis") val trashedAtMillis: Long? = null,
+    @kotlinx.serialization.SerialName("remote_version") val remoteVersion: Long? = null,
+)
+
+@Serializable
+data class RemoteTodoAttachmentRecord(
+    @kotlinx.serialization.SerialName("owner_user_id") val ownerUserId: String? = null,
+    @kotlinx.serialization.SerialName("todo_local_id") val todoLocalId: String,
+    @kotlinx.serialization.SerialName("attachment_id") val attachmentId: String? = null,
+    @kotlinx.serialization.SerialName("object_path") val objectPath: String? = null,
+    @kotlinx.serialization.SerialName("content_sha256") val contentSha256: String? = null,
+    @kotlinx.serialization.SerialName("content_type") val contentType: String? = null,
+    @kotlinx.serialization.SerialName("byte_size") val byteSize: Long? = null,
+    @kotlinx.serialization.SerialName("updated_at_millis") val updatedAtMillis: Long,
+    @kotlinx.serialization.SerialName("deleted_at_millis") val deletedAtMillis: Long? = null,
     @kotlinx.serialization.SerialName("remote_version") val remoteVersion: Long? = null,
 )
 
@@ -240,4 +263,4 @@ interface RemoteTodoDataSource {
     suspend fun pushMutations(session: AuthSession, batch: RemoteMutationBatch): RemotePushResult
 }
 
-const val ExpectedRemoteSchemaVersion = "3.1"
+const val ExpectedRemoteSchemaVersion = "3.2"

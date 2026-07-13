@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SyncMutationEntity::class,
         SyncTombstoneEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class PixelDoneDatabase : RoomDatabase() {
@@ -207,6 +207,25 @@ internal object PixelDoneMigrations {
             db.execSQL("DROP TABLE todo_items")
             db.execSQL("ALTER TABLE todo_items_v5 RENAME TO todo_items")
             db.execSQL("CREATE INDEX IF NOT EXISTS index_todo_items_checklistLocalId ON todo_items(checklistLocalId)")
+        }
+    }
+
+    val Migration5To6: Migration = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN imageAttachmentId TEXT")
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN imageContentSha256 TEXT")
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN imageContentType TEXT")
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN imageByteSize INTEGER")
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN imageUpdatedAtMillis INTEGER")
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN imageRemoteVersion INTEGER")
+            db.execSQL("ALTER TABLE todo_items ADD COLUMN imageLastSyncError TEXT")
+            db.execSQL(
+                """
+                UPDATE todo_items
+                SET imageSyncState = 'PENDING_UPLOAD', imageUpdatedAtMillis = updatedAtMillis
+                WHERE imageLocalName IS NOT NULL
+                """.trimIndent(),
+            )
         }
     }
 }

@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * PixelDone 3.1 uses only the two transaction RPCs. Direct table writes are
+ * PixelDone 3.2 uses only the two transaction RPCs. Direct table writes are
  * intentionally unsupported so one cursor always represents one committed snapshot.
  */
 internal class SupabaseRemoteTodoDataSource(
@@ -22,7 +22,10 @@ internal class SupabaseRemoteTodoDataSource(
         val token = requireNotNull(session.accessToken) { "Signed-in session requires an access token." }
         val body = json.encodeToString(
             RpcPullRequest.serializer(),
-            RpcPullRequest(sinceVersion = sinceVersion ?: 0L),
+            RpcPullRequest(
+                sinceVersion = sinceVersion ?: 0L,
+                clientSchemaVersion = ExpectedRemoteSchemaVersion,
+            ),
         )
         val response = rpcRequest(
             path = "/rest/v1/rpc/pixeldone_pull_changes",
@@ -43,8 +46,11 @@ internal class SupabaseRemoteTodoDataSource(
                 mutationUuid = batch.mutationUuid,
                 checklists = batch.snapshot.checklists,
                 items = batch.snapshot.items,
+                attachments = batch.snapshot.attachments,
                 settings = batch.settings,
                 tombstones = batch.tombstones,
+                cleanedImagePaths = batch.cleanedImagePaths,
+                clientSchemaVersion = ExpectedRemoteSchemaVersion,
             ),
         )
         val response = rpcRequest(
@@ -65,7 +71,7 @@ internal class SupabaseRemoteTodoDataSource(
     } catch (error: SyncRemoteException) {
         if (error.statusCode == 404 || error.statusCode == 400) {
             throw SyncSchemaMismatchException(
-                "PixelDone Cloud schema $ExpectedRemoteSchemaVersion is required. Run the 3.1 migration SQL.",
+                "PixelDone Cloud schema $ExpectedRemoteSchemaVersion is required. Run the 3.2 migration SQL.",
             )
         }
         throw error
@@ -91,13 +97,17 @@ internal class SupabaseRemoteTodoDataSource(
 @Serializable
 private data class RpcPullRequest(
     @SerialName("p_since_version") val sinceVersion: Long,
+    @SerialName("p_client_schema_version") val clientSchemaVersion: String,
 )
 
 @Serializable
 private data class RpcMutationRequest(
     @SerialName("p_mutation_uuid") val mutationUuid: String,
+    @SerialName("p_client_schema_version") val clientSchemaVersion: String,
     @SerialName("p_checklists") val checklists: List<RemoteChecklistRecord>,
     @SerialName("p_items") val items: List<RemoteTodoItemRecord>,
+    @SerialName("p_attachments") val attachments: List<RemoteTodoAttachmentRecord>,
     @SerialName("p_settings") val settings: RemoteUserSettingsRecord?,
     @SerialName("p_tombstones") val tombstones: List<RemoteTombstoneRecord>,
+    @SerialName("p_cleaned_image_paths") val cleanedImagePaths: List<String>,
 )

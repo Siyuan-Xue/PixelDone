@@ -54,6 +54,13 @@ data class TodoItemEntity(
     val lastSyncedAtMillis: Long? = null,
     val remoteVersion: Long? = null,
     val lastSyncError: String? = null,
+    val imageAttachmentId: String? = null,
+    val imageContentSha256: String? = null,
+    val imageContentType: String? = null,
+    val imageByteSize: Long? = null,
+    val imageUpdatedAtMillis: Long? = null,
+    val imageRemoteVersion: Long? = null,
+    val imageLastSyncError: String? = null,
 )
 
 @Entity(
@@ -123,4 +130,15 @@ data class SyncMutationEntity(
 const val TodoStateMetadataId = "todo_state"
 const val SyncRecordTypeChecklist = "checklist"
 const val SyncRecordTypeItem = "item"
+const val SyncRecordTypeAttachment = "attachment"
 const val SyncRecordTypeSettings = "settings"
+
+internal object TodoImageSyncState {
+    const val LocalOnly = "LOCAL_ONLY"
+    const val PendingUpload = "PENDING_UPLOAD"
+    const val MetadataPending = "NOT_SYNCED"
+    const val Synced = "SYNCED"
+    const val RemoteOnly = "REMOTE_ONLY"
+    const val PendingDelete = "PENDING_DELETE"
+    const val Error = "ERROR"
+}

@@ -73,7 +73,13 @@ internal class SupabaseRealtimeSyncController(
         }
         client.realtime.setAuth(token)
         val channel = client.channel("pixeldone-$userId")
-        val tables = listOf("todo_checklists", "todo_items", "user_settings", "sync_tombstones")
+        val tables = listOf(
+            "todo_checklists",
+            "todo_items",
+            "todo_attachments",
+            "user_settings",
+            "sync_tombstones",
+        )
         val invalidations = tables.flatMap { table ->
             listOf(
                 channel.postgresChangeFlow<PostgresAction.Insert>("public") {

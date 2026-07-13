@@ -41,7 +41,7 @@ class TodoEntityMapperTest {
         assertEquals(withTrash.selectedListId, entities.metadata.selectedListLocalId)
         assertEquals(SyncRecordState.LOCAL_ONLY.name, entities.checklists.first().syncState)
         assertEquals(SyncRecordState.LOCAL_ONLY.name, trashItem.syncState)
-        assertEquals(SyncRecordState.LOCAL_ONLY.name, trashItem.imageSyncState)
+        assertEquals("PENDING_UPLOAD", trashItem.imageSyncState)
         assertNull(trashItem.remoteId)
         assertNull(trashItem.ownerUserId)
         assertNull(trashItem.lastSyncedAtMillis)

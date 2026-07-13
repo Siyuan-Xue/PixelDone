@@ -17,6 +17,8 @@ import com.milesxue.pixeldone.data.sync.SupabaseRemoteTodoDataSource
 import com.milesxue.pixeldone.data.sync.SupabaseRealtimeSyncController
 import com.milesxue.pixeldone.data.sync.SyncCoordinator
 import com.milesxue.pixeldone.data.sync.TodoSyncCoordinator
+import com.milesxue.pixeldone.data.sync.TodoAttachmentSyncService
+import com.milesxue.pixeldone.data.sync.SupabaseTodoAttachmentRemoteStore
 import com.milesxue.pixeldone.data.sync.WorkManagerSyncScheduler
 import com.milesxue.pixeldone.data.todo.TodoPreferences
 import com.milesxue.pixeldone.data.todo.TodoRepository
@@ -50,6 +52,7 @@ internal class PixelDoneAppContainer(context: Context) {
     )
     private val syncWorkScheduler = WorkManagerSyncScheduler(appContext)
     private val supabaseHttpClient = SupabaseHttpClient(supabaseConfig)
+    val todoImageStore: TodoImageStore = TodoImageStore(appContext)
     val authSessionRepository: AuthSessionRepository = if (supabaseConfig.isConfigured) {
         SupabaseAuthSessionRepository(
             config = supabaseConfig,
@@ -59,6 +62,16 @@ internal class PixelDoneAppContainer(context: Context) {
     } else {
         LocalOnlyAuthSessionRepository()
     }
+    val todoAttachmentSyncService: TodoAttachmentSyncService? = if (supabaseConfig.isConfigured) {
+        TodoAttachmentSyncService(
+            authRepository = authSessionRepository,
+            localStore = todoStateStore,
+            imageStore = todoImageStore,
+            remoteStore = SupabaseTodoAttachmentRemoteStore(supabaseConfig),
+        )
+    } else {
+        null
+    }
     val syncCoordinator: SyncCoordinator = if (supabaseConfig.isConfigured) {
         TodoSyncCoordinator(
             authSessionRepository = authSessionRepository,
@@ -67,6 +80,7 @@ internal class PixelDoneAppContainer(context: Context) {
             clockProvider = clockProvider,
             settingsStore = settingsStore,
             workScheduler = syncWorkScheduler,
+            attachmentSyncService = todoAttachmentSyncService,
         )
     } else {
         LocalOnlySyncCoordinator()
@@ -81,7 +95,6 @@ internal class PixelDoneAppContainer(context: Context) {
     } else {
         null
     }
-    val todoImageStore: TodoImageStore = TodoImageStore(appContext)
     val appUpdateDownloader: AppUpdateDownloader = AppUpdateDownloader(appContext)
     val updateService: UpdateService = UpdateService(
         downloader = appUpdateDownloader,

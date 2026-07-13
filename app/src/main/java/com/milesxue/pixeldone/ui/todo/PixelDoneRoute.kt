@@ -375,6 +375,7 @@ internal fun PixelDoneApp() {
     val appContainer = remember(context) { context.pixelDoneAppContainer() }
     val todoRepository = remember(appContainer) { appContainer.todoRepository }
     val imageStore = remember(appContainer) { appContainer.todoImageStore }
+    val attachmentSyncService = remember(appContainer) { appContainer.todoAttachmentSyncService }
     val updateService = remember(appContainer) { appContainer.updateService }
     val reminderScheduler = remember(appContainer) { appContainer.reminderScheduler }
     val activeXHighAlarmStore = remember(appContainer) { appContainer.activeXHighAlarmStore }
@@ -1270,8 +1271,8 @@ internal fun PixelDoneApp() {
         viewModel.onAction(PixelDoneAction.SignUp)
     }
 
-    fun resetCloudPassword() {
-        viewModel.onAction(PixelDoneAction.ResetPassword)
+    fun changeCloudPassword(currentPassword: String, newPassword: String, confirmation: String) {
+        viewModel.onAction(PixelDoneAction.ChangePassword(currentPassword, newPassword, confirmation))
     }
 
     fun signOutFromCloud() {
@@ -1628,7 +1629,10 @@ internal fun PixelDoneApp() {
                     if (item.imageFileName == null) {
                         openTodoImagePicker(item.id)
                     } else {
-                        imagePreviewTodoId = item.id
+                        updateScope.launch {
+                            attachmentSyncService?.ensureCached(item.id)
+                            imagePreviewTodoId = item.id
+                        }
                     }
                 }
             },
@@ -1693,7 +1697,8 @@ internal fun PixelDoneApp() {
             onAuthModeChange = ::setCloudAuthMode,
             onSignIn = ::signInToCloud,
             onSignUp = ::signUpToCloud,
-            onResetPassword = ::resetCloudPassword,
+            passwordChangeState = uiState.passwordChangeState,
+            onChangePassword = ::changeCloudPassword,
             onSignOut = ::signOutFromCloud,
             onSyncNow = ::syncCloudNow,
             onOpenConflictDialog = ::openConflictDialog,
@@ -1840,12 +1845,13 @@ private fun PixelDoneScreen(
     syncRunState: SyncRunState = SyncRunState(),
     authSession: AuthSession,
     authInput: AuthInputState,
+    passwordChangeState: PasswordChangeState,
     onAuthEmailChange: (String) -> Unit,
     onAuthPasswordChange: (String) -> Unit,
     onAuthModeChange: (CloudAuthMode) -> Unit,
     onSignIn: () -> Unit,
     onSignUp: () -> Unit,
-    onResetPassword: () -> Unit = {},
+    onChangePassword: (String, String, String) -> Unit,
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     onOpenConflictDialog: () -> Unit = {},
@@ -1971,12 +1977,13 @@ private fun PixelDoneScreen(
                 syncRunState = syncRunState,
                 authSession = authSession,
                 authInput = authInput,
+                passwordChangeState = passwordChangeState,
                 onAuthEmailChange = onAuthEmailChange,
                 onAuthPasswordChange = onAuthPasswordChange,
                 onAuthModeChange = onAuthModeChange,
                 onSignIn = onSignIn,
                 onSignUp = onSignUp,
-                onResetPassword = onResetPassword,
+                onChangePassword = onChangePassword,
                 onSignOut = onSignOut,
                 onSyncNow = onSyncNow,
                 onOpenConflictDialog = onOpenConflictDialog,
@@ -2299,12 +2306,13 @@ private fun TaskWorkspacePanel(
     syncRunState: SyncRunState = SyncRunState(),
     authSession: AuthSession,
     authInput: AuthInputState,
+    passwordChangeState: PasswordChangeState,
     onAuthEmailChange: (String) -> Unit,
     onAuthPasswordChange: (String) -> Unit,
     onAuthModeChange: (CloudAuthMode) -> Unit,
     onSignIn: () -> Unit,
     onSignUp: () -> Unit,
-    onResetPassword: () -> Unit = {},
+    onChangePassword: (String, String, String) -> Unit,
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     onOpenConflictDialog: () -> Unit = {},
@@ -2336,10 +2344,12 @@ private fun TaskWorkspacePanel(
                 syncRunState = syncRunState,
                 authSession = authSession,
                 authInput = authInput,
+                passwordChangeState = passwordChangeState,
                 onOpenCloudSignIn = onOpenCloudSignIn,
                 onSignOut = onSignOut,
                 onSyncNow = onSyncNow,
                 onOpenConflictDialog = onOpenConflictDialog,
+                onChangePassword = onChangePassword,
                 updateUiState = updateUiState,
                 onUpdateClick = onUpdateClick,
                 dockConfig = dockConfig,
@@ -2431,7 +2441,6 @@ private fun TaskWorkspacePanel(
                 onAuthModeChange = onAuthModeChange,
                 onSignIn = onSignIn,
                 onSignUp = onSignUp,
-                onResetPassword = onResetPassword,
                 onCancelAuth = onCancelCloudSignIn,
                 compactForKeyboard = compactForKeyboard,
             )
@@ -2453,7 +2462,9 @@ private fun SettingsPanel(
     syncRunState: SyncRunState = SyncRunState(),
     authSession: AuthSession,
     authInput: AuthInputState,
+    passwordChangeState: PasswordChangeState,
     onOpenCloudSignIn: () -> Unit,
+    onChangePassword: (String, String, String) -> Unit,
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     onOpenConflictDialog: () -> Unit = {},
@@ -2496,6 +2507,7 @@ private fun SettingsPanel(
                 SettingsCloudPanel(
                     authSession = authSession,
                     authInput = authInput,
+                    passwordChangeState = passwordChangeState,
                     syncStatusText = syncStatusText,
                     syncStatus = syncStatus,
                     syncRunState = syncRunState,
@@ -2503,6 +2515,7 @@ private fun SettingsPanel(
                     onSignOut = onSignOut,
                     onSyncNow = onSyncNow,
                     onOpenConflictDialog = onOpenConflictDialog,
+                    onChangePassword = onChangePassword,
                 )
             }
             SettingsSection(title = stringResource(R.string.settings_display)) {
@@ -2609,6 +2622,7 @@ private fun SettingsPanel(
 private fun SettingsCloudPanel(
     authSession: AuthSession,
     authInput: AuthInputState,
+    passwordChangeState: PasswordChangeState,
     syncStatusText: String,
     syncStatus: SyncCoordinatorStatus,
     syncRunState: SyncRunState = SyncRunState(),
@@ -2616,9 +2630,11 @@ private fun SettingsCloudPanel(
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     onOpenConflictDialog: () -> Unit = {},
+    onChangePassword: (String, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
+    var passwordEditorVisible by remember { mutableStateOf(false) }
     val accountLabel = when {
         !authSession.cloudAvailable -> stringResource(R.string.needs_setup)
         authSession.signedIn -> authSession.userEmail ?: authSession.userId ?: stringResource(R.string.signed_in)
@@ -2711,6 +2727,19 @@ private fun SettingsCloudPanel(
                     )
                 }
             }
+            if (authSession.signedIn) {
+                SettingsTextAction(
+                    text = stringResource(R.string.change_password),
+                    onClick = { passwordEditorVisible = !passwordEditorVisible },
+                    enabled = !passwordChangeState.busy,
+                )
+                if (passwordEditorVisible) {
+                    PasswordChangeEditor(
+                        state = passwordChangeState,
+                        onSubmit = onChangePassword,
+                    )
+                }
+            }
         }
 
         if (authSession.signedIn) authInput.error?.let { error ->
@@ -2720,6 +2749,71 @@ private fun SettingsCloudPanel(
                 color = colors.error,
             )
         }
+        passwordChangeState.message?.let { message ->
+            Text(
+                text = localizedAuthText(message),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.success,
+            )
+        }
+        passwordChangeState.error?.let { error ->
+            Text(
+                text = localizedAuthText(error),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.error,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PasswordChangeEditor(
+    state: PasswordChangeState,
+    onSubmit: (String, String, String) -> Unit,
+) {
+    val colors = PixelDoneColors.current
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    LaunchedEffect(state.message) {
+        if (state.message != null) {
+            currentPassword = ""
+            newPassword = ""
+            confirmation = ""
+        }
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.borderWeak, RectangleShape)
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf(
+            Triple(currentPassword, stringResource(R.string.current_password)) { value: String -> currentPassword = value },
+            Triple(newPassword, stringResource(R.string.new_password)) { value: String -> newPassword = value },
+            Triple(confirmation, stringResource(R.string.confirm_new_password)) { value: String -> confirmation = value },
+        ).forEach { (value, label, update) ->
+            OutlinedTextField(
+                value = value,
+                onValueChange = update,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                enabled = !state.busy,
+                shape = RectangleShape,
+                label = { Text(label) },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                colors = settingsTextFieldColors(colors),
+            )
+        }
+        PixelButton(
+            text = if (state.busy) stringResource(R.string.changing_password) else stringResource(R.string.change_password),
+            onClick = { onSubmit(currentPassword, newPassword, confirmation) },
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+            primary = true,
+        )
     }
 }
 
@@ -3601,7 +3695,6 @@ private fun CloudAuthEditorPanel(
     onAuthModeChange: (CloudAuthMode) -> Unit,
     onSignIn: () -> Unit,
     onSignUp: () -> Unit,
-    onResetPassword: () -> Unit = {},
     onCancelAuth: () -> Unit,
     compactForKeyboard: Boolean,
 ) {
@@ -3706,15 +3799,6 @@ private fun CloudAuthEditorPanel(
                     text = localizedAuthText(error),
                     style = MaterialTheme.typography.labelSmall,
                     color = colors.error,
-                )
-            }
-            if (authInput.mode == CloudAuthMode.SIGN_IN) {
-                Spacer(modifier = Modifier.height(6.dp))
-                SettingsTextAction(
-                    text = stringResource(R.string.reset),
-                    onClick = onResetPassword,
-                    enabled = !authInput.busy,
-                    modifier = Modifier.width(72.dp),
                 )
             }
             Spacer(modifier = Modifier.height(verticalGap))
@@ -4752,8 +4836,13 @@ private fun localizedAuthText(text: String): String = when (text) {
     "Signed out." -> stringResource(R.string.auth_signed_out)
     "Sign out failed." -> stringResource(R.string.auth_sign_out_failed)
     "Email is required." -> stringResource(R.string.auth_email_required)
-    "Reset email sent." -> stringResource(R.string.auth_reset_sent)
-    "Reset failed." -> stringResource(R.string.auth_reset_failed)
+    "All password fields are required." -> stringResource(R.string.password_fields_required)
+    "New passwords do not match." -> stringResource(R.string.password_mismatch)
+    "Choose a different new password." -> stringResource(R.string.password_same)
+    "Password changed. Sign in again." -> stringResource(R.string.password_changed_sign_in)
+    "Password changed. This device signed out; some other sessions may still be active." ->
+        stringResource(R.string.password_changed_partial)
+    "Password change failed." -> stringResource(R.string.password_change_failed)
     else -> text
 }
 
@@ -5756,11 +5845,13 @@ private fun PhonePreview() {
             syncStatus = SyncCoordinatorStatus.LOCAL_ONLY,
             authSession = AuthSession(),
             authInput = AuthInputState(),
+            passwordChangeState = PasswordChangeState(),
             onAuthEmailChange = {},
             onAuthPasswordChange = {},
             onAuthModeChange = {},
             onSignIn = {},
             onSignUp = {},
+            onChangePassword = { _, _, _ -> },
             onSignOut = {},
             onSyncNow = {},
             permissionSettingsState = previewPermissionSettingsState(),
@@ -5863,11 +5954,13 @@ private fun TabletPreview() {
             syncStatus = SyncCoordinatorStatus.LOCAL_ONLY,
             authSession = AuthSession(),
             authInput = AuthInputState(),
+            passwordChangeState = PasswordChangeState(),
             onAuthEmailChange = {},
             onAuthPasswordChange = {},
             onAuthModeChange = {},
             onSignIn = {},
             onSignUp = {},
+            onChangePassword = { _, _, _ -> },
             onSignOut = {},
             onSyncNow = {},
             permissionSettingsState = previewPermissionSettingsState(),

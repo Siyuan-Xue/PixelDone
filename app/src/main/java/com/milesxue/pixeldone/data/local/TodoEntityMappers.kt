@@ -48,7 +48,15 @@ fun TodoChecklistState.toTodoEntitySet(
         checklist.items.mapIndexed { index, item ->
             val previous = previousItemsById[item.id]
             val changed = previous?.matches(item, checklist.id, index) != true
+            val imageChanged = previous?.imageLocalName != item.imageFileName
             val ownerUserId = previous?.ownerUserId
+            val hasRemoteImage = previous?.imageRemotePath != null || previous?.imageRemoteVersion != null
+            val imageSyncState = when {
+                !imageChanged -> previous?.imageSyncState ?: TodoImageSyncState.LocalOnly
+                item.imageFileName != null -> TodoImageSyncState.PendingUpload
+                hasRemoteImage -> TodoImageSyncState.PendingDelete
+                else -> TodoImageSyncState.LocalOnly
+            }
             TodoItemEntity(
                 localId = item.id,
                 checklistLocalId = checklist.id,
@@ -64,7 +72,7 @@ fun TodoChecklistState.toTodoEntitySet(
                 reminderRepeat = item.reminderRepeat.name,
                 imageLocalName = item.imageFileName,
                 imageRemotePath = previous?.imageRemotePath,
-                imageSyncState = previous?.imageSyncState ?: SyncRecordState.LOCAL_ONLY.name,
+                imageSyncState = imageSyncState,
                 trashedFromChecklistId = item.trashedFromChecklistId,
                 trashedFromChecklistName = item.trashedFromChecklistName,
                 trashedAtMillis = item.trashedAtMillis,
@@ -76,6 +84,13 @@ fun TodoChecklistState.toTodoEntitySet(
                 lastSyncedAtMillis = previous?.lastSyncedAtMillis,
                 remoteVersion = previous?.remoteVersion,
                 lastSyncError = if (changed) null else previous?.lastSyncError,
+                imageAttachmentId = previous?.imageAttachmentId.takeIf { item.imageFileName == null || !imageChanged },
+                imageContentSha256 = previous?.imageContentSha256.takeIf { !imageChanged },
+                imageContentType = previous?.imageContentType.takeIf { !imageChanged },
+                imageByteSize = previous?.imageByteSize.takeIf { !imageChanged },
+                imageUpdatedAtMillis = if (imageChanged) nowMillis else previous?.imageUpdatedAtMillis,
+                imageRemoteVersion = previous?.imageRemoteVersion,
+                imageLastSyncError = if (imageChanged) null else previous?.imageLastSyncError,
             )
         }
     }
@@ -168,7 +183,6 @@ private fun TodoItemEntity.matches(item: TodoItem, checklistLocalId: String, sor
         completed == item.completed &&
         createdAtMillis == item.createdAtMillis &&
         reminderRepeat == item.reminderRepeat.name &&
-        imageLocalName == item.imageFileName &&
         trashedFromChecklistId == item.trashedFromChecklistId &&
         trashedFromChecklistName == item.trashedFromChecklistName &&
         trashedAtMillis == item.trashedAtMillis

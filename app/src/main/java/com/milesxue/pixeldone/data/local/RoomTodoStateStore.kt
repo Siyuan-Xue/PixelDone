@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.milesxue.pixeldone.data.sync.LocalSyncConflictRecord
 import com.milesxue.pixeldone.data.sync.RemoteChecklistRecord
 import com.milesxue.pixeldone.data.sync.RemoteTodoItemRecord
+import com.milesxue.pixeldone.data.sync.RemoteTodoAttachmentRecord
 import com.milesxue.pixeldone.data.sync.RemoteTodoSnapshot
 import com.milesxue.pixeldone.data.sync.SyncMutationRecord
 import com.milesxue.pixeldone.data.sync.TodoSyncLocalStore
@@ -140,6 +141,13 @@ class RoomTodoStateStore private constructor(
                         syncJson.decodeFromString(RemoteTodoItemRecord.serializer(), record.payloadJson)
                     }.getOrNull()
                 },
+            attachments = records
+                .filter { it.recordType == SyncRecordTypeAttachment }
+                .mapNotNull { record ->
+                    runCatching {
+                        syncJson.decodeFromString(RemoteTodoAttachmentRecord.serializer(), record.payloadJson)
+                    }.getOrNull()
+                },
         )
     }
 
@@ -161,6 +169,15 @@ class RoomTodoStateStore private constructor(
                     localId = item.localId,
                     payloadJson = syncJson.encodeToString(RemoteTodoItemRecord.serializer(), item),
                     remoteVersion = item.remoteVersion,
+                    updatedAtMillis = syncedAtMillis,
+                )
+            } + snapshot.attachments.map { attachment ->
+                SyncPristineRecordEntity(
+                    ownerUserId = ownerUserId,
+                    recordType = SyncRecordTypeAttachment,
+                    localId = attachment.todoLocalId,
+                    payloadJson = syncJson.encodeToString(RemoteTodoAttachmentRecord.serializer(), attachment),
+                    remoteVersion = attachment.remoteVersion,
                     updatedAtMillis = syncedAtMillis,
                 )
             }
@@ -273,6 +290,7 @@ class RoomTodoStateStore private constructor(
                 PixelDoneMigrations.Migration2To3,
                 PixelDoneMigrations.Migration3To4,
                 PixelDoneMigrations.Migration4To5,
+                PixelDoneMigrations.Migration5To6,
             ).build()
             return RoomTodoStateStore(database, legacyPreferences)
         }

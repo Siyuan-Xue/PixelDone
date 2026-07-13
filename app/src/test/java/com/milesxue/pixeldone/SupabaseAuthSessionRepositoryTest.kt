@@ -131,6 +131,41 @@ class SupabaseAuthSessionRepositoryTest {
         assertNull(store.savedSession)
     }
 
+    @Test
+    fun changePasswordReauthenticatesUpdatesAndGloballySignsOut() = runTest {
+        val original = signedInSession(expiresAtMillis = 10_000_000L)
+        val store = InMemoryAuthSessionStore(original)
+        val client = PasswordChangeRequestClient()
+        val repository = SupabaseAuthSessionRepository(TestConfig, client, store)
+
+        val result = repository.changePassword("old-secret", "new-secret")
+
+        assertTrue(result.globalLogoutCompleted)
+        assertEquals(false, repository.session.value.signedIn)
+        assertNull(store.load())
+        assertEquals(listOf("/auth/v1/token", "/auth/v1/user", "/auth/v1/logout"), client.requests.map { it.path })
+        assertEquals(listOf("grant_type" to "password"), client.requests[0].query)
+        assertEquals("reauth-access", client.requests[1].bearerToken)
+        assertEquals(listOf("scope" to "global"), client.requests[2].query)
+        val updateBody = json.parseToJsonElement(requireNotNull(client.requests[1].body)).jsonObject
+        assertEquals("new-secret", updateBody.getValue("password").jsonPrimitive.content)
+    }
+
+    @Test
+    fun changePasswordLeavesCurrentSessionWhenOldPasswordIsRejected() = runTest {
+        val original = signedInSession(expiresAtMillis = 10_000_000L)
+        val store = InMemoryAuthSessionStore(original)
+        val client = PasswordChangeRequestClient(rejectReauthentication = true)
+        val repository = SupabaseAuthSessionRepository(TestConfig, client, store)
+
+        val error = runCatching { repository.changePassword("wrong", "new-secret") }.exceptionOrNull()
+
+        assertTrue(error is SyncRemoteException)
+        assertEquals(original, repository.session.value)
+        assertEquals(original, store.load())
+        assertEquals(1, client.requests.size)
+    }
+
     private fun signedInSession(
         accessToken: String = "access-token",
         refreshToken: String = "refresh-token",
@@ -166,6 +201,28 @@ class SupabaseAuthSessionRepositoryTest {
               "user":{"id":"user-2","email":"new@example.com"}
             }
         """
+    }
+}
+
+private class PasswordChangeRequestClient(
+    private val rejectReauthentication: Boolean = false,
+) : SupabaseRequestClient {
+    val requests = mutableListOf<RecordedSessionRequest>()
+
+    override suspend fun request(
+        method: String,
+        path: String,
+        bearerToken: String?,
+        query: List<Pair<String, String>>,
+        prefer: String?,
+        body: String?,
+    ): String {
+        requests += RecordedSessionRequest(method, path, bearerToken, query, prefer, body)
+        if (path == "/auth/v1/token") {
+            if (rejectReauthentication) throw SyncRemoteException("Invalid login credentials", 400)
+            return """{"access_token":"reauth-access","refresh_token":"reauth-refresh","expires_in":3600,"user":{"id":"user-1","email":"user@example.com"}}"""
+        }
+        return "{}"
     }
 }
 

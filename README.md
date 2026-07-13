@@ -27,7 +27,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Use Android system back gestures to return through the current session's checklist history before leaving the app.
 - Long-press the `+` control to create a new checklist while short press still creates a task.
 - Tap a todo row to edit it in the bottom editor.
-- Attach one local image to each todo with the row image button.
+- Attach one JPEG, PNG, or WebP image up to 10 MiB to each todo and synchronize the original bytes through a private Supabase Storage bucket.
 - Show completed todos in a compact row that hides subtitles and image actions.
 - Enable the `QUICK DELETE` dock function to replace row image slots with direct-to-`TRASH` delete buttons.
 - Preview, replace, or remove a todo image without requesting broad photo-library permission.
@@ -71,8 +71,9 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Use the `SETTINGS` list to choose System or one of the six United Nations official languages, switch LIGHT/DARK display mode, configure the dock, control cloud sync, show pending/conflict sync counts, control update prompts, reconfigure permissions, check for updates, and view the current version.
 - Show the seven language choices in a compact two-column grid; concrete languages always use their native names while System follows the active UI language.
 - Use matching pixel-line sign-in/sign-out icons and a two-arrow sync glyph in the Cloud controls.
-- Sign up, sign in, sign out, request password reset email, and manually sync todos/checklists through the low-key Settings `CLOUD` area.
-- Subscribe to Supabase Realtime while foregrounded and signed in so another device's checklist/todo/settings/tombstone changes trigger a debounced transactional cursor pull without manual refresh.
+- Sign up, sign in, sign out, verify the current password before changing it, globally revoke sessions after a successful password change, and manually sync through the low-key Settings `CLOUD` area.
+- Subscribe to Supabase Realtime while foregrounded and signed in so another device's checklist/todo/attachment/settings/tombstone changes trigger a debounced transactional cursor pull without manual refresh.
+- Keep image transfer independent from ordinary todo synchronization, cache remote images only when opened, and retry Storage cleanup without blocking text/list/settings changes.
 - Keep unresolved conflicts persistent and globally reviewable: dismissing the dialog does not resolve them, and a later conflict reopens the dialog with every unresolved item. Only actual conflicting fields and item content are shown.
 - Three-way merge non-overlapping local/cloud field edits, exclude conflicts from upload, and make tombstones win over active content.
 - Retain recoverable Trash items for exactly 30 days; restore clears the timer, retrashing restarts it, and expiry scrubs content into an indefinitely retained minimal tombstone.
@@ -116,8 +117,8 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - `data/todo/`: todo repository boundary and legacy SharedPreferences JSON migration reader.
 - `data/local/`: Room database, DAO, entities, and mappers for local-first todo/checklist storage.
 - `data/settings/`: DataStore-backed settings; language mode syncs through Cloud while theme, Dock, and update preferences remain local.
-- `data/sync/` and `domain/sync/`: Supabase Auth, 3.1 transaction RPCs, Realtime invalidation subscriptions, persistent conflicts, field merges, mutation UUIDs, cursors, and tombstones.
-- `data/image/`: private image-copying, safe file-path handling, and preview bitmap sampling.
+- `data/sync/` and `domain/sync/`: Supabase Auth, 3.2 transaction RPCs, private Storage attachment transfer, Realtime invalidation subscriptions, persistent conflicts, field merges, mutation UUIDs, cursors, and tombstones.
+- `data/image/`: private image-copying, content-signature/hash validation, on-demand remote caching, safe file-path handling, and preview bitmap sampling.
 - `data/update/`: GitHub-first release checks, synced Gitee fallback, DownloadManager integration, and state-preserving PackageInstaller sessions.
 - `reminder/`: AlarmManager, notification, boot, receiver, foreground service, and XHigh full-screen alarm integration.
 - `ui/todo/`: screen route, Dock presentation, update/permission presentation rules, UI state holder, and ViewModel teaching entry point.
@@ -158,7 +159,7 @@ pixeldone.requireCloudConfig=true
 
 Formal and debug builds intentionally use the configured direct-IP HTTP Supabase endpoint. HTTP is the durable deployment choice and there is no planned HTTPS migration. This transport does not provide confidentiality or server identity verification; never place service-role credentials or other secrets in client configuration.
 
-Before running a 3.1 client, the operator must manually execute `docs/pixeldone-supabase-3.1.0-rc.1-migration.sql` and return its verification output. The client intentionally has no legacy schema fallback.
+Before running a 3.2 client, the operator must first execute `docs/pixeldone-supabase-3.2.0-storage-policies.sql` as `supabase_storage_admin`, then execute `docs/pixeldone-supabase-3.2.0-migration.sql` against an existing 3.1 schema and return its verification output. Supabase-managed Storage table ownership must not be changed. The 3.2 client intentionally has no legacy schema fallback and must not be released before this gate is confirmed.
 
 ## Release And Update Source
 
@@ -204,4 +205,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.1.1 is the current formal patch release. It preserves the existing Android 14+ full-screen intent access choice across later PixelDone in-app updates; users upgrading from an older updater may need to enable Full Screen access one final time after this upgrade.
+3.1.1 remains the current formal Android release. The source tree now targets an unreleased 3.2.0 candidate; do not tag, push, or publish it until the Supabase 3.2 migration and two-device Storage verification are confirmed.

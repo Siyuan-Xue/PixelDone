@@ -21,6 +21,7 @@ data class PixelDoneUiState(
     val settings: PixelDoneSettings = PixelDoneSettings(),
     val authSession: AuthSession = AuthSession(),
     val authInput: AuthInputState = AuthInputState(),
+    val passwordChangeState: PasswordChangeState = PasswordChangeState(),
     val syncStatus: SyncCoordinatorStatus = SyncCoordinatorStatus.LOCAL_ONLY,
     val syncRunState: SyncRunState = SyncRunState(),
     val sortMode: SortMode = SortMode.PRIORITY,
@@ -36,6 +37,12 @@ data class AuthInputState(
     val email: String = "",
     val password: String = "",
     val mode: CloudAuthMode = CloudAuthMode.SIGN_IN,
+    val busy: Boolean = false,
+    val message: String? = null,
+    val error: String? = null,
+)
+
+data class PasswordChangeState(
     val busy: Boolean = false,
     val message: String? = null,
     val error: String? = null,
@@ -82,7 +89,11 @@ sealed interface PixelDoneAction {
         val localId: String,
         val choice: ConflictResolutionChoice,
     ) : PixelDoneAction
-    data object ResetPassword : PixelDoneAction
+    data class ChangePassword(
+        val currentPassword: String,
+        val newPassword: String,
+        val confirmation: String,
+    ) : PixelDoneAction
     data object DismissAuthMessage : PixelDoneAction
     data object SystemActionConsumed : PixelDoneAction
 }
