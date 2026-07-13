@@ -1,17 +1,19 @@
-PixelDone v3.1.1 is the formal signed patch release for Android full-screen intent access preservation.
+PixelDone v3.2.0 is the formal signed Android feature release for cross-device image synchronization and authenticated password changes.
 
 Highlights:
-- Replaces the generic sideload install intent with an Android PackageInstaller session for PixelDone's in-app updater.
-- Preserves the existing Android 14+ full-screen intent access state across in-app upgrades: granted remains granted and denied remains denied.
-- Keeps the system-controlled install confirmation and install-unknown-apps access flow.
-- Keeps denied full-screen intent behavior on the existing expanded heads-up notification fallback.
+- Synchronizes one original JPEG, PNG, or WebP image up to 10 MiB per todo through a private native Supabase Storage bucket.
+- Downloads remote images only when opened, validates content signatures and hashes, backfills existing local images, and cleans replaced or deleted cloud objects without blocking ordinary todo synchronization.
+- Adds current-password verification, password update, global Supabase logout, local session removal, and fresh sign-in after a successful change.
+- Extends Realtime invalidation to attachment metadata while keeping transactional cursor pulls as the only remote merge path.
+- Keeps synchronization event-driven; PixelDone does not register a fixed-interval polling job.
+- Upgrades local Room storage to schema 6 while preserving existing todos and local image markers.
 
-Upgrade note:
-- An app version older than 3.1.1 still launches Android's generic sideload installer, so upgrading from 3.1.0 may turn Full Screen access off one final time. Re-enable it after installing 3.1.1; later PixelDone in-app updates preserve that choice.
+Cloud prerequisite:
+- PixelDone 3.2 is a hard protocol cutover and does not fall back to schema 3.1.
+- The operator applied `pixeldone-supabase-3.2.0-storage-policies.sql` as `supabase_storage_admin`, applied the 3.2 public-schema migration, and confirmed every consolidated migration check on 2026-07-13.
+- Do not change ownership of Supabase-managed Storage tables.
 
-Distribution:
-- The attached `PixelDone-3.1.1-release.apk` is the signed formal package for `com.milesxue.pixeldone`.
-- PixelDone intentionally connects to the configured direct-IP Supabase deployment over cleartext HTTP. HTTP does not provide transport confidentiality or server identity verification, and no HTTPS migration is planned.
-- Task images remain local to each device and are not uploaded to Supabase Storage.
-
-Before first use, the operator must apply `docs/pixeldone-supabase-3.1.0-rc.1-migration.sql` once and verify its final checkpoint output. PixelDone 3.1 has no legacy schema fallback.
+Distribution and risk:
+- The attached `PixelDone-3.2.0-release.apk` is the signed formal package for `com.milesxue.pixeldone` and uses the established long-lived PixelDone release certificate.
+- PixelDone intentionally connects to the configured direct-IP Supabase deployment over cleartext HTTP/WS. This transport does not provide confidentiality, integrity, or server identity protection, and no HTTPS migration is planned.
+- The operator explicitly authorized formal publication before installed two-device image, password/global-logout, Realtime, and notification regression verification was completed. Those checks remain pending and are not represented as passed.

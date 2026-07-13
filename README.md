@@ -180,7 +180,7 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.1.1-release.apk
+app/build/outputs/apk/release/PixelDone-3.2.0-release.apk
 ```
 
 ## Install
@@ -188,7 +188,7 @@ app/build/outputs/apk/release/PixelDone-3.1.1-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.1.1-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.2.0-release.apk
 ```
 
 The formal package name is:
@@ -205,4 +205,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.1.1 remains the current formal Android release. The source tree now targets an unreleased 3.2.0 candidate; do not tag, push, or publish it until the Supabase 3.2 migration and two-device Storage verification are confirmed.
+3.2.0 is the current formal signed Android release. The Supabase 3.2 schema, private bucket, four Storage policies, five-table Realtime publication, RPC overloads, and daily cleanup job were verified on 2026-07-13. The operator explicitly authorized formal publication before the remaining installed two-device Storage, password/global-logout, Realtime, and notification regression checks; those checks remain recorded as unverified rather than being represented as a passed release gate.
