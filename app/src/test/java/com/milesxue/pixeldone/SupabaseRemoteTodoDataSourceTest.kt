@@ -80,6 +80,36 @@ class SupabaseRemoteTodoDataSourceTest {
         assertTrue(request.query.isEmpty())
     }
 
+    @Test
+    fun newerServerContractRequiresAppUpdate() = runTest {
+        val client = RecordingSupabaseRequestClient(
+            pullResponse = """
+                {"schema_version":"3.3","server_version":84,"checklists":[],"items":[],"attachments":[],"settings":null,"tombstones":[],"image_cleanup_paths":[]}
+            """.trimIndent(),
+        )
+
+        val error = runCatching {
+            SupabaseRemoteTodoDataSource(client).pullChanges(session, 0L)
+        }.exceptionOrNull() as SyncSchemaMismatchException
+
+        assertEquals(SyncContractRequiredAction.UPDATE_APP, error.requiredAction)
+    }
+
+    @Test
+    fun olderServerContractRequiresServerUpdate() = runTest {
+        val client = RecordingSupabaseRequestClient(
+            pullResponse = """
+                {"schema_version":"3.1","server_version":84,"checklists":[],"items":[],"attachments":[],"settings":null,"tombstones":[],"image_cleanup_paths":[]}
+            """.trimIndent(),
+        )
+
+        val error = runCatching {
+            SupabaseRemoteTodoDataSource(client).pullChanges(session, 0L)
+        }.exceptionOrNull() as SyncSchemaMismatchException
+
+        assertEquals(SyncContractRequiredAction.UPDATE_SERVER, error.requiredAction)
+    }
+
     private data class RecordedSupabaseRequest(
         val method: String,
         val path: String,
@@ -89,7 +119,10 @@ class SupabaseRemoteTodoDataSourceTest {
         val body: String?,
     )
 
-    private class RecordingSupabaseRequestClient : SupabaseRequestClient {
+    private class RecordingSupabaseRequestClient(
+        private val pullResponse: String = PullResponse,
+        private val pushResponse: String = PushResponse,
+    ) : SupabaseRequestClient {
         val requests = mutableListOf<RecordedSupabaseRequest>()
         override suspend fun request(
             method: String,
@@ -101,8 +134,8 @@ class SupabaseRemoteTodoDataSourceTest {
         ): String {
             requests += RecordedSupabaseRequest(method, path, bearerToken, query, prefer, body)
             return when (path) {
-                "/rest/v1/rpc/pixeldone_pull_changes" -> PullResponse
-                "/rest/v1/rpc/pixeldone_apply_mutation" -> PushResponse
+                "/rest/v1/rpc/pixeldone_pull_changes" -> pullResponse
+                "/rest/v1/rpc/pixeldone_apply_mutation" -> pushResponse
                 else -> error("Unexpected path: $path")
             }
         }

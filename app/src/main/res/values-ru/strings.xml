@@ -23,4 +23,9 @@
     <string name="downloading_version">Загрузка: v%1$s</string><string name="downloading_version_percent">Загрузка: v%1$s %2$d%%</string><string name="downloading_version_size">Загрузка: v%1$s %2$s</string>
     <string name="current_password">Текущий пароль</string><string name="new_password">Новый пароль</string><string name="confirm_new_password">Подтвердите новый пароль</string><string name="change_password">Изменить пароль</string><string name="changing_password">Изменение пароля</string>
     <string name="password_fields_required">Заполните все поля пароля.</string><string name="password_mismatch">Новые пароли не совпадают.</string><string name="password_same">Выберите другой новый пароль.</string><string name="password_changed_sign_in">Пароль изменён. Войдите снова.</string><string name="password_changed_partial">Пароль изменён, это устройство вышло из системы; некоторые другие сеансы могут оставаться активными.</string><string name="password_change_failed">Не удалось изменить пароль.</string>
+    <string name="stable">Стабильно</string>
+    <string name="network_error">Ошибка сети</string>
+    <string name="app_update_required">Требуется обновление приложения</string>
+    <string name="sync_pending_changes">Есть ожидающие изменения.</string>
+    <string name="sync_network_error_detail">Сеть недоступна. Проверьте Wi-Fi, мобильную сеть или VPN.</string>
 </resources>

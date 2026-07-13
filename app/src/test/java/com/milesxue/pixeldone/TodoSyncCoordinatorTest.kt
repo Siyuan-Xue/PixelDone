@@ -15,6 +15,8 @@ import com.milesxue.pixeldone.data.sync.RemoteTodoDataSource
 import com.milesxue.pixeldone.data.sync.RemoteTodoItemRecord
 import com.milesxue.pixeldone.data.sync.RemoteTodoSnapshot
 import com.milesxue.pixeldone.data.sync.SyncMutationRecord
+import com.milesxue.pixeldone.data.sync.SyncMetadataSession
+import com.milesxue.pixeldone.data.sync.SyncNetworkException
 import com.milesxue.pixeldone.data.sync.TodoSyncCoordinator
 import com.milesxue.pixeldone.data.sync.TodoSyncLocalStore
 import com.milesxue.pixeldone.domain.sync.AuthSession
@@ -73,7 +75,7 @@ class TodoSyncCoordinatorTest {
 
         pullGate.complete(Unit)
         advanceUntilIdle()
-        assertEquals(SyncCoordinatorStatus.SYNCED, coordinator.status.value)
+        assertEquals(SyncCoordinatorStatus.STABLE, coordinator.status.value)
 
         val savedItem = localStore.entitySet.items.single { it.localId == "todo-1" }
         assertEquals("trash", savedItem.checklistLocalId)
@@ -112,7 +114,7 @@ class TodoSyncCoordinatorTest {
 
         pushGate.complete(Unit)
         advanceUntilIdle()
-        assertEquals(SyncCoordinatorStatus.SYNCED, coordinator.status.value)
+        assertEquals(SyncCoordinatorStatus.STABLE, coordinator.status.value)
 
         val savedItem = localStore.entitySet.items.single { it.localId == "todo-1" }
         assertEquals("Edited while pushing", savedItem.title)
@@ -156,6 +158,57 @@ class TodoSyncCoordinatorTest {
         assertEquals(3_000L, conflict.remoteVersion)
         assertEquals(true, conflict.localPayloadJson.contains("Local title"))
         assertEquals(true, conflict.remotePayloadJson.contains("Cloud title"))
+    }
+
+    @Test
+    fun rebaselineRebuildsExplicitDomainConflictWithoutLegacyMetadata() = runTest {
+        val localStore = FakeTodoSyncLocalStore(
+            entitySetWith(
+                item = syncedActiveItem().copy(
+                    title = "Local title",
+                    updatedAtMillis = 2_000L,
+                    remoteVersion = 1_000L,
+                    syncState = SyncRecordState.CONFLICT.name,
+                ),
+            ),
+        )
+        val remote = FakeRemoteTodoDataSource(
+            RemoteTodoSnapshot(
+                items = listOf(
+                    remoteActiveItem().copy(
+                        title = "Cloud title",
+                        updatedAtMillis = 3_000L,
+                        remoteVersion = 3_000L,
+                    ),
+                ),
+            ),
+        )
+
+        val coordinator = coordinator(localStore = localStore, remote = remote)
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.CONFLICT, coordinator.status.value)
+        assertEquals("Local title", localStore.entitySet.items.single().title)
+        assertEquals(listOf("title"), localStore.conflicts.single().fields)
+        assertEquals(0, remote.pushCount)
+    }
+
+    @Test
+    fun rebaselineClearsExplicitDomainConflictWhenCloudAlreadyMatches() = runTest {
+        val localStore = FakeTodoSyncLocalStore(
+            entitySetWith(item = syncedActiveItem().copy(syncState = SyncRecordState.CONFLICT.name)),
+        )
+        val remote = FakeRemoteTodoDataSource(
+            RemoteTodoSnapshot(items = listOf(remoteActiveItem())),
+        )
+
+        val coordinator = coordinator(localStore = localStore, remote = remote)
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.STABLE, coordinator.status.value)
+        assertEquals(SyncRecordState.SYNCED.name, localStore.entitySet.items.single().syncState)
+        assertEquals(emptyList<LocalSyncConflictRecord>(), localStore.conflicts)
+        assertEquals(0, remote.pushCount)
     }
 
     @Test
@@ -206,7 +259,7 @@ class TodoSyncCoordinatorTest {
         advanceUntilIdle()
 
         val merged = store.entitySet.items.single()
-        assertEquals(SyncCoordinatorStatus.SYNCED, coordinator.status.value)
+        assertEquals(SyncCoordinatorStatus.STABLE, coordinator.status.value)
         assertEquals("Local title", merged.title)
         assertEquals(true, merged.completed)
         assertEquals(emptyList<LocalSyncConflictRecord>(), store.conflicts)
@@ -234,7 +287,7 @@ class TodoSyncCoordinatorTest {
         val coordinator = coordinator(localStore = store, remote = remote)
         advanceUntilIdle()
 
-        assertEquals(SyncCoordinatorStatus.SYNCED, coordinator.status.value)
+        assertEquals(SyncCoordinatorStatus.STABLE, coordinator.status.value)
         val uploaded = remote.pushedSnapshots.single().items.single()
         assertEquals(null, uploaded.imageLocalName)
         assertEquals(null, uploaded.imageRemotePath)
@@ -279,7 +332,7 @@ class TodoSyncCoordinatorTest {
         )
         advanceUntilIdle()
 
-        assertEquals(SyncCoordinatorStatus.SYNCED, status)
+        assertEquals(SyncCoordinatorStatus.STABLE, status)
         assertEquals(emptyList<LocalSyncConflictRecord>(), localStore.conflicts)
         assertEquals("Local title", remote.pushedSnapshots.last().items.single().title)
         val savedItem = localStore.entitySet.items.single { it.localId == "todo-1" }
@@ -320,7 +373,7 @@ class TodoSyncCoordinatorTest {
             choice = ConflictResolutionChoice.KEEP_CLOUD,
         )
 
-        assertEquals(SyncCoordinatorStatus.SYNCED, status)
+        assertEquals(SyncCoordinatorStatus.STABLE, status)
         assertEquals(emptyList<LocalSyncConflictRecord>(), localStore.conflicts)
         val savedItem = localStore.entitySet.items.single { it.localId == "todo-1" }
         assertEquals("Cloud title", savedItem.title)
@@ -399,6 +452,50 @@ class TodoSyncCoordinatorTest {
         assertEquals(1, remote.pullCount)
     }
 
+    @Test
+    fun corruptConflictPayloadInvalidatesMetadataAndRebaselinesWithoutGhostCount() = runTest {
+        val localStore = FakeTodoSyncLocalStore(entitySetWith(item = syncedActiveItem())).apply {
+            conflicts += LocalSyncConflictRecord(
+                recordType = SyncRecordTypeItem,
+                localId = "todo-legacy",
+                localPayloadJson = "{\"localId\":\"todo-legacy\"}",
+                remotePayloadJson = "{\"localId\":\"todo-legacy\"}",
+                fields = listOf("title"),
+                message = "Legacy conflict",
+                createdAtMillis = 1L,
+            )
+        }
+        val remote = FakeRemoteTodoDataSource()
+        val coordinator = coordinator(localStore = localStore, remote = remote)
+
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.STABLE, coordinator.status.value)
+        assertEquals(1, localStore.metadataInvalidationCount)
+        assertEquals(2, remote.pullCount)
+        assertEquals(0, coordinator.runState.value.conflictCount)
+        assertEquals(emptyList<LocalSyncConflictRecord>(), localStore.conflicts)
+    }
+
+    @Test
+    fun networkFailureRetriesOnceAndNeverCreatesConflict() = runTest {
+        val localStore = FakeTodoSyncLocalStore(entitySetWith(item = syncedActiveItem()))
+        val remote = FakeRemoteTodoDataSource().apply {
+            pullFailure = SyncNetworkException("unexpected end of stream")
+        }
+        val coordinator = coordinator(localStore = localStore, remote = remote)
+
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.NETWORK_ERROR, coordinator.status.value)
+        assertEquals(2, remote.pullCount)
+        assertEquals(0, coordinator.runState.value.conflictCount)
+        assertEquals(
+            "Network unavailable. Check Wi-Fi, mobile data, or VPN.",
+            coordinator.runState.value.lastError,
+        )
+    }
+
     private fun TestScope.coordinator(
         auth: CoordinatorAuthSessionRepository = CoordinatorAuthSessionRepository(signedInSession()),
         localStore: FakeTodoSyncLocalStore,
@@ -440,6 +537,18 @@ private class FakeTodoSyncLocalStore(initialEntitySet: TodoEntitySet) : TodoSync
     var pristineSnapshot: RemoteTodoSnapshot = RemoteTodoSnapshot()
     val pendingMutations = mutableListOf<SyncMutationRecord>()
     val conflicts = mutableListOf<LocalSyncConflictRecord>()
+    var metadataInvalidationCount = 0
+
+    override suspend fun beginSyncMetadata(ownerUserId: String, nowMillis: Long): SyncMetadataSession =
+        SyncMetadataSession(generation = "fake", rebuilding = false)
+
+    override suspend fun invalidateSyncMetadata(ownerUserId: String) {
+        metadataInvalidationCount += 1
+        syncCursor = null
+        pristineSnapshot = RemoteTodoSnapshot()
+        pendingMutations.clear()
+        conflicts.clear()
+    }
 
     override suspend fun loadEntitySetForSync(nowMillis: Long): TodoEntitySet = entitySet
 
@@ -509,11 +618,13 @@ private class FakeRemoteTodoDataSource(
     var pushStarted = CompletableDeferred<Unit>()
     var pullGate: CompletableDeferred<Unit>? = null
     var pushGate: CompletableDeferred<Unit>? = null
+    var pullFailure: Exception? = null
 
     override suspend fun pullChanges(session: AuthSession, sinceVersion: Long?): RemoteChangeBatch {
         pullCount += 1
         if (!pullStarted.isCompleted) pullStarted.complete(Unit)
         pullGate?.await()
+        pullFailure?.let { throw it }
         return RemoteChangeBatch(
             schemaVersion = "3.1",
             serverVersion = 1_000L,

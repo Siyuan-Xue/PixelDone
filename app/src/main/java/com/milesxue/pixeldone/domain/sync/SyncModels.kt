@@ -17,8 +17,11 @@ enum class SyncCoordinatorStatus {
     SIGNED_OUT,
     IDLE,
     SYNCING,
-    SYNCED,
+    STABLE,
+    PENDING,
     CONFLICT,
+    NETWORK_ERROR,
+    APP_UPDATE_REQUIRED,
     SERVER_UPDATE_REQUIRED,
     ERROR,
 }

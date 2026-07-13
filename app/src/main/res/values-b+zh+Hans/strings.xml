@@ -26,4 +26,9 @@
     <string name="downloading_version">正在下载：v%1$s</string><string name="downloading_version_percent">正在下载：v%1$s %2$d%%</string><string name="downloading_version_size">正在下载：v%1$s %2$s</string>
     <string name="current_password">当前密码</string><string name="new_password">新密码</string><string name="confirm_new_password">确认新密码</string><string name="change_password">修改密码</string><string name="changing_password">正在修改密码</string>
     <string name="password_fields_required">请填写所有密码字段。</string><string name="password_mismatch">两次输入的新密码不一致。</string><string name="password_same">新密码必须与当前密码不同。</string><string name="password_changed_sign_in">密码已修改，请重新登录。</string><string name="password_changed_partial">密码已修改，本设备已退出；部分其他会话可能仍处于登录状态。</string><string name="password_change_failed">密码修改失败。</string>
+    <string name="stable">稳定</string>
+    <string name="network_error">网络错误</string>
+    <string name="app_update_required">需要更新应用</string>
+    <string name="sync_pending_changes">有待同步更改。</string>
+    <string name="sync_network_error_detail">网络不可用。请检查 Wi-Fi、移动数据或 VPN。</string>
 </resources>

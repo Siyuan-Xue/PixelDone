@@ -3492,17 +3492,23 @@ private fun SyncCoordinatorStatus.settingsLabel(): String = when (this) {
     SyncCoordinatorStatus.SIGNED_OUT -> stringResource(R.string.signed_out)
     SyncCoordinatorStatus.IDLE -> stringResource(R.string.ready)
     SyncCoordinatorStatus.SYNCING -> stringResource(R.string.syncing)
-    SyncCoordinatorStatus.SYNCED -> stringResource(R.string.synced)
+    SyncCoordinatorStatus.STABLE -> stringResource(R.string.stable)
+    SyncCoordinatorStatus.PENDING -> stringResource(R.string.pending)
     SyncCoordinatorStatus.CONFLICT -> stringResource(R.string.conflict)
+    SyncCoordinatorStatus.NETWORK_ERROR -> stringResource(R.string.network_error)
+    SyncCoordinatorStatus.APP_UPDATE_REQUIRED -> stringResource(R.string.app_update_required)
     SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED -> stringResource(R.string.server_update_required)
     SyncCoordinatorStatus.ERROR -> stringResource(R.string.error)
 }
 
 internal fun SyncCoordinatorStatus.settingsValueColor(colors: PixelDonePalette): Color = when (this) {
     SyncCoordinatorStatus.ERROR,
+    SyncCoordinatorStatus.NETWORK_ERROR,
+    SyncCoordinatorStatus.APP_UPDATE_REQUIRED,
     SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED,
     SyncCoordinatorStatus.CONFLICT -> colors.error
-    SyncCoordinatorStatus.SYNCED -> colors.success
+    SyncCoordinatorStatus.STABLE -> colors.success
+    SyncCoordinatorStatus.PENDING -> colors.primaryInteractive
     else -> colors.textSecondary
 }
 
@@ -4843,6 +4849,13 @@ private fun localizedAuthText(text: String): String = when (text) {
     "Password changed. This device signed out; some other sessions may still be active." ->
         stringResource(R.string.password_changed_partial)
     "Password change failed." -> stringResource(R.string.password_change_failed)
+    "Stable." -> stringResource(R.string.stable)
+    "Pending changes." -> stringResource(R.string.sync_pending_changes)
+    "Network unavailable. Check Wi-Fi, mobile data, or VPN." -> stringResource(R.string.sync_network_error_detail)
+    "App update required." -> stringResource(R.string.app_update_required)
+    "Server update required." -> stringResource(R.string.server_update_required)
+    "Sync conflicts." -> stringResource(R.string.sync_conflicts)
+    "Sync failed." -> stringResource(R.string.sync_failed)
     else -> text
 }
 

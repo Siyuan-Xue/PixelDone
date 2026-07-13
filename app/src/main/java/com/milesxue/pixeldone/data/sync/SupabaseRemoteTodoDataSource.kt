@@ -81,6 +81,7 @@ internal class SupabaseRemoteTodoDataSource(
         if (batch.schemaVersion != ExpectedRemoteSchemaVersion) {
             throw SyncSchemaMismatchException(
                 "PixelDone Cloud schema $ExpectedRemoteSchemaVersion is required; server reported ${batch.schemaVersion}.",
+                requiredActionFor(batch.schemaVersion),
             )
         }
     }
@@ -89,9 +90,26 @@ internal class SupabaseRemoteTodoDataSource(
         if (result.schemaVersion != ExpectedRemoteSchemaVersion) {
             throw SyncSchemaMismatchException(
                 "PixelDone Cloud schema $ExpectedRemoteSchemaVersion is required; server reported ${result.schemaVersion}.",
+                requiredActionFor(result.schemaVersion),
             )
         }
     }
+
+    private fun requiredActionFor(serverVersion: String): SyncContractRequiredAction {
+        val server = serverVersion.toContractParts()
+        val client = ExpectedRemoteSchemaVersion.toContractParts()
+        if (server == null || client == null) return SyncContractRequiredAction.UPDATE_APP
+        val comparison = server.zip(client).firstOrNull { (left, right) -> left != right }
+            ?.let { (left, right) -> left.compareTo(right) }
+            ?: server.size.compareTo(client.size)
+        return if (comparison > 0) {
+            SyncContractRequiredAction.UPDATE_APP
+        } else {
+            SyncContractRequiredAction.UPDATE_SERVER
+        }
+    }
+
+    private fun String.toContractParts(): List<Int>? = split('.').map { it.toIntOrNull() ?: return null }
 }
 
 @Serializable

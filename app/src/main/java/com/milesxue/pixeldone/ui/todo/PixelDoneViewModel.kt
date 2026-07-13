@@ -75,25 +75,27 @@ class PixelDoneViewModel(
         }
         viewModelScope.launch {
             syncCoordinator.runState.collect { runState ->
+                val conflicts = if (runState.status == SyncCoordinatorStatus.SYNCING) {
+                    _uiState.value.syncConflicts
+                } else {
+                    syncCoordinator.loadConflicts()
+                }
+                val displayedRunState = runState.copy(conflictCount = conflicts.size)
+                val signature = conflicts.takeIf { it.isNotEmpty() }?.hashCode()
+                val isNewBatch = signature != null && signature != lastPresentedConflictSignature
+                if (conflicts.isEmpty()) lastPresentedConflictSignature = null
                 _uiState.value = _uiState.value.copy(
                     syncStatus = runState.status,
-                    syncRunState = runState,
+                    syncRunState = displayedRunState,
+                    syncConflicts = conflicts,
+                    conflictDialogVisible = when {
+                        conflicts.isEmpty() -> false
+                        isNewBatch -> true
+                        else -> _uiState.value.conflictDialogVisible
+                    },
+                    resolvingConflictKey = if (isNewBatch) null else _uiState.value.resolvingConflictKey,
                 )
-                if (runState.conflictCount > 0 || runState.status == SyncCoordinatorStatus.CONFLICT) {
-                    val conflicts = syncCoordinator.loadConflicts()
-                    val signature = conflicts.hashCode()
-                    val isNewBatch = conflicts.isNotEmpty() && signature != lastPresentedConflictSignature
-                    if (isNewBatch) {
-                        lastPresentedConflictSignature = signature
-                        _uiState.value = _uiState.value.copy(
-                            syncConflicts = conflicts,
-                            conflictDialogVisible = true,
-                            resolvingConflictKey = null,
-                        )
-                    } else if (conflicts.isNotEmpty()) {
-                        _uiState.value = _uiState.value.copy(syncConflicts = conflicts)
-                    }
-                }
+                if (isNewBatch) lastPresentedConflictSignature = signature
             }
         }
     }
@@ -268,7 +270,7 @@ class PixelDoneViewModel(
             val status = syncCoordinator.syncNow()
             val message = status.settingsMessage()
             updateAuthInput {
-                if (status == SyncCoordinatorStatus.ERROR) {
+                if (status in SyncErrorStatuses) {
                     it.copy(error = message, message = null)
                 } else {
                     it.copy(error = null, message = message)
@@ -282,7 +284,8 @@ class PixelDoneViewModel(
             val conflicts = syncCoordinator.loadConflicts()
             _uiState.value = _uiState.value.copy(
                 syncConflicts = conflicts,
-                conflictDialogVisible = true,
+                syncRunState = _uiState.value.syncRunState.copy(conflictCount = conflicts.size),
+                conflictDialogVisible = conflicts.isNotEmpty(),
                 resolvingConflictKey = null,
             )
             lastPresentedConflictSignature = conflicts.hashCode()
@@ -368,8 +371,19 @@ private fun com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.settingsMes
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SIGNED_OUT -> "Sign in first."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.IDLE -> "Ready."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SYNCING -> "Syncing."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SYNCED -> "Synced."
+    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.STABLE -> "Stable."
+    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.PENDING -> "Pending changes."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.CONFLICT -> "Sync conflicts."
+    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.NETWORK_ERROR ->
+        "Network unavailable. Check Wi-Fi, mobile data, or VPN."
+    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.APP_UPDATE_REQUIRED -> "App update required."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED -> "Server update required."
     com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.ERROR -> "Sync failed."
 }
+
+private val SyncErrorStatuses = setOf(
+    SyncCoordinatorStatus.NETWORK_ERROR,
+    SyncCoordinatorStatus.APP_UPDATE_REQUIRED,
+    SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED,
+    SyncCoordinatorStatus.ERROR,
+)

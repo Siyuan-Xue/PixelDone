@@ -48,14 +48,17 @@ internal class PixelDoneSyncWorker(
     override suspend fun doWork(): Result {
         val coordinator = applicationContext.pixelDoneAppContainer().syncCoordinator
         return when (coordinator.syncNow()) {
-            SyncCoordinatorStatus.SYNCED,
+            SyncCoordinatorStatus.STABLE,
             SyncCoordinatorStatus.CONFLICT,
             SyncCoordinatorStatus.LOCAL_ONLY,
             SyncCoordinatorStatus.NOT_CONFIGURED,
+            SyncCoordinatorStatus.APP_UPDATE_REQUIRED,
             SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED,
             SyncCoordinatorStatus.SIGNED_OUT,
             SyncCoordinatorStatus.IDLE -> Result.success()
-            SyncCoordinatorStatus.SYNCING -> Result.retry()
+            SyncCoordinatorStatus.SYNCING,
+            SyncCoordinatorStatus.PENDING,
+            SyncCoordinatorStatus.NETWORK_ERROR,
             SyncCoordinatorStatus.ERROR -> Result.retry()
         }
     }

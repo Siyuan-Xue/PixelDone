@@ -26,4 +26,9 @@
     <string name="downloading_version">جارٍ التنزيل: v%1$s</string><string name="downloading_version_percent">جارٍ التنزيل: v%1$s %2$d%%</string><string name="downloading_version_size">جارٍ التنزيل: v%1$s %2$s</string>
     <string name="current_password">كلمة المرور الحالية</string><string name="new_password">كلمة المرور الجديدة</string><string name="confirm_new_password">تأكيد كلمة المرور الجديدة</string><string name="change_password">تغيير كلمة المرور</string><string name="changing_password">جارٍ تغيير كلمة المرور</string>
     <string name="password_fields_required">جميع حقول كلمة المرور مطلوبة.</string><string name="password_mismatch">كلمتا المرور الجديدتان غير متطابقتين.</string><string name="password_same">اختر كلمة مرور جديدة مختلفة.</string><string name="password_changed_sign_in">تم تغيير كلمة المرور. سجّل الدخول مجددًا.</string><string name="password_changed_partial">تم تغيير كلمة المرور وتسجيل خروج هذا الجهاز؛ قد تظل بعض الجلسات الأخرى نشطة.</string><string name="password_change_failed">فشل تغيير كلمة المرور.</string>
+    <string name="stable">مستقر</string>
+    <string name="network_error">خطأ في الشبكة</string>
+    <string name="app_update_required">يلزم تحديث التطبيق</string>
+    <string name="sync_pending_changes">تغييرات معلقة.</string>
+    <string name="sync_network_error_detail">الشبكة غير متاحة. تحقق من Wi-Fi أو بيانات الهاتف أو VPN.</string>
 </resources>

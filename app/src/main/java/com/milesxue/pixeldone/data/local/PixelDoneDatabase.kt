@@ -10,13 +10,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TodoStateMetadataEntity::class,
         TodoChecklistEntity::class,
         TodoItemEntity::class,
-        SyncCursorEntity::class,
-        SyncPristineRecordEntity::class,
-        SyncConflictRecordEntity::class,
-        SyncMutationEntity::class,
         SyncTombstoneEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class PixelDoneDatabase : RoomDatabase() {
@@ -226,6 +222,17 @@ internal object PixelDoneMigrations {
                 WHERE imageLocalName IS NOT NULL
                 """.trimIndent(),
             )
+        }
+    }
+
+    val Migration6To7: Migration = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // These tables contain rebuildable sync protocol state, not user-owned todo data.
+            // PixelDone 3.2.1 deliberately cuts over instead of decoding legacy JSON payloads.
+            db.execSQL("DROP TABLE IF EXISTS sync_cursors")
+            db.execSQL("DROP TABLE IF EXISTS sync_pristine_records")
+            db.execSQL("DROP TABLE IF EXISTS sync_mutations")
+            db.execSQL("DROP TABLE IF EXISTS sync_conflict_records")
         }
     }
 }

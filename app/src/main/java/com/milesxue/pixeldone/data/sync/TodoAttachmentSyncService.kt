@@ -113,7 +113,7 @@ internal class SupabaseTodoAttachmentRemoteStore(
  */
 internal class TodoAttachmentSyncService(
     private val authRepository: AuthSessionRepository,
-    private val localStore: TodoSyncLocalStore,
+    private val localStore: TodoSyncDomainStore,
     private val imageStore: TodoImageStore,
     private val remoteStore: TodoAttachmentRemoteStore,
 ) {

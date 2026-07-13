@@ -23,4 +23,9 @@
     <string name="downloading_version">Téléchargement : v%1$s</string><string name="downloading_version_percent">Téléchargement : v%1$s %2$d%%</string><string name="downloading_version_size">Téléchargement : v%1$s %2$s</string>
     <string name="current_password">Mot de passe actuel</string><string name="new_password">Nouveau mot de passe</string><string name="confirm_new_password">Confirmer le nouveau mot de passe</string><string name="change_password">Modifier le mot de passe</string><string name="changing_password">Modification du mot de passe</string>
     <string name="password_fields_required">Tous les champs de mot de passe sont obligatoires.</string><string name="password_mismatch">Les nouveaux mots de passe ne correspondent pas.</string><string name="password_same">Choisissez un nouveau mot de passe différent.</string><string name="password_changed_sign_in">Mot de passe modifié. Reconnectez-vous.</string><string name="password_changed_partial">Mot de passe modifié et appareil déconnecté ; certaines autres sessions peuvent rester actives.</string><string name="password_change_failed">Échec de la modification du mot de passe.</string>
+    <string name="stable">Stable</string>
+    <string name="network_error">Erreur réseau</string>
+    <string name="app_update_required">Mise à jour de l’application requise</string>
+    <string name="sync_pending_changes">Modifications en attente.</string>
+    <string name="sync_network_error_detail">Réseau indisponible. Vérifiez le Wi-Fi, les données mobiles ou le VPN.</string>
 </resources>

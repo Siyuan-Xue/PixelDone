@@ -311,7 +311,7 @@ class PixelDoneViewModelTest {
     fun syncNowSuccessWritesSuccessMessageInsteadOfError() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
-        val syncCoordinator = FakeSyncCoordinator(SyncCoordinatorStatus.SYNCED)
+        val syncCoordinator = FakeSyncCoordinator(SyncCoordinatorStatus.STABLE)
         val viewModel = PixelDoneViewModel(
             todoRepository = repository,
             reminderScheduler = FakeReminderScheduler(),
@@ -321,7 +321,7 @@ class PixelDoneViewModelTest {
         viewModel.onAction(PixelDoneAction.SyncNow)
         mainDispatcherRule.advanceUntilIdle()
 
-        assertEquals("Synced.", viewModel.uiState.value.authInput.message)
+        assertEquals("Stable.", viewModel.uiState.value.authInput.message)
         assertNull(viewModel.uiState.value.authInput.error)
     }
 
@@ -344,6 +344,45 @@ class PixelDoneViewModelTest {
 
         assertEquals(true, viewModel.uiState.value.conflictDialogVisible)
         assertEquals(listOf(sampleConflictEntry()), viewModel.uiState.value.syncConflicts)
+    }
+
+    @Test
+    fun rawConflictCountCannotOutnumberDecodedConflictList() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val coordinator = FakeSyncCoordinator(initialStatus = SyncCoordinatorStatus.IDLE)
+        val viewModel = PixelDoneViewModel(
+            todoRepository = TodoRepository(InMemoryTodoStateStore(initial)),
+            reminderScheduler = FakeReminderScheduler(),
+            syncCoordinator = coordinator,
+        )
+        mainDispatcherRule.advanceUntilIdle()
+
+        coordinator.emitRawConflictCount(16)
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals(0, viewModel.uiState.value.syncRunState.conflictCount)
+        assertEquals(emptyList<SyncConflictEntry>(), viewModel.uiState.value.syncConflicts)
+        assertEquals(false, viewModel.uiState.value.conflictDialogVisible)
+    }
+
+    @Test
+    fun networkFailureUsesActionableErrorInsteadOfConflict() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val coordinator = FakeSyncCoordinator(initialStatus = SyncCoordinatorStatus.NETWORK_ERROR)
+        val viewModel = PixelDoneViewModel(
+            todoRepository = TodoRepository(InMemoryTodoStateStore(initial)),
+            reminderScheduler = FakeReminderScheduler(),
+            syncCoordinator = coordinator,
+        )
+
+        viewModel.onAction(PixelDoneAction.SyncNow)
+        mainDispatcherRule.advanceUntilIdle()
+
+        assertEquals(
+            "Network unavailable. Check Wi-Fi, mobile data, or VPN.",
+            viewModel.uiState.value.authInput.error,
+        )
+        assertEquals(0, viewModel.uiState.value.syncRunState.conflictCount)
     }
 
     @Test
@@ -401,7 +440,7 @@ class PixelDoneViewModelTest {
         assertEquals(listOf(ConflictResolutionChoice.KEEP_CLOUD), syncCoordinator.resolutionChoices)
         assertEquals(false, viewModel.uiState.value.conflictDialogVisible)
         assertEquals(emptyList<SyncConflictEntry>(), viewModel.uiState.value.syncConflicts)
-        assertEquals(SyncCoordinatorStatus.SYNCED, viewModel.uiState.value.syncStatus)
+        assertEquals(SyncCoordinatorStatus.STABLE, viewModel.uiState.value.syncStatus)
     }
 
     @Test
@@ -548,7 +587,7 @@ private class FakeSyncCoordinator(
     ): SyncCoordinatorStatus {
         resolutionChoices = resolutionChoices + choice
         mutableConflicts.removeAll { it.recordType == recordType && it.localId == localId }
-        val nextStatus = if (mutableConflicts.isEmpty()) SyncCoordinatorStatus.SYNCED else SyncCoordinatorStatus.CONFLICT
+        val nextStatus = if (mutableConflicts.isEmpty()) SyncCoordinatorStatus.STABLE else SyncCoordinatorStatus.CONFLICT
         mutableStatus.value = nextStatus
         mutableRunState.value = SyncRunState(status = nextStatus, conflictCount = mutableConflicts.size)
         return nextStatus
@@ -561,9 +600,17 @@ private class FakeSyncCoordinator(
     fun setConflicts(conflicts: List<SyncConflictEntry>) {
         mutableConflicts.clear()
         mutableConflicts.addAll(conflicts)
-        val next = if (conflicts.isEmpty()) SyncCoordinatorStatus.SYNCED else SyncCoordinatorStatus.CONFLICT
+        val next = if (conflicts.isEmpty()) SyncCoordinatorStatus.STABLE else SyncCoordinatorStatus.CONFLICT
         mutableStatus.value = next
         mutableRunState.value = SyncRunState(status = next, conflictCount = conflicts.size)
+    }
+
+    fun emitRawConflictCount(count: Int) {
+        mutableStatus.value = SyncCoordinatorStatus.CONFLICT
+        mutableRunState.value = SyncRunState(
+            status = SyncCoordinatorStatus.CONFLICT,
+            conflictCount = count,
+        )
     }
 }
 

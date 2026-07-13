@@ -59,13 +59,30 @@ object NoOpSyncWorkScheduler : SyncWorkScheduler {
     override fun requestSync() = Unit
 }
 
-internal interface TodoSyncLocalStore {
+internal interface TodoSyncDomainStore {
     suspend fun loadEntitySetForSync(nowMillis: Long): TodoEntitySet
     suspend fun replaceEntitySetFromSync(entitySet: TodoEntitySet)
     suspend fun updateEntitySetFromSync(
         nowMillis: Long,
         transform: (TodoEntitySet) -> TodoEntitySet,
     ): TodoEntitySet
+}
+
+internal data class SyncMetadataSession(
+    val generation: String? = null,
+    val rebuilding: Boolean = false,
+)
+
+internal interface SyncMetadataLocalStore {
+    suspend fun beginSyncMetadata(ownerUserId: String, nowMillis: Long): SyncMetadataSession =
+        SyncMetadataSession()
+    suspend fun completeSyncMetadata(
+        ownerUserId: String,
+        session: SyncMetadataSession,
+        nowMillis: Long,
+    ) = Unit
+    suspend fun abortSyncMetadata(ownerUserId: String, session: SyncMetadataSession) = Unit
+    suspend fun invalidateSyncMetadata(ownerUserId: String) = Unit
     suspend fun loadSyncCursor(ownerUserId: String): Long?
     suspend fun saveSyncCursor(ownerUserId: String, remoteVersion: Long, updatedAtMillis: Long)
     suspend fun loadPristineSnapshot(ownerUserId: String): RemoteTodoSnapshot
@@ -78,6 +95,8 @@ internal interface TodoSyncLocalStore {
     suspend fun loadConflict(ownerUserId: String, recordType: String, localId: String): LocalSyncConflictRecord?
     suspend fun clearConflict(ownerUserId: String, recordType: String, localId: String)
 }
+
+internal interface TodoSyncLocalStore : TodoSyncDomainStore, SyncMetadataLocalStore
 
 internal interface SettingsSyncLocalStore {
     suspend fun loadSettingsForSync(nowMillis: Long): LocalSettingsSyncRecord
@@ -104,7 +123,18 @@ class LocalOnlySyncCoordinator : SyncCoordinator {
 
 class SyncConfigurationException(message: String) : Exception(message)
 class SyncRemoteException(message: String, val statusCode: Int? = null) : Exception(message)
-class SyncSchemaMismatchException(message: String) : Exception(message)
+class SyncNetworkException(message: String, cause: Throwable? = null) : Exception(message, cause)
+class SyncMetadataCorruptException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+enum class SyncContractRequiredAction {
+    UPDATE_APP,
+    UPDATE_SERVER,
+}
+
+class SyncSchemaMismatchException(
+    message: String,
+    val requiredAction: SyncContractRequiredAction = SyncContractRequiredAction.UPDATE_SERVER,
+) : Exception(message)
 
 @Serializable
 data class RemoteTodoSnapshot(
@@ -264,3 +294,4 @@ interface RemoteTodoDataSource {
 }
 
 const val ExpectedRemoteSchemaVersion = "3.2"
+const val CurrentSyncMetadataFormatVersion = 1

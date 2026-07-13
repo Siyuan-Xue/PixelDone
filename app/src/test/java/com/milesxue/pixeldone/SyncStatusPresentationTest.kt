@@ -32,7 +32,7 @@ class SyncStatusPresentationTest {
         )
 
         assertEquals(colors.error, SyncCoordinatorStatus.ERROR.settingsValueColor(colors))
-        assertEquals(colors.success, SyncCoordinatorStatus.SYNCED.settingsValueColor(colors))
+        assertEquals(colors.success, SyncCoordinatorStatus.STABLE.settingsValueColor(colors))
         assertEquals(colors.textSecondary, SyncCoordinatorStatus.SYNCING.settingsValueColor(colors))
         assertEquals(colors.textSecondary, SyncCoordinatorStatus.SIGNED_OUT.settingsValueColor(colors))
     }

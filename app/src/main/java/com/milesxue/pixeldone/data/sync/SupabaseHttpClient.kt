@@ -71,7 +71,10 @@ internal class SupabaseHttpClient(
         } catch (error: SyncRemoteException) {
             throw error
         } catch (error: Exception) {
-            throw SyncRemoteException(error.message ?: "Supabase request failed.")
+            throw SyncNetworkException(
+                message = error.message ?: "Supabase network request failed.",
+                cause = error,
+            )
         } finally {
             connection?.disconnect()
         }

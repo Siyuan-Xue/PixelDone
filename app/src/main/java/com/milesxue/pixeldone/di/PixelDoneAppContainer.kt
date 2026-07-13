@@ -4,6 +4,8 @@ import android.content.Context
 import com.milesxue.pixeldone.BuildConfig
 import com.milesxue.pixeldone.PixelDoneApplication
 import com.milesxue.pixeldone.data.image.TodoImageStore
+import com.milesxue.pixeldone.data.local.CompositeTodoSyncLocalStore
+import com.milesxue.pixeldone.data.local.RoomSyncMetadataStore
 import com.milesxue.pixeldone.data.local.RoomTodoStateStore
 import com.milesxue.pixeldone.data.settings.DataStorePixelDoneSettingsStore
 import com.milesxue.pixeldone.data.sync.AuthSessionRepository
@@ -44,6 +46,8 @@ internal class PixelDoneAppContainer(context: Context) {
     val todoPreferences: TodoPreferences = TodoPreferences.create(appContext)
     val settingsStore = DataStorePixelDoneSettingsStore.create(appContext, todoPreferences)
     private val todoStateStore = RoomTodoStateStore.create(appContext, todoPreferences)
+    private val syncMetadataStore = RoomSyncMetadataStore.create(appContext)
+    private val todoSyncLocalStore = CompositeTodoSyncLocalStore(todoStateStore, syncMetadataStore)
     val todoRepository: TodoRepository = TodoRepository(todoStateStore)
     private val supabaseConfig = SupabaseConfig(
         baseUrl = BuildConfig.SUPABASE_URL,
@@ -75,7 +79,7 @@ internal class PixelDoneAppContainer(context: Context) {
     val syncCoordinator: SyncCoordinator = if (supabaseConfig.isConfigured) {
         TodoSyncCoordinator(
             authSessionRepository = authSessionRepository,
-            localStore = todoStateStore,
+            localStore = todoSyncLocalStore,
             remoteDataSource = SupabaseRemoteTodoDataSource(supabaseHttpClient),
             clockProvider = clockProvider,
             settingsStore = settingsStore,

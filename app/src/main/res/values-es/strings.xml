@@ -23,4 +23,9 @@
     <string name="downloading_version">Descargando: v%1$s</string><string name="downloading_version_percent">Descargando: v%1$s %2$d%%</string><string name="downloading_version_size">Descargando: v%1$s %2$s</string>
     <string name="current_password">Contraseña actual</string><string name="new_password">Nueva contraseña</string><string name="confirm_new_password">Confirmar nueva contraseña</string><string name="change_password">Cambiar contraseña</string><string name="changing_password">Cambiando contraseña</string>
     <string name="password_fields_required">Todos los campos de contraseña son obligatorios.</string><string name="password_mismatch">Las nuevas contraseñas no coinciden.</string><string name="password_same">Elige una contraseña nueva diferente.</string><string name="password_changed_sign_in">Contraseña cambiada. Inicia sesión de nuevo.</string><string name="password_changed_partial">Contraseña cambiada y sesión cerrada en este dispositivo; algunas otras sesiones pueden seguir activas.</string><string name="password_change_failed">No se pudo cambiar la contraseña.</string>
+    <string name="stable">Estable</string>
+    <string name="network_error">Error de red</string>
+    <string name="app_update_required">Se requiere actualizar la aplicación</string>
+    <string name="sync_pending_changes">Cambios pendientes.</string>
+    <string name="sync_network_error_detail">Red no disponible. Comprueba Wi-Fi, datos móviles o VPN.</string>
 </resources>

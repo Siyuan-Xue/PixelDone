@@ -196,4 +196,9 @@
     <string name="downloading_version">Downloading: v%1$s</string><string name="downloading_version_percent">Downloading: v%1$s %2$d%%</string><string name="downloading_version_size">Downloading: v%1$s %2$s</string>
     <string name="current_password">Current password</string><string name="new_password">New password</string><string name="confirm_new_password">Confirm new password</string><string name="change_password">Change password</string><string name="changing_password">Changing password</string>
     <string name="password_fields_required">All password fields are required.</string><string name="password_mismatch">New passwords do not match.</string><string name="password_same">Choose a different new password.</string><string name="password_changed_sign_in">Password changed. Sign in again.</string><string name="password_changed_partial">Password changed. This device signed out; some other sessions may still be active.</string><string name="password_change_failed">Password change failed.</string>
+    <string name="stable">Stable</string>
+    <string name="network_error">Network error</string>
+    <string name="app_update_required">App update required</string>
+    <string name="sync_pending_changes">Pending changes.</string>
+    <string name="sync_network_error_detail">Network unavailable. Check Wi-Fi, mobile data, or VPN.</string>
 </resources>

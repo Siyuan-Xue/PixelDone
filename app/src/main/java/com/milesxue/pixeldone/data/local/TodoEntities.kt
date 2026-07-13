@@ -78,55 +78,6 @@ data class SyncTombstoneEntity(
     val lastSyncError: String? = null,
 )
 
-@Entity(tableName = "sync_cursors")
-data class SyncCursorEntity(
-    @PrimaryKey val ownerUserId: String,
-    val remoteVersion: Long,
-    val updatedAtMillis: Long,
-)
-
-@Entity(
-    tableName = "sync_pristine_records",
-    primaryKeys = ["ownerUserId", "recordType", "localId"],
-)
-data class SyncPristineRecordEntity(
-    val ownerUserId: String,
-    val recordType: String,
-    val localId: String,
-    val payloadJson: String,
-    val remoteVersion: Long?,
-    val updatedAtMillis: Long,
-)
-
-@Entity(
-    tableName = "sync_conflict_records",
-    primaryKeys = ["ownerUserId", "recordType", "localId"],
-)
-data class SyncConflictRecordEntity(
-    val ownerUserId: String,
-    val recordType: String,
-    val localId: String,
-    val localPayloadJson: String,
-    val remotePayloadJson: String,
-    val fieldsJson: String,
-    val message: String,
-    val remoteVersion: Long?,
-    val createdAtMillis: Long,
-)
-
-@Entity(
-    tableName = "sync_mutations",
-    primaryKeys = ["ownerUserId", "mutationUuid"],
-)
-data class SyncMutationEntity(
-    val ownerUserId: String,
-    val mutationUuid: String,
-    val payloadJson: String,
-    val createdAtMillis: Long,
-    val attempts: Int,
-    val lastError: String? = null,
-)
-
 const val TodoStateMetadataId = "todo_state"
 const val SyncRecordTypeChecklist = "checklist"
 const val SyncRecordTypeItem = "item"

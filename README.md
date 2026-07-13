@@ -74,10 +74,10 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Sign up, sign in, sign out, verify the current password before changing it, globally revoke sessions after a successful password change, and manually sync through the low-key Settings `CLOUD` area.
 - Subscribe to Supabase Realtime while foregrounded and signed in so another device's checklist/todo/attachment/settings/tombstone changes trigger a debounced transactional cursor pull without manual refresh.
 - Keep image transfer independent from ordinary todo synchronization, cache remote images only when opened, and retry Storage cleanup without blocking text/list/settings changes.
-- Keep unresolved conflicts persistent and globally reviewable: dismissing the dialog does not resolve them, and a later conflict reopens the dialog with every unresolved item. Only actual conflicting fields and item content are shown.
+- Keep unresolved conflicts persistent and globally reviewable: dismissing the dialog does not resolve them, and a later conflict reopens the dialog with every unresolved item. The status count is derived from the same decoded conflict list shown by Review, so a hidden or undecodable row can never become a ghost conflict.
 - Three-way merge non-overlapping local/cloud field edits, exclude conflicts from upload, and make tombstones win over active content.
 - Retain recoverable Trash items for exactly 30 days; restore clears the timer, retrashing restarts it, and expiry scrubs content into an indefinitely retained minimal tombstone.
-- Debounce event-driven sync requests, enqueue one-time WorkManager sync only for explicit local changes, preserve one global cursor/pristine payloads/mutation UUIDs, and commit UI edits through an atomic Room transform to avoid stale Realtime write-back. No periodic synchronization job is registered.
+- Debounce event-driven sync requests, enqueue one-time WorkManager sync only for explicit local changes, and commit UI edits through an atomic Room transform to avoid stale Realtime write-back. Cursor, pristine snapshots, mutation UUIDs, and conflicts live in a separate rebuildable Room database whose complete generations are activated atomically. No periodic synchronization job is registered.
 - Customize the normal-checklist bottom dock with `+` placement, live preview, selected function buttons, and function order.
 - Use five atomic dock functions for `SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, and `QUICK DELETE`.
 - Use redesigned pixel-line dock icons for the dock functions, with a direct `P`/`T` sort-mode glyph and a line-drawn trash can for `QUICK DELETE`.
@@ -115,7 +115,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - `di/`: manual dependency injection for local storage, settings, optional Supabase sync, image storage, update service, reminder scheduler, and clock.
 - `domain/todo/`: pure Kotlin todo, checklist, sorting, and reminder rules with no Android or Compose imports.
 - `data/todo/`: todo repository boundary and legacy SharedPreferences JSON migration reader.
-- `data/local/`: Room database, DAO, entities, and mappers for local-first todo/checklist storage.
+- `data/local/`: a non-destructive Room domain database for local-first todo/checklist/tombstone storage plus an independently rebuildable, generation-based sync metadata database.
 - `data/settings/`: DataStore-backed settings; language mode syncs through Cloud while theme, Dock, and update preferences remain local.
 - `data/sync/` and `domain/sync/`: Supabase Auth, 3.2 transaction RPCs, private Storage attachment transfer, Realtime invalidation subscriptions, persistent conflicts, field merges, mutation UUIDs, cursors, and tombstones.
 - `data/image/`: private image-copying, content-signature/hash validation, on-demand remote caching, safe file-path handling, and preview bitmap sampling.
@@ -180,7 +180,7 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.2.0-release.apk
+app/build/outputs/apk/release/PixelDone-3.2.1-release.apk
 ```
 
 ## Install
@@ -188,7 +188,7 @@ app/build/outputs/apk/release/PixelDone-3.2.0-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.2.0-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.2.1-release.apk
 ```
 
 The formal package name is:
@@ -205,4 +205,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.2.0 is the current formal signed Android release. The Supabase 3.2 schema, private bucket, four Storage policies, five-table Realtime publication, RPC overloads, and daily cleanup job were verified on 2026-07-13. The operator explicitly authorized formal publication before the remaining installed two-device Storage, password/global-logout, Realtime, and notification regression checks; those checks remain recorded as unverified rather than being represented as a passed release gate.
+3.2.1 is the current formal signed Android stabilization release. It upgrades the local domain database to schema 7, moves rebuildable sync protocol state into a format-versioned generation database, excludes that derived database from backup and device transfer, rejects corrupt current-format metadata instead of hiding it, and derives the conflict count from the exact Review list. The remote data contract remains 3.2, so a server already reporting schema 3.2 requires no 3.2.1 SQL migration.
