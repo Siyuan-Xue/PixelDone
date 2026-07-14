@@ -290,7 +290,7 @@ class PixelDoneViewModelTest {
     }
 
     @Test
-    fun syncNowErrorWritesErrorInsteadOfSuccessMessage() {
+    fun syncNowErrorDoesNotPolluteAuthenticationMessages() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
         val syncCoordinator = FakeSyncCoordinator(SyncCoordinatorStatus.ERROR)
@@ -303,12 +303,12 @@ class PixelDoneViewModelTest {
         viewModel.onAction(PixelDoneAction.SyncNow)
         mainDispatcherRule.advanceUntilIdle()
 
-        assertEquals("Sync failed.", viewModel.uiState.value.authInput.error)
+        assertNull(viewModel.uiState.value.authInput.error)
         assertNull(viewModel.uiState.value.authInput.message)
     }
 
     @Test
-    fun syncNowSuccessWritesSuccessMessageInsteadOfError() {
+    fun syncNowSuccessDoesNotPolluteAuthenticationMessages() {
         val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
         val repository = TodoRepository(InMemoryTodoStateStore(initial))
         val syncCoordinator = FakeSyncCoordinator(SyncCoordinatorStatus.STABLE)
@@ -321,7 +321,7 @@ class PixelDoneViewModelTest {
         viewModel.onAction(PixelDoneAction.SyncNow)
         mainDispatcherRule.advanceUntilIdle()
 
-        assertEquals("Stable.", viewModel.uiState.value.authInput.message)
+        assertNull(viewModel.uiState.value.authInput.message)
         assertNull(viewModel.uiState.value.authInput.error)
     }
 
@@ -378,10 +378,8 @@ class PixelDoneViewModelTest {
         viewModel.onAction(PixelDoneAction.SyncNow)
         mainDispatcherRule.advanceUntilIdle()
 
-        assertEquals(
-            "Network unavailable. Check Wi-Fi, mobile data, or VPN.",
-            viewModel.uiState.value.authInput.error,
-        )
+        assertNull(viewModel.uiState.value.authInput.error)
+        assertEquals(SyncCoordinatorStatus.NETWORK_ERROR, viewModel.uiState.value.syncRunState.status)
         assertEquals(0, viewModel.uiState.value.syncRunState.conflictCount)
     }
 

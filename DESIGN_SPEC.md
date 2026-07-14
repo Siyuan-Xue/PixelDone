@@ -218,9 +218,14 @@ Spacing must be stable and must not jump because of button text, state changes, 
 - Page titles, checklist titles, dialog titles, and other display-scale headings use the product serif family.
 - Body text, labels, buttons, inputs, menus, status text, and supporting UI use the product sans family.
 - Apps with multilingual UI must bundle deterministic script-appropriate serif and sans families for every declared locale. The standard pairing is Source Serif 4 / Source Sans 3 for Latin and Cyrillic, Noto Serif SC / Noto Sans SC for Simplified Chinese, and Noto Naskh Arabic / Noto Sans Arabic for Arabic.
+- UI chrome follows the resolved UI locale, but user-authored content must not change typeface when the UI language changes. Render user content by Unicode script run: Latin and Cyrillic use Source, Han/CJK uses Noto SC, Arabic uses Noto Arabic, adjacent punctuation inherits the nearest written script, and emoji remains on the system color-emoji font.
+- Apply script-aware serif rendering to user-authored page and checklist titles. Apply script-aware sans rendering to tasks, body content, conflict values, attachment titles, and other functional user data.
+- Language selectors render every native language name in that language's own script family. Fixed product marks, versions, dates, and technical identifiers use Source Sans; aligned numerals use `tnum`.
 - Use unmodified OFL font binaries and include the corresponding license and attribution files. Do not redistribute Anthropic brand fonts unless their redistribution rights have been explicitly verified.
 - Use tabular numerals for clocks, countdowns, and aligned numeric instruments. Monospace is reserved for genuinely technical identifiers or code-like content, not general UI.
-- Main weights are `Normal`, `SemiBold`, and `Bold`.
+- Variable fonts must define real `400`, `500`, `600`, and `700` instances for `Normal`, `Medium`, `SemiBold`, and `Bold`. Disable synthetic font weight and style generation.
+- Main weights are `Normal`, `Medium`, `SemiBold`, and `Bold`. Action labels use at least `SemiBold`; titles use `SemiBold` or `Bold`.
+- Muted or supporting text must be at least `12sp` at weight `500`. Keep its semantic color at full opacity and meet a `4.5:1` contrast ratio against its actual background; do not make text appear muted by reducing alpha.
 - `letterSpacing` is fixed at `0.sp`.
 - Do not scale font size with viewport width.
 - Long text must wrap or truncate; it must not overflow buttons, panels, or input cells.

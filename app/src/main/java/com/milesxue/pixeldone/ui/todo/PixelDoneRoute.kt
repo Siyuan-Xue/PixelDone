@@ -124,6 +124,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
+import com.milesxue.pixeldone.ui.theme.PixelSourceSans
+import com.milesxue.pixeldone.ui.theme.PixelTextRole
+import com.milesxue.pixeldone.ui.theme.nativeLabelFontFamily
+import com.milesxue.pixeldone.ui.theme.scriptAwareText
+import com.milesxue.pixeldone.ui.theme.scriptAwareValueText
 import com.milesxue.pixeldone.applyPixelDoneLanguage
 import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.ui.todo.components.PixelAlarmIcon
@@ -2093,10 +2098,10 @@ private fun Header(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = selectedChecklistName,
+                text = scriptAwareText(selectedChecklistName, PixelTextRole.SERIF),
                 color = colors.textPrimary,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 letterSpacing = 0.sp,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
@@ -2184,7 +2189,7 @@ private fun XHighAlarmControlPanel(
                 )
             }
             Text(
-                text = alarm.primaryTitle(),
+                text = scriptAwareText(alarm.primaryTitle(), PixelTextRole.SANS),
                 color = colors.textPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
@@ -2249,10 +2254,10 @@ private fun ChecklistPickerRow(
                 .clickable(onClick = onSelect),
         ) {
             Text(
-                text = checklist.localizedDisplayName(),
+                text = scriptAwareText(checklist.localizedDisplayName(), PixelTextRole.SERIF),
                 color = colors.textPrimary,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
+                fontWeight = FontWeight.SemiBold,
                 letterSpacing = 0.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -2656,11 +2661,6 @@ private fun SettingsPanel(
                     valueColor = colors.primary,
                 )
                 SettingsAboutTextRow(
-                    title = stringResource(R.string.sync),
-                    value = syncStatusText,
-                    valueColor = colors.primaryInteractive,
-                )
-                SettingsAboutTextRow(
                     title = stringResource(R.string.update_permissions),
                     value = stringResource(R.string.same_package_signature),
                 )
@@ -2670,7 +2670,7 @@ private fun SettingsPanel(
 }
 
 @Composable
-private fun SettingsCloudPanel(
+internal fun SettingsCloudPanel(
     authSession: AuthSession,
     authInput: AuthInputState,
     passwordChangeState: PasswordChangeState,
@@ -2951,6 +2951,7 @@ private fun ClayReviewButton(text: String, onClick: () -> Unit, modifier: Modifi
     val colors = PixelDoneColors.current
     Box(
         modifier = modifier
+            .fillMaxWidth()
             .heightIn(min = 44.dp)
             .background(colors.primary, RectangleShape)
             .clickable(onClick = onClick)
@@ -2983,8 +2984,8 @@ private fun SettingsTextAction(
                 onClick = onClick,
             )
             .semantics { contentDescription = text }
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center,
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.CenterStart,
     ) {
         Text(
             text = text,
@@ -3056,7 +3057,9 @@ private fun LanguageChoice(
         }
         Text(
             text = languageLabel,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontFamily = language.nativeLabelFontFamily() ?: MaterialTheme.typography.labelLarge.fontFamily,
+            ),
             color = if (selected) colors.textPrimary else colors.textSecondary,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -3313,9 +3316,7 @@ private fun SettingsSectionTitle(text: String) {
     Text(
         text = text,
         color = colors.primary,
-        fontSize = 16.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = 0.sp,
+        style = MaterialTheme.typography.titleMedium,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
@@ -3539,7 +3540,7 @@ private fun Boolean.permissionLabel(): String =
 private fun SyncCoordinatorStatus.settingsLabel(): String = when (this) {
     SyncCoordinatorStatus.LOCAL_ONLY -> stringResource(R.string.local_only)
     SyncCoordinatorStatus.NOT_CONFIGURED -> stringResource(R.string.needs_setup)
-    SyncCoordinatorStatus.SIGNED_OUT -> stringResource(R.string.signed_out)
+    SyncCoordinatorStatus.SIGNED_OUT -> stringResource(R.string.sync_sign_in_required)
     SyncCoordinatorStatus.IDLE -> stringResource(R.string.ready)
     SyncCoordinatorStatus.SYNCING -> stringResource(R.string.syncing)
     SyncCoordinatorStatus.STABLE -> stringResource(R.string.stable)
@@ -4498,7 +4499,8 @@ private fun BatchMoveTargetPanel(
                 ) {
                     targetChecklists.forEach { checklist ->
                         PixelButton(
-                            text = checklist.name.uppercase(Locale.US),
+                            text = checklist.name,
+                            annotatedText = scriptAwareText(checklist.name, PixelTextRole.SERIF),
                             onClick = { onTargetSelected(checklist.id) },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -4651,7 +4653,7 @@ private fun TodoRow(
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = item.title,
+                text = scriptAwareText(item.title, PixelTextRole.SANS),
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (item.completed) colors.textSecondary else colors.textPrimary,
                 textDecoration = if (item.completed) TextDecoration.LineThrough else null,
@@ -4748,7 +4750,7 @@ private fun TrashTodoRow(
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = item.title,
+                text = scriptAwareText(item.title, PixelTextRole.SANS),
                 style = MaterialTheme.typography.bodyLarge,
                 color = if (item.completed) colors.textSecondary else colors.textPrimary,
                 textDecoration = if (item.completed) TextDecoration.LineThrough else null,
@@ -4822,9 +4824,7 @@ private fun Footer(
             Text(
                 text = message,
                 color = messageColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.sp,
+                style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
@@ -4843,6 +4843,7 @@ private fun Footer(
         Text(
             text = "PIXELDONE",
             color = colors.textPrimary,
+            fontFamily = PixelSourceSans,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 0.sp,
@@ -4851,7 +4852,8 @@ private fun Footer(
         Text(
             text = DeveloperCredit,
             color = colors.primary,
-            fontSize = 8.sp,
+            fontFamily = PixelSourceSans,
+            fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.sp,
             maxLines = 1,
@@ -5123,11 +5125,14 @@ private fun SyncConflictReviewItem(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = if (conflict.recordType == "settings") {
-                stringResource(R.string.conflict_settings_title)
-            } else {
-                conflict.title
-            },
+            text = scriptAwareText(
+                text = if (conflict.recordType == "settings") {
+                    stringResource(R.string.conflict_settings_title)
+                } else {
+                    conflict.title
+                },
+                role = PixelTextRole.SANS,
+            ),
             style = MaterialTheme.typography.labelLarge,
             color = colors.textPrimary,
             maxLines = 3,
@@ -5187,7 +5192,10 @@ private fun SyncConflictFieldRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = stringResource(R.string.this_device) + "  " + conflictDisplayValue(field, localValue),
+                text = scriptAwareValueText(
+                    prefix = stringResource(R.string.this_device) + "  ",
+                    value = conflictDisplayValue(field, localValue),
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textPrimary,
                 modifier = Modifier.weight(1f),
@@ -5195,7 +5203,10 @@ private fun SyncConflictFieldRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = stringResource(R.string.cloud_version) + "  " + conflictDisplayValue(field, cloudValue),
+                text = scriptAwareValueText(
+                    prefix = stringResource(R.string.cloud_version) + "  ",
+                    value = conflictDisplayValue(field, cloudValue),
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textPrimary,
                 modifier = Modifier.weight(1f),
@@ -5472,7 +5483,7 @@ private fun TodoImagePreviewDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = item.title,
+                    text = scriptAwareText(item.title, PixelTextRole.SANS),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.textSecondary,
                     maxLines = 2,
@@ -5820,13 +5831,23 @@ private fun TodoItem.subtitleText(
     showDeadlineCountdown: Boolean,
 ) = buildAnnotatedString {
     if (showDeadlineCountdown) {
-        withStyle(SpanStyle(color = dueDateTimeColor)) {
+        withStyle(SpanStyle(
+            color = dueDateTimeColor,
+            fontFamily = PixelSourceSans,
+            fontFeatureSettings = "tnum",
+        )) {
             append(deadlineText)
         }
     } else {
-        append(priorityText)
+        withStyle(SpanStyle(fontFamily = PixelSourceSans)) {
+            append(priorityText)
+        }
         append("  ")
-        withStyle(SpanStyle(color = dueDateTimeColor)) {
+        withStyle(SpanStyle(
+            color = dueDateTimeColor,
+            fontFamily = PixelSourceSans,
+            fontFeatureSettings = "tnum",
+        )) {
             append(dueDateTime)
         }
         append(repeatText)

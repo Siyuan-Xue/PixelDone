@@ -122,7 +122,15 @@ class LocalOnlySyncCoordinator : SyncCoordinator {
 }
 
 class SyncConfigurationException(message: String) : Exception(message)
-class SyncRemoteException(message: String, val statusCode: Int? = null) : Exception(message)
+class SyncRemoteException(
+    message: String,
+    val statusCode: Int? = null,
+    val remoteCode: String? = null,
+) : Exception(message)
+class AuthSessionExpiredException(
+    message: String = "Session expired. Sign in again.",
+    cause: Throwable? = null,
+) : Exception(message, cause)
 class SyncNetworkException(message: String, cause: Throwable? = null) : Exception(message, cause)
 class SyncMetadataCorruptException(message: String, cause: Throwable? = null) : Exception(message, cause)
 

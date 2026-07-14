@@ -266,16 +266,7 @@ class PixelDoneViewModel(
 
     private fun syncNow() {
         viewModelScope.launch {
-            updateAuthInput { it.copy(error = null, message = null) }
-            val status = syncCoordinator.syncNow()
-            val message = status.settingsMessage()
-            updateAuthInput {
-                if (status in SyncErrorStatuses) {
-                    it.copy(error = message, message = null)
-                } else {
-                    it.copy(error = null, message = message)
-                }
-            }
+            syncCoordinator.syncNow()
         }
     }
 
@@ -364,26 +355,3 @@ class PixelDoneViewModel(
         }
     }
 }
-
-private fun com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.settingsMessage(): String = when (this) {
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.LOCAL_ONLY -> "Local only."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.NOT_CONFIGURED -> "Cloud sync needs setup."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SIGNED_OUT -> "Sign in first."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.IDLE -> "Ready."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SYNCING -> "Syncing."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.STABLE -> "Stable."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.PENDING -> "Pending changes."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.CONFLICT -> "Sync conflicts."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.NETWORK_ERROR ->
-        "Network unavailable. Check Wi-Fi, mobile data, or VPN."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.APP_UPDATE_REQUIRED -> "App update required."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED -> "Server update required."
-    com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus.ERROR -> "Sync failed."
-}
-
-private val SyncErrorStatuses = setOf(
-    SyncCoordinatorStatus.NETWORK_ERROR,
-    SyncCoordinatorStatus.APP_UPDATE_REQUIRED,
-    SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED,
-    SyncCoordinatorStatus.ERROR,
-)

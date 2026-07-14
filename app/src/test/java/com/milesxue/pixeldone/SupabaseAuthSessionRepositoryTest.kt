@@ -1,6 +1,7 @@
 package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.sync.AuthSessionStore
+import com.milesxue.pixeldone.data.sync.AuthSessionExpiredException
 import com.milesxue.pixeldone.data.sync.SupabaseAuthSessionRepository
 import com.milesxue.pixeldone.data.sync.SupabaseConfig
 import com.milesxue.pixeldone.data.sync.SyncRemoteException
@@ -82,6 +83,64 @@ class SupabaseAuthSessionRepositoryTest {
 
         assertEquals("new-access", refreshed.accessToken)
         assertEquals(1, client.requests.size)
+    }
+
+    @Test
+    fun terminalRefreshErrorsClearCredentialsAndRequireSignIn() = runTest {
+        val terminalCodes = listOf(
+            "refresh_token_not_found",
+            "refresh_token_already_used",
+            "session_expired",
+            "session_not_found",
+            "invalid_credentials",
+        )
+
+        terminalCodes.forEach { remoteCode ->
+            val original = signedInSession(expiresAtMillis = 1_000L)
+            val store = InMemoryAuthSessionStore(original)
+            val repository = SupabaseAuthSessionRepository(
+                config = TestConfig,
+                httpClient = FailingSessionRequestClient(SyncRemoteException("Rejected", 400, remoteCode)),
+                sessionStore = store,
+            )
+
+            val error = runCatching {
+                repository.refreshSessionIfNeeded(nowMillis = 2_000L)
+            }.exceptionOrNull()
+
+            assertTrue("$remoteCode must end the local session", error is AuthSessionExpiredException)
+            assertNull(store.load())
+            assertEquals(1, store.clearCount)
+            assertEquals(false, repository.session.value.signedIn)
+        }
+    }
+
+    @Test
+    fun transientRefreshErrorsPreserveCredentials() = runTest {
+        val failures = listOf(
+            SyncRemoteException("Rate limited", 429, "over_request_rate_limit"),
+            SyncRemoteException("Unavailable", 503, null),
+            com.milesxue.pixeldone.data.sync.SyncNetworkException("offline"),
+        )
+
+        failures.forEach { failure ->
+            val original = signedInSession(expiresAtMillis = 1_000L)
+            val store = InMemoryAuthSessionStore(original)
+            val repository = SupabaseAuthSessionRepository(
+                config = TestConfig,
+                httpClient = FailingSessionRequestClient(failure),
+                sessionStore = store,
+            )
+
+            val error = runCatching {
+                repository.refreshSessionIfNeeded(nowMillis = 2_000L)
+            }.exceptionOrNull()
+
+            assertSame(failure, error)
+            assertEquals(original, store.load())
+            assertEquals(original, repository.session.value)
+            assertEquals(0, store.clearCount)
+        }
     }
 
     @Test
@@ -271,9 +330,24 @@ private class RecordingSessionRequestClient(
     }
 }
 
+private class FailingSessionRequestClient(
+    private val failure: Exception,
+) : SupabaseRequestClient {
+    override suspend fun request(
+        method: String,
+        path: String,
+        bearerToken: String?,
+        query: List<Pair<String, String>>,
+        prefer: String?,
+        body: String?,
+    ): String = throw failure
+}
+
 private class InMemoryAuthSessionStore(initialSession: AuthSession?) : AuthSessionStore {
     private var storedSession: AuthSession? = initialSession
     var savedSession: AuthSession? = null
+        private set
+    var clearCount: Int = 0
         private set
 
     override fun load(): AuthSession? = storedSession
@@ -285,5 +359,6 @@ private class InMemoryAuthSessionStore(initialSession: AuthSession?) : AuthSessi
 
     override fun clear() {
         storedSession = null
+        clearCount += 1
     }
 }

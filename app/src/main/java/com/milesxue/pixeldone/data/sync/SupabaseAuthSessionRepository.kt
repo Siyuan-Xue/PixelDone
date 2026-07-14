@@ -142,12 +142,19 @@ internal class SupabaseAuthSessionRepository(
             RefreshRequest.serializer(),
             RefreshRequest(refreshToken = refreshToken),
         )
-        val response = httpClient.request(
-            method = "POST",
-            path = "/auth/v1/token",
-            query = listOf("grant_type" to "refresh_token"),
-            body = body,
-        )
+        val response = try {
+            httpClient.request(
+                method = "POST",
+                path = "/auth/v1/token",
+                query = listOf("grant_type" to "refresh_token"),
+                body = body,
+            )
+        } catch (error: SyncRemoteException) {
+            if (!error.isTerminalRefreshFailure()) throw error
+            sessionStore.clear()
+            mutableSession.value = signedOutSession()
+            throw AuthSessionExpiredException(cause = error)
+        }
         val token = json.decodeFromString(TokenResponse.serializer(), response)
         val session = token.toSession(
             nowMillis = nowMillis,
@@ -205,8 +212,18 @@ internal class SupabaseAuthSessionRepository(
         )
     }
 
+    private fun SyncRemoteException.isTerminalRefreshFailure(): Boolean =
+        remoteCode?.lowercase() in TerminalRefreshErrorCodes
+
     private companion object {
         const val RefreshSkewMillis = 60_000L
+        val TerminalRefreshErrorCodes = setOf(
+            "refresh_token_not_found",
+            "refresh_token_already_used",
+            "session_expired",
+            "session_not_found",
+            "invalid_credentials",
+        )
     }
 }
 

@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -573,6 +574,7 @@ internal fun PixelButton(
     destructive: Boolean = false,
     selected: Boolean = false,
     clayOutline: Boolean = false,
+    annotatedText: AnnotatedString? = null,
 ) {
     val colors = PixelDoneColors.current
     val containerColor = when {
@@ -605,7 +607,7 @@ internal fun PixelButton(
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
     ) {
         Text(
-            text = text,
+            text = annotatedText ?: AnnotatedString(text),
             style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

@@ -6,6 +6,9 @@ import java.net.URLEncoder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
 internal interface SupabaseRequestClient {
     suspend fun request(
@@ -58,9 +61,11 @@ internal class SupabaseHttpClient(
                 connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
             }
             if (code !in 200..299) {
+                val error = parseSupabaseError(responseBody, code)
                 throw SyncRemoteException(
-                    message = responseBody.takeIf { it.isNotBlank() } ?: "Supabase request failed with HTTP $code.",
+                    message = error.message,
                     statusCode = code,
+                    remoteCode = error.code,
                 )
             }
             responseBody
@@ -89,3 +94,30 @@ internal class SupabaseHttpClient(
 
     private fun String.urlEncode(): String = URLEncoder.encode(this, Charsets.UTF_8.name())
 }
+
+internal data class SupabaseErrorDetails(
+    val code: String?,
+    val message: String,
+)
+
+private val SupabaseErrorJson = Json { ignoreUnknownKeys = true }
+
+internal fun parseSupabaseError(responseBody: String, statusCode: Int): SupabaseErrorDetails {
+    val payload = responseBody.takeIf(String::isNotBlank)?.let { body ->
+        runCatching { SupabaseErrorJson.decodeFromString(SupabaseErrorPayload.serializer(), body) }.getOrNull()
+    }
+    return SupabaseErrorDetails(
+        code = payload?.errorCode?.trim()?.takeIf(String::isNotEmpty),
+        message = payload?.message?.takeIf(String::isNotBlank)
+            ?: payload?.msg?.takeIf(String::isNotBlank)
+            ?: responseBody.takeIf(String::isNotBlank)
+            ?: "Supabase request failed with HTTP $statusCode.",
+    )
+}
+
+@Serializable
+private data class SupabaseErrorPayload(
+    @SerialName("error_code") val errorCode: String? = null,
+    val message: String? = null,
+    val msg: String? = null,
+)

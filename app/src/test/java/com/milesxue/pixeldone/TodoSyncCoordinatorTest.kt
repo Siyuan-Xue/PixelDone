@@ -7,6 +7,7 @@ import com.milesxue.pixeldone.data.local.TodoEntitySet
 import com.milesxue.pixeldone.data.local.TodoItemEntity
 import com.milesxue.pixeldone.data.local.TodoStateMetadataEntity
 import com.milesxue.pixeldone.data.sync.AuthSessionRepository
+import com.milesxue.pixeldone.data.sync.AuthSessionExpiredException
 import com.milesxue.pixeldone.data.sync.LocalSyncConflictRecord
 import com.milesxue.pixeldone.data.sync.RemoteChangeBatch
 import com.milesxue.pixeldone.data.sync.RemoteChecklistRecord
@@ -560,6 +561,36 @@ class TodoSyncCoordinatorTest {
         )
     }
 
+    @Test
+    fun expiredSessionSignsOutWithoutChangingPendingLocalIntent() = runTest {
+        val dirtyItem = syncedActiveItem().copy(
+            title = "Keep this local change",
+            syncState = SyncRecordState.NOT_SYNCED.name,
+            updatedAtMillis = 9_000L,
+        )
+        val localStore = FakeTodoSyncLocalStore(entitySetWith(item = dirtyItem)).apply {
+            pendingMutations += SyncMutationRecord(
+                mutationUuid = "pending-1",
+                snapshot = RemoteTodoSnapshot(items = listOf(remoteActiveItem().copy(title = dirtyItem.title))),
+                createdAtMillis = 9_000L,
+            )
+        }
+        val pendingBefore = localStore.pendingMutations.toList()
+        val auth = CoordinatorAuthSessionRepository(
+            initialSession = signedInSession(),
+            refreshFailure = AuthSessionExpiredException(),
+        )
+        val coordinator = coordinator(auth = auth, localStore = localStore, remote = FakeRemoteTodoDataSource())
+
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.SIGNED_OUT, coordinator.status.value)
+        assertEquals(SyncRecordState.NOT_SYNCED.name, localStore.entitySet.items.single().syncState)
+        assertEquals("Keep this local change", localStore.entitySet.items.single().title)
+        assertEquals(pendingBefore, localStore.pendingMutations)
+        assertEquals(0, localStore.updateCount)
+    }
+
     private fun TestScope.coordinator(
         auth: CoordinatorAuthSessionRepository = CoordinatorAuthSessionRepository(signedInSession()),
         localStore: FakeTodoSyncLocalStore,
@@ -575,7 +606,10 @@ class TodoSyncCoordinatorTest {
     )
 }
 
-private class CoordinatorAuthSessionRepository(initialSession: AuthSession) : AuthSessionRepository {
+private class CoordinatorAuthSessionRepository(
+    initialSession: AuthSession,
+    private val refreshFailure: Exception? = null,
+) : AuthSessionRepository {
     private val mutableSession = MutableStateFlow(initialSession)
     override val session: StateFlow<AuthSession> = mutableSession.asStateFlow()
 
@@ -589,7 +623,13 @@ private class CoordinatorAuthSessionRepository(initialSession: AuthSession) : Au
         mutableSession.value = signedOutSession()
     }
 
-    override suspend fun refreshSessionIfNeeded(nowMillis: Long, force: Boolean): AuthSession = mutableSession.value
+    override suspend fun refreshSessionIfNeeded(nowMillis: Long, force: Boolean): AuthSession {
+        refreshFailure?.let { failure ->
+            mutableSession.value = signedOutSession()
+            throw failure
+        }
+        return mutableSession.value
+    }
 }
 
 private class FakeTodoSyncLocalStore(initialEntitySet: TodoEntitySet) : TodoSyncLocalStore {

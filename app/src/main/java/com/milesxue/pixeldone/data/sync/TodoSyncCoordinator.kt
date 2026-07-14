@@ -148,6 +148,15 @@ internal class TodoSyncCoordinator(
             final
         } catch (error: CancellationException) {
             throw error
+        } catch (error: AuthSessionExpiredException) {
+            logWarning("PixelDone sync stopped because the auth session expired.")
+            setState(
+                mutableRunState.value.copy(
+                    status = SyncCoordinatorStatus.SIGNED_OUT,
+                    lastError = SessionExpiredMessage,
+                ),
+            )
+            SyncCoordinatorStatus.SIGNED_OUT
         } catch (error: SyncSchemaMismatchException) {
             val status = when (error.requiredAction) {
                 SyncContractRequiredAction.UPDATE_APP -> SyncCoordinatorStatus.APP_UPDATE_REQUIRED
@@ -586,6 +595,7 @@ internal class TodoSyncCoordinator(
         private const val MaxNetworkRetries = 1
         private const val NetworkRetryDelayMillis = 350L
         private const val NetworkErrorMessage = "Network unavailable. Check Wi-Fi, mobile data, or VPN."
+        private const val SessionExpiredMessage = "Session expired. Sign in again."
         private const val LogTag = "PixelDoneSync"
     }
 }

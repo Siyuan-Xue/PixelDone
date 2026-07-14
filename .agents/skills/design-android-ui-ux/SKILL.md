@@ -1,6 +1,6 @@
 ---
 name: design-android-ui-ux
-description: Design and review UI/UX for PixelDone in this standalone Android repository. Use when Codex is asked to create, refine, audit, or implement Jetpack Compose screens, interaction flows, visual systems, responsive phone/tablet layouts, launcher icons, app icons, design QA, or UI-focused code changes.
+description: Design and review UI/UX for Android utility subprojects under C:\Users\Miles\Documents\android. Use when Codex is asked to create, refine, audit, or implement Jetpack Compose screens, interaction flows, visual systems, responsive phone/tablet layouts, launcher icons, app icons, design QA, or UI-focused code changes for PixelName and com.codexue product Android tools in this repository.
 ---
 
 # Design Android UI/UX
@@ -11,7 +11,7 @@ Act as the UI/UX designer for this Android product line. Keep designs practical,
 
 ## Required Source Reading
 
-Before designing, reviewing, or editing UI, read these repository documents in order from the PixelDone repository root:
+Before designing, reviewing, or editing UI, read these repository documents in order from the Android workspace root:
 
 1. `PROJECT_SPEC.md`
 2. `PRODUCT_LINE_SPEC.md`
@@ -41,7 +41,9 @@ Use pixel-style geometry:
 - Use `0dp` corner radius by default and `4dp` maximum only when softening is necessary.
 - Use `2dp` main panel borders and `1dp` internal dividers.
 - Use a 4dp spacing grid.
-- Prefer `FontFamily.Monospace`, stable sizes, and `letterSpacing = 0.sp`.
+- Use the semantic serif/sans hierarchy in `DESIGN_SPEC.md`, stable sizes, and `letterSpacing = 0.sp`. Monospace is reserved for genuinely technical identifiers or code-like content.
+- Keep UI chrome tied to the resolved locale, but render user-authored content by Unicode script run so switching UI language never changes the same saved text's typeface.
+- Use real `400`, `500`, `600`, and `700` variable-font instances without synthetic weights. Muted supporting text starts at `12sp/500` and keeps full-opacity accessible contrast.
 
 Avoid large rounded cards, pill-heavy controls, shadows, glassmorphism, decorative gradients, looping decorative motion, pure-blue tech styling, neon colors, and retro decoration that does not serve the task.
 

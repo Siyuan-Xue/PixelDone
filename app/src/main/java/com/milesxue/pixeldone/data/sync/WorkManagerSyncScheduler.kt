@@ -47,19 +47,23 @@ internal class PixelDoneSyncWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val coordinator = applicationContext.pixelDoneAppContainer().syncCoordinator
-        return when (coordinator.syncNow()) {
-            SyncCoordinatorStatus.STABLE,
-            SyncCoordinatorStatus.CONFLICT,
-            SyncCoordinatorStatus.LOCAL_ONLY,
-            SyncCoordinatorStatus.NOT_CONFIGURED,
-            SyncCoordinatorStatus.APP_UPDATE_REQUIRED,
-            SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED,
-            SyncCoordinatorStatus.SIGNED_OUT,
-            SyncCoordinatorStatus.IDLE -> Result.success()
-            SyncCoordinatorStatus.SYNCING,
-            SyncCoordinatorStatus.PENDING,
-            SyncCoordinatorStatus.NETWORK_ERROR,
-            SyncCoordinatorStatus.ERROR -> Result.retry()
-        }
+        return if (coordinator.syncNow().shouldRetryBackgroundSync()) Result.retry() else Result.success()
     }
+}
+
+internal fun SyncCoordinatorStatus.shouldRetryBackgroundSync(): Boolean = when (this) {
+    SyncCoordinatorStatus.SYNCING,
+    SyncCoordinatorStatus.PENDING,
+    SyncCoordinatorStatus.NETWORK_ERROR,
+    SyncCoordinatorStatus.ERROR,
+    -> true
+    SyncCoordinatorStatus.STABLE,
+    SyncCoordinatorStatus.CONFLICT,
+    SyncCoordinatorStatus.LOCAL_ONLY,
+    SyncCoordinatorStatus.NOT_CONFIGURED,
+    SyncCoordinatorStatus.APP_UPDATE_REQUIRED,
+    SyncCoordinatorStatus.SERVER_UPDATE_REQUIRED,
+    SyncCoordinatorStatus.SIGNED_OUT,
+    SyncCoordinatorStatus.IDLE,
+    -> false
 }
