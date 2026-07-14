@@ -214,7 +214,12 @@ Spacing must be stable and must not jump because of button text, state changes, 
 
 ### 5.4 Typography
 
-- Tool UI uses `FontFamily.Monospace` by default.
+- Product typography uses a restrained serif/sans hierarchy inspired by Claude rather than a system-dependent monospace default.
+- Page titles, checklist titles, dialog titles, and other display-scale headings use the product serif family.
+- Body text, labels, buttons, inputs, menus, status text, and supporting UI use the product sans family.
+- Apps with multilingual UI must bundle deterministic script-appropriate serif and sans families for every declared locale. The standard pairing is Source Serif 4 / Source Sans 3 for Latin and Cyrillic, Noto Serif SC / Noto Sans SC for Simplified Chinese, and Noto Naskh Arabic / Noto Sans Arabic for Arabic.
+- Use unmodified OFL font binaries and include the corresponding license and attribution files. Do not redistribute Anthropic brand fonts unless their redistribution rights have been explicitly verified.
+- Use tabular numerals for clocks, countdowns, and aligned numeric instruments. Monospace is reserved for genuinely technical identifiers or code-like content, not general UI.
 - Main weights are `Normal`, `SemiBold`, and `Bold`.
 - `letterSpacing` is fixed at `0.sp`.
 - Do not scale font size with viewport width.

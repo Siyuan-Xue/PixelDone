@@ -28,4 +28,6 @@
     <string name="app_update_required">Se requiere actualizar la aplicación</string>
     <string name="sync_pending_changes">Cambios pendientes.</string>
     <string name="sync_network_error_detail">Red no disponible. Comprueba Wi-Fi, datos móviles o VPN.</string>
+    <string name="this_device">Este dispositivo</string><string name="cloud_version">Versión en la nube</string><string name="use_this_device">Usar este dispositivo</string><string name="use_cloud_version">Usar versión en la nube</string>
+    <string name="conflict_settings_title">Ajustes · Idioma</string><string name="conflict_empty">Vacío</string><string name="status_active">Activa</string><string name="status_completed">Completada</string>
 </resources>

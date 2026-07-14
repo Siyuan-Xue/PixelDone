@@ -1,12 +1,15 @@
 package com.milesxue.pixeldone.ui.todo
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.NotificationManager
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.ActivityNotFoundException
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -102,7 +105,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -763,18 +765,45 @@ internal fun PixelDoneApp() {
         }
     }
 
+    val exactAlarmSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        permissionRefreshTick += 1
+        val currentTodos = normalTodos(currentChecklistState)
+        reminderScheduler.sync(currentTodos, currentTodos)
+        val followUpTodoId = pendingFullScreenPermissionTodoId
+        if (
+            followUpTodoId != null &&
+            reminderScheduler.canScheduleExactAlarms() &&
+            !hasFullScreenIntentAccess()
+        ) {
+            pendingFullScreenPermissionTodoId = null
+            openFullScreenIntentSettings()
+        }
+    }
+
+    fun launchExactAlarmSettings() {
+        try {
+            exactAlarmSettingsLauncher.launch(
+                packageSettingsIntent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM),
+            )
+        } catch (_: ActivityNotFoundException) {
+            openPackageSettingsAction(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+        } catch (_: SecurityException) {
+            openPackageSettingsAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        }
+    }
+
     fun requestSystemReminderPermissionIfNeeded(item: TodoItem) {
         val missingCapabilities = missingReminderCapabilities(item)
         val decision = systemReminderPermissionDecision(missingCapabilities) ?: return
         if (decision.queueFullScreenFollowUp) {
             pendingFullScreenPermissionTodoId = item.id
         }
-        val action = when (decision.target) {
-            SystemReminderPermissionTarget.EXACT_ALARM -> Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM
-            SystemReminderPermissionTarget.FULL_SCREEN_INTENT ->
-                Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT
+        when (decision.target) {
+            SystemReminderPermissionTarget.EXACT_ALARM -> launchExactAlarmSettings()
+            SystemReminderPermissionTarget.FULL_SCREEN_INTENT -> openFullScreenIntentSettings()
         }
-        openPackageSettingsAction(action)
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -1503,6 +1532,34 @@ internal fun PixelDoneApp() {
         }
     }
 
+    DisposableEffect(context, reminderScheduler) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            onDispose { }
+        } else {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(receiverContext: Context?, intent: Intent?) {
+                    if (intent?.action != AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED) {
+                        return
+                    }
+                    permissionRefreshTick += 1
+                    val currentTodos = normalTodos(currentChecklistState)
+                    reminderScheduler.sync(currentTodos, currentTodos)
+                }
+            }
+            val filter = IntentFilter(
+                AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED,
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(receiver, filter)
+            }
+            onDispose {
+                runCatching { context.unregisterReceiver(receiver) }
+            }
+        }
+    }
+
     fun handleUpdateClick() {
         val availableInfo = updateUiState.info
         if (updateUiState.status == UpdateUiStatus.Available && availableInfo != null) {
@@ -1704,9 +1761,7 @@ internal fun PixelDoneApp() {
             onOpenConflictDialog = ::openConflictDialog,
             permissionSettingsState = permissionRefreshTick.let { currentPermissionSettingsState() },
             onRequestNotificationPermission = ::requestNotificationPermissionFromSettings,
-            onRequestExactAlarmPermission = {
-                openPackageSettingsAction(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
-            },
+            onRequestExactAlarmPermission = ::launchExactAlarmSettings,
             onRequestFullScreenIntentPermission = ::openFullScreenIntentSettings,
             onRequestInstallUpdatesPermission = ::openInstallUpdateSettings,
             activeXHighAlarm = activeXHighAlarm,
@@ -2040,7 +2095,6 @@ private fun Header(
             Text(
                 text = selectedChecklistName,
                 color = colors.textPrimary,
-                fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.sp,
@@ -2114,7 +2168,6 @@ private fun XHighAlarmControlPanel(
                         pluralStringResource(R.plurals.xhigh_alarms_count, alarm.displayCount, alarm.displayCount)
                     },
                     color = colors.error,
-                    fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.sp,
@@ -2133,7 +2186,6 @@ private fun XHighAlarmControlPanel(
             Text(
                 text = alarm.primaryTitle(),
                 color = colors.textPrimary,
-                fontFamily = FontFamily.Monospace,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.sp,
@@ -2199,7 +2251,6 @@ private fun ChecklistPickerRow(
             Text(
                 text = checklist.localizedDisplayName(),
                 color = colors.textPrimary,
-                fontFamily = FontFamily.Monospace,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.sp,
@@ -3262,7 +3313,6 @@ private fun SettingsSectionTitle(text: String) {
     Text(
         text = text,
         color = colors.primary,
-        fontFamily = FontFamily.Monospace,
         fontSize = 16.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 0.sp,
@@ -4772,7 +4822,6 @@ private fun Footer(
             Text(
                 text = message,
                 color = messageColor,
-                fontFamily = FontFamily.Monospace,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = 0.sp,
@@ -4794,7 +4843,6 @@ private fun Footer(
         Text(
             text = "PIXELDONE",
             color = colors.textPrimary,
-            fontFamily = FontFamily.Monospace,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 0.sp,
@@ -4803,7 +4851,6 @@ private fun Footer(
         Text(
             text = DeveloperCredit,
             color = colors.primary,
-            fontFamily = FontFamily.Monospace,
             fontSize = 8.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 0.sp,
@@ -5076,7 +5123,11 @@ private fun SyncConflictReviewItem(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
-            text = conflict.title,
+            text = if (conflict.recordType == "settings") {
+                stringResource(R.string.conflict_settings_title)
+            } else {
+                conflict.title
+            },
             style = MaterialTheme.typography.labelLarge,
             color = colors.textPrimary,
             maxLines = 3,
@@ -5094,14 +5145,14 @@ private fun SyncConflictReviewItem(
 
         DialogActionRow(modifier = Modifier.fillMaxWidth()) {
             PixelButton(
-                text = if (resolving) "..." else stringResource(R.string.keep_local),
+                text = if (resolving) "..." else stringResource(R.string.use_this_device),
                 onClick = onKeepLocal,
                 enabled = !resolving,
                 modifier = Modifier.weight(1f),
                 primary = false,
             )
             PixelButton(
-                text = if (resolving) "..." else stringResource(R.string.keep_cloud),
+                text = if (resolving) "..." else stringResource(R.string.use_cloud_version),
                 onClick = onKeepCloud,
                 enabled = !resolving,
                 modifier = Modifier.weight(1f),
@@ -5136,7 +5187,7 @@ private fun SyncConflictFieldRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = stringResource(R.string.local) + "  " + localValue,
+                text = stringResource(R.string.this_device) + "  " + conflictDisplayValue(field, localValue),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textPrimary,
                 modifier = Modifier.weight(1f),
@@ -5144,7 +5195,7 @@ private fun SyncConflictFieldRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = stringResource(R.string.cloud) + "  " + cloudValue,
+                text = stringResource(R.string.cloud_version) + "  " + conflictDisplayValue(field, cloudValue),
                 style = MaterialTheme.typography.labelSmall,
                 color = colors.textPrimary,
                 modifier = Modifier.weight(1f),
@@ -5169,6 +5220,22 @@ private fun conflictFieldLabel(field: String): String = when (field) {
     "trash" -> stringResource(R.string.field_trash)
     "language" -> stringResource(R.string.field_language)
     else -> field
+}
+
+@Composable
+private fun conflictDisplayValue(field: String, value: String): String = when {
+    value.isBlank() || value == "—" -> stringResource(R.string.conflict_empty)
+    field == "completed" && value == "COMPLETED" -> stringResource(R.string.status_completed)
+    field == "completed" && value == "ACTIVE" -> stringResource(R.string.status_active)
+    field == "priority" && value == "XHIGH" -> stringResource(R.string.priority_xhigh)
+    field == "priority" && value == "HIGH" -> stringResource(R.string.priority_high)
+    field == "priority" && value == "MEDIUM" -> stringResource(R.string.priority_medium)
+    field == "priority" && value == "LOW" -> stringResource(R.string.priority_low)
+    field == "repeat" && value == "NONE" -> stringResource(R.string.repeat_none)
+    field == "repeat" && value == "DAILY" -> stringResource(R.string.repeat_daily)
+    field == "repeat" && value == "WEEKLY" -> stringResource(R.string.repeat_weekly)
+    field == "language" -> AppLanguage.fromSyncValue(value).displayName()
+    else -> value
 }
 @Composable
 private fun UpdateAvailableDialog(
@@ -5270,7 +5337,6 @@ private fun UpdateDownloadProgressDialog(
                     text = message,
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.textPrimary,
-                    fontFamily = FontFamily.Monospace,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

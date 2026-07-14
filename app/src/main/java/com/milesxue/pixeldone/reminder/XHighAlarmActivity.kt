@@ -31,7 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -238,7 +237,6 @@ private fun XHighAlarmScreen(
                 Text(
                     text = pluralStringResource(R.plurals.xhigh_tasks_due, count, count),
                     color = PixelError,
-                    fontFamily = FontFamily.Monospace,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.sp,
@@ -250,7 +248,6 @@ private fun XHighAlarmScreen(
                     text = title,
                     color = ClaudeSlateDark,
                     style = MaterialTheme.typography.headlineSmall,
-                    fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     maxLines = 4,
@@ -261,7 +258,6 @@ private fun XHighAlarmScreen(
                     Text(
                         text = stringResource(R.string.alarm_task_position, selectedIndex + 1, count),
                         color = ClaudeSlateLight,
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
                         letterSpacing = 0.sp,
                         textAlign = TextAlign.Center,
@@ -296,7 +292,6 @@ private fun XHighAlarmScreen(
                 Text(
                     text = dueTime,
                     color = ClaudeSlateLight,
-                    fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
                     letterSpacing = 0.sp,
                     textAlign = TextAlign.Center,
@@ -347,7 +342,6 @@ private fun AlarmActionButton(
     ) {
         Text(
             text = text,
-            fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
             letterSpacing = 0.sp,

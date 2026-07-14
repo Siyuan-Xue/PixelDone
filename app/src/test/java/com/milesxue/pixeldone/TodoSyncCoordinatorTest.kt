@@ -1,6 +1,7 @@
 package com.milesxue.pixeldone
 
 import com.milesxue.pixeldone.data.local.SyncRecordTypeItem
+import com.milesxue.pixeldone.data.local.SyncRecordTypeChecklist
 import com.milesxue.pixeldone.data.local.TodoChecklistEntity
 import com.milesxue.pixeldone.data.local.TodoEntitySet
 import com.milesxue.pixeldone.data.local.TodoItemEntity
@@ -24,6 +25,8 @@ import com.milesxue.pixeldone.domain.sync.ConflictResolutionChoice
 import com.milesxue.pixeldone.domain.sync.SyncCoordinatorStatus
 import com.milesxue.pixeldone.domain.sync.SyncRecordState
 import com.milesxue.pixeldone.domain.todo.ClockProvider
+import com.milesxue.pixeldone.domain.todo.SettingsChecklistId
+import com.milesxue.pixeldone.domain.todo.TrashChecklistId
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -42,6 +45,67 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TodoSyncCoordinatorTest {
+    @Test
+    fun syntheticChecklistsNeverUploadOrSurfaceAsConflicts() = runTest {
+        val specials = listOf(
+            TodoChecklistEntity(
+                localId = TrashChecklistId,
+                sortIndex = 1,
+                ownerUserId = "user-1",
+                name = "TRASH",
+                createdAtMillis = 100L,
+                updatedAtMillis = 2_000L,
+                syncState = SyncRecordState.NOT_SYNCED.name,
+            ),
+            TodoChecklistEntity(
+                localId = SettingsChecklistId,
+                sortIndex = 2,
+                ownerUserId = "user-1",
+                name = "SETTINGS",
+                createdAtMillis = 100L,
+                updatedAtMillis = 2_000L,
+                syncState = SyncRecordState.NOT_SYNCED.name,
+            ),
+        )
+        val localStore = FakeTodoSyncLocalStore(
+            entitySetWith(item = syncedActiveItem()).copy(
+                checklists = entitySetWith(item = syncedActiveItem()).checklists + specials,
+            ),
+        ).apply {
+            conflicts += LocalSyncConflictRecord(
+                recordType = SyncRecordTypeChecklist,
+                localId = TrashChecklistId,
+                localPayloadJson = "{}",
+                remotePayloadJson = "{}",
+                fields = listOf("sort"),
+                message = "Conflict: sort",
+                remoteVersion = 3L,
+                createdAtMillis = 3L,
+            )
+        }
+        val remote = FakeRemoteTodoDataSource(
+            RemoteTodoSnapshot(
+                checklists = listOf(
+                    remoteMainChecklist(),
+                    remoteMainChecklist().copy(localId = TrashChecklistId, name = "TRASH", sortIndex = 4),
+                    remoteMainChecklist().copy(localId = SettingsChecklistId, name = "SETTINGS", sortIndex = 5),
+                ),
+            ),
+        )
+
+        val coordinator = coordinator(localStore = localStore, remote = remote)
+        advanceUntilIdle()
+
+        assertEquals(SyncCoordinatorStatus.STABLE, coordinator.status.value)
+        assertEquals(emptyList<LocalSyncConflictRecord>(), localStore.conflicts)
+        assertEquals(0, remote.pushCount)
+        localStore.entitySet.checklists.filter { it.localId in setOf(TrashChecklistId, SettingsChecklistId) }
+            .forEach { special ->
+                assertEquals(null, special.ownerUserId)
+                assertEquals(SyncRecordState.LOCAL_ONLY.name, special.syncState)
+            }
+    }
+
     @Test
     fun syncDoesNotResurrectTodoDeletedWhilePullWasRunning() = runTest {
         val localStore = FakeTodoSyncLocalStore(entitySetWith(item = syncedActiveItem()))

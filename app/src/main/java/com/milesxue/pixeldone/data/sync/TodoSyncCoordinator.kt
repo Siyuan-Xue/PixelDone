@@ -4,6 +4,9 @@ import android.util.Log
 import com.milesxue.pixeldone.data.local.*
 import com.milesxue.pixeldone.domain.sync.*
 import com.milesxue.pixeldone.domain.todo.ClockProvider
+import com.milesxue.pixeldone.domain.todo.SettingsChecklistId
+import com.milesxue.pixeldone.domain.todo.TrashChecklistId
+import com.milesxue.pixeldone.domain.todo.isSpecialChecklistId
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -230,6 +233,7 @@ internal class TodoSyncCoordinator(
     }
 
     private suspend fun runSync(session: AuthSession, owner: String): Result {
+        clearSyntheticChecklistConflicts(owner)
         var cursor = localStore.loadSyncCursor(owner) ?: 0L
         var pulled = pullWithRetry(session, cursor)
         applyRemote(owner, pulled)
@@ -318,15 +322,18 @@ internal class TodoSyncCoordinator(
             val deletedItemIds = batch.tombstones
                 .filter { it.recordType == SyncRecordTypeItem }
                 .mapTo(mutableSetOf()) { it.localId }
-            val deletedChecklistIds = batch.tombstones
+            val applicableTombstones = batch.tombstones.filterNot {
+                it.recordType == SyncRecordTypeChecklist && isSpecialChecklistId(it.localId)
+            }
+            val deletedChecklistIds = applicableTombstones
                 .filter { it.recordType == SyncRecordTypeChecklist }
                 .mapTo(mutableSetOf()) { it.localId }
             owned.items.filter {
                 it.localId in deletedItemIds || it.checklistLocalId in deletedChecklistIds
             }.mapNotNullTo(staleLocalImages) { it.imageLocalName }
-            var state = owned.applyTombstones(owner, batch.tombstones, now)
+            var state = owned.applyTombstones(owner, applicableTombstones, now)
             val deleted = state.tombstones.mapTo(mutableSetOf()) { it.recordType + ":" + it.localId }
-            batch.checklists.forEach { cloud ->
+            batch.checklists.filterNot { isSpecialChecklistId(it.localId) }.forEach { cloud ->
                 val key = SyncRecordTypeChecklist + ":" + cloud.localId
                 if (key !in deleted) {
                     val local = state.checklists.firstOrNull { it.ownerUserId == owner && it.localId == cloud.localId }
@@ -396,7 +403,9 @@ internal class TodoSyncCoordinator(
         val state = localStore.loadEntitySetForSync(now).withOwner(owner)
         val snapshot = state.dirtySnapshot(owner, conflicts)
         val tombstones = state.tombstones.filter {
-            it.ownerUserId == owner && it.syncState.isDirty() && (it.recordType + ":" + it.localId) !in conflicts
+            it.ownerUserId == owner && it.syncState.isDirty() &&
+                !(it.recordType == SyncRecordTypeChecklist && isSpecialChecklistId(it.localId)) &&
+                (it.recordType + ":" + it.localId) !in conflicts
         }.map { it.toRemote() }
         val settings = settingsStore?.loadSettingsForSync(now)
             ?.takeIf { it.syncState.isDirty() && (SyncRecordTypeSettings + ":language") !in conflicts }
@@ -490,8 +499,21 @@ internal class TodoSyncCoordinator(
         return status
     }
 
-    private suspend fun loadConflictEntries(owner: String): List<SyncConflictEntry> =
-        localStore.loadConflicts(owner).map { it.toPresentation() }
+    private suspend fun loadConflictEntries(owner: String): List<SyncConflictEntry> {
+        val checklistNames = localStore.loadEntitySetForSync(clockProvider.nowMillis()).checklists
+            .associate { it.localId to it.name }
+        return localStore.loadConflicts(owner)
+            .filterNot { it.isSyntheticChecklistConflict() }
+            .map { it.toPresentation(checklistNames) }
+    }
+
+    private suspend fun clearSyntheticChecklistConflicts(owner: String) {
+        localStore.loadConflicts(owner)
+            .filter { it.isSyntheticChecklistConflict() }
+            .forEach { conflict ->
+                localStore.clearConflict(owner, conflict.recordType, conflict.localId)
+            }
+    }
 
     private suspend fun loadFailureCounts(owner: String): Result = try {
         Result(
@@ -736,9 +758,12 @@ private fun itemConflict(
 }
 
 private fun TodoEntitySet.applyTombstones(owner: String, cloud: List<RemoteTombstoneRecord>, now: Long): TodoEntitySet {
-    if (cloud.isEmpty()) return this
-    val keys = cloud.mapTo(mutableSetOf()) { it.recordType + ":" + it.localId }
-    val deletedChecklistIds = cloud
+    val applicable = cloud.filterNot {
+        it.recordType == SyncRecordTypeChecklist && isSpecialChecklistId(it.localId)
+    }
+    if (applicable.isEmpty()) return this
+    val keys = applicable.mapTo(mutableSetOf()) { it.recordType + ":" + it.localId }
+    val deletedChecklistIds = applicable
         .filter { it.recordType == SyncRecordTypeChecklist }
         .mapTo(mutableSetOf()) { it.localId }
     return copy(
@@ -746,7 +771,7 @@ private fun TodoEntitySet.applyTombstones(owner: String, cloud: List<RemoteTombs
         items = items.filterNot {
             (SyncRecordTypeItem + ":" + it.localId) in keys || it.checklistLocalId in deletedChecklistIds
         },
-        tombstones = tombstones.filterNot { (it.recordType + ":" + it.localId) in keys } + cloud.map {
+        tombstones = tombstones.filterNot { (it.recordType + ":" + it.localId) in keys } + applicable.map {
             SyncTombstoneEntity(
                 owner, it.recordType, it.localId, it.deletedAtMillis, it.remoteVersion,
                 SyncRecordState.SYNCED.name, now,
@@ -757,7 +782,21 @@ private fun TodoEntitySet.applyTombstones(owner: String, cloud: List<RemoteTombs
 
 private fun TodoEntitySet.withOwner(owner: String) = copy(
     checklists = checklists.map {
-        if (it.ownerUserId == null) it.copy(ownerUserId = owner, syncState = SyncRecordState.NOT_SYNCED.name) else it
+        when {
+            isSpecialChecklistId(it.localId) -> it.copy(
+                remoteId = null,
+                ownerUserId = null,
+                syncState = SyncRecordState.LOCAL_ONLY.name,
+                lastSyncedAtMillis = null,
+                remoteVersion = null,
+                lastSyncError = null,
+            )
+            it.ownerUserId == null -> it.copy(
+                ownerUserId = owner,
+                syncState = SyncRecordState.NOT_SYNCED.name,
+            )
+            else -> it
+        }
     },
     items = items.map {
         if (it.ownerUserId == null) it.copy(ownerUserId = owner, syncState = SyncRecordState.NOT_SYNCED.name) else it
@@ -766,7 +805,8 @@ private fun TodoEntitySet.withOwner(owner: String) = copy(
 
 private fun TodoEntitySet.dirtySnapshot(owner: String, conflicts: Set<String>) = RemoteTodoSnapshot(
     checklists = checklists.filter {
-        it.ownerUserId == owner && it.syncState.isDirty() && (SyncRecordTypeChecklist + ":" + it.localId) !in conflicts
+        !isSpecialChecklistId(it.localId) && it.ownerUserId == owner && it.syncState.isDirty() &&
+            (SyncRecordTypeChecklist + ":" + it.localId) !in conflicts
     }.map { it.toRemote(owner) },
     items = items.filter {
         it.ownerUserId == owner && it.syncState.isDirty() && (SyncRecordTypeItem + ":" + it.localId) !in conflicts
@@ -780,7 +820,9 @@ private fun TodoEntitySet.dirtySnapshot(owner: String, conflicts: Set<String>) =
 
 private fun TodoEntitySet.buildPristine(owner: String, previous: RemoteTodoSnapshot): RemoteTodoSnapshot {
     val deleted = tombstones.mapTo(mutableSetOf()) { it.recordType + ":" + it.localId }
-    val checklistMap = checklists.filter { it.ownerUserId == owner }.associateBy { it.localId }
+    val checklistMap = checklists.filter {
+        it.ownerUserId == owner && !isSpecialChecklistId(it.localId)
+    }.associateBy { it.localId }
     val itemMap = items.filter { it.ownerUserId == owner }.associateBy { it.localId }
     return RemoteTodoSnapshot(
         checklists = (previous.checklists.filter {
@@ -893,14 +935,20 @@ private fun TodoEntitySet.acceptMetadata(
 
 private fun SyncMutationRecord.withoutConflicts(conflicts: Set<String>) = copy(
     snapshot = RemoteTodoSnapshot(
-        checklists = snapshot.checklists.filter { (SyncRecordTypeChecklist + ":" + it.localId) !in conflicts },
+        checklists = snapshot.checklists.filter {
+            !isSpecialChecklistId(it.localId) &&
+                (SyncRecordTypeChecklist + ":" + it.localId) !in conflicts
+        },
         items = snapshot.items.filter { (SyncRecordTypeItem + ":" + it.localId) !in conflicts },
         attachments = snapshot.attachments.filter {
             (SyncRecordTypeAttachment + ":" + it.todoLocalId) !in conflicts
         },
     ),
     settings = settings.takeIf { (SyncRecordTypeSettings + ":language") !in conflicts },
-    tombstones = tombstones.filter { (it.recordType + ":" + it.localId) !in conflicts },
+    tombstones = tombstones.filter {
+        !(it.recordType == SyncRecordTypeChecklist && isSpecialChecklistId(it.localId)) &&
+            (it.recordType + ":" + it.localId) !in conflicts
+    },
 )
 
 private fun SyncMutationRecord.isEmpty() = snapshot.checklists.isEmpty() && snapshot.items.isEmpty() &&
@@ -1056,7 +1104,12 @@ private fun LocalSyncConflictRecord.cloudSettings() =
         SyncJson.decodeFromString<RemoteUserSettingsRecord>(remotePayloadJson)
     }
 
-private fun LocalSyncConflictRecord.toPresentation(): SyncConflictEntry = when (recordType) {
+private fun LocalSyncConflictRecord.isSyntheticChecklistConflict(): Boolean =
+    recordType == SyncRecordTypeChecklist && localId in setOf(TrashChecklistId, SettingsChecklistId)
+
+private fun LocalSyncConflictRecord.toPresentation(
+    checklistNames: Map<String, String>,
+): SyncConflictEntry = when (recordType) {
     SyncRecordTypeChecklist -> {
         val local = localChecklist()
         val cloud = cloudChecklist()
@@ -1071,8 +1124,8 @@ private fun LocalSyncConflictRecord.toPresentation(): SyncConflictEntry = when (
         val cloud = cloudItem()
         SyncConflictEntry(
             recordType, localId, firstNonBlank(local.title, cloud.title, localId), fields, message,
-            fields.map { SyncConflictValue(it, local.valueFor(it)) },
-            fields.map { SyncConflictValue(it, cloud.valueFor(it)) },
+            fields.map { SyncConflictValue(it, local.valueFor(it, checklistNames)) },
+            fields.map { SyncConflictValue(it, cloud.valueFor(it, checklistNames)) },
         )
     }
     SyncRecordTypeSettings -> {
@@ -1094,17 +1147,17 @@ private inline fun <T> decodeConflictPayload(label: String, block: () -> T): T =
 }
 
 private fun RemoteChecklistRecord.valueFor(field: String) = when (field) {
-    "sort" -> sortIndex.toString()
+    "sort" -> (sortIndex + 1).toString()
     else -> name
 }
 
-private fun RemoteTodoItemRecord.valueFor(field: String) = when (field) {
-    "checklist" -> checklistLocalId
-    "sort" -> sortIndex.toString()
+private fun RemoteTodoItemRecord.valueFor(field: String, checklistNames: Map<String, String>) = when (field) {
+    "checklist" -> checklistNames[checklistLocalId] ?: checklistLocalId
+    "sort" -> (sortIndex + 1).toString()
     "title" -> title
     "priority" -> priority
     "due" -> dueAtMillis.formatMillis()
-    "completed" -> completed.toString()
+    "completed" -> if (completed) "COMPLETED" else "ACTIVE"
     "repeat" -> reminderRepeat
     "image" -> imageRemotePath ?: imageLocalName ?: "—"
     "trash" -> trashedAtMillis?.formatMillis() ?: "—"

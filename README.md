@@ -180,7 +180,7 @@ Gitee synchronization is configured outside this repository. Publish releases an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.2.1-release.apk
+app/build/outputs/apk/release/PixelDone-3.2.2-release.apk
 ```
 
 ## Install
@@ -188,7 +188,7 @@ app/build/outputs/apk/release/PixelDone-3.2.1-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.2.1-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.2.2-release.apk
 ```
 
 The formal package name is:
@@ -205,4 +205,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.2.1 is the current formal signed Android stabilization release. It upgrades the local domain database to schema 7, moves rebuildable sync protocol state into a format-versioned generation database, excludes that derived database from backup and device transfer, rejects corrupt current-format metadata instead of hiding it, and derives the conflict count from the exact Review list. The remote data contract remains 3.2, so a server already reporting schema 3.2 requires no 3.2.1 SQL migration.
+3.2.2 (versionCode 83) is the current formal signed Android release. It refreshes exact-alarm permission state without restart, keeps synthetic destinations out of cloud conflicts, clarifies conflict values, and shares bundled serif/sans typography with Windows. The remote data contract remains 3.2, so no server migration is required.

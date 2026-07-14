@@ -31,4 +31,6 @@
     <string name="app_update_required">需要更新应用</string>
     <string name="sync_pending_changes">有待同步更改。</string>
     <string name="sync_network_error_detail">网络不可用。请检查 Wi-Fi、移动数据或 VPN。</string>
+    <string name="this_device">此设备</string><string name="cloud_version">云端版本</string><string name="use_this_device">使用此设备版本</string><string name="use_cloud_version">使用云端版本</string>
+    <string name="conflict_settings_title">设置 · 语言</string><string name="conflict_empty">空</string><string name="status_active">未完成</string><string name="status_completed">已完成</string>
 </resources>
