@@ -13,8 +13,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
 $ApiBase = "https://gitee.com/api/v5/repos/$Owner/$Repository"
+$AttachmentTimeoutSeconds = 1800
 
 function Normalize-Text([string]$Value) {
     return ($Value -replace "`r`n", "`n").TrimEnd()
@@ -79,15 +81,18 @@ function Assert-GiteeAttachment(
 ) {
     $downloadPath = Join-Path $env:RUNNER_TEMP ("gitee-" + [guid]::NewGuid() + "-" + $Attachment.name)
     try {
+        Write-Output "Downloading Gitee attachment $($Attachment.name) for SHA-256 verification."
         Invoke-WebRequest `
             -Uri "$ApiBase/releases/$ReleaseId/attach_files/$($Attachment.id)/download" `
             -Headers $script:Headers `
-            -OutFile $downloadPath
+            -OutFile $downloadPath `
+            -TimeoutSec $AttachmentTimeoutSeconds
         $expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $ExpectedPath).Hash
         $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $downloadPath).Hash
         if ($actualHash -ne $expectedHash) {
             throw "Gitee attachment $($Attachment.name) conflicts with the built artifact."
         }
+        Write-Output "Verified Gitee attachment $($Attachment.name) with SHA-256 $actualHash."
     } finally {
         Remove-Item -LiteralPath $downloadPath -Force -ErrorAction SilentlyContinue
     }
@@ -121,10 +126,12 @@ $giteeCommit = [string]$giteeTag.commit.sha
 if ($giteeCommit -ne $ExpectedCommit) {
     throw "Gitee tag $Tag resolves to $giteeCommit instead of $ExpectedCommit."
 }
+Write-Output "Verified Gitee tag $Tag at $giteeCommit."
 
 $expectedNotes = Normalize-Text (Get-Content -Raw -LiteralPath $NotesPath)
 $release = Get-GiteeRelease
 if ($null -eq $release) {
+    Write-Output "Creating Gitee Release $Tag."
     $release = Invoke-GiteeJson "$ApiBase/releases" "Post" @{
         tag_name = $Tag
         target_commitish = $ExpectedCommit
@@ -144,20 +151,26 @@ if ((Normalize-Text ([string]$release.body)) -ne $expectedNotes) {
 }
 
 $releaseId = [long]$release.id
+Write-Output "Verified Gitee Release metadata for $Tag (id $releaseId)."
 $attachments = Get-GiteeAttachments $releaseId
 foreach ($path in @($ApkPath, $ChecksumPath)) {
     $name = Split-Path -Leaf $path
     $matches = @($attachments | Where-Object { $_.name -eq $name })
     if ($matches.Count -gt 1) { throw "Gitee Release contains duplicate attachment $name." }
     if ($matches.Count -eq 1) {
+        Write-Output "Reusing existing Gitee attachment $name."
         Assert-GiteeAttachment $matches[0] $path $releaseId
         continue
     }
+    $size = (Get-Item -LiteralPath $path).Length
+    Write-Output "Uploading Gitee attachment $name ($size bytes)."
     Invoke-RestMethod `
         -Uri "$ApiBase/releases/$releaseId/attach_files" `
         -Method Post `
         -Headers $script:Headers `
-        -Form @{ file = Get-Item -LiteralPath $path } | Out-Null
+        -Form @{ file = Get-Item -LiteralPath $path } `
+        -TimeoutSec $AttachmentTimeoutSeconds | Out-Null
+    Write-Output "Gitee accepted attachment $name; refreshing the attachment list."
     $attachments = Get-GiteeAttachments $releaseId
     $uploaded = @($attachments | Where-Object { $_.name -eq $name })
     if ($uploaded.Count -ne 1) { throw "Gitee did not expose exactly one uploaded attachment named $name." }
