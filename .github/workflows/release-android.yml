@@ -3,16 +3,61 @@ name: Release Android
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable release tag to retry
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  resolve_release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      commit: ${{ steps.release.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Resolve immutable release tag
+        id: release
+        shell: pwsh
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+          RUN_CONTEXT_REF: ${{ github.ref_name }}
+          RUN_CONTEXT_SHA: ${{ github.sha }}
+        run: |
+          $tag = if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            $env:DISPATCH_TAG.Trim()
+          } else {
+            $env:RUN_CONTEXT_REF
+          }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Formal Android releases require an exact vX.Y.Z tag."
+          }
+          git fetch origin "refs/tags/$tag:refs/tags/$tag" --force
+          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch release tag $tag." }
+          $commit = (git rev-list -n 1 "$tag^{commit}").Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($commit)) {
+            throw "Unable to resolve release tag $tag."
+          }
+          if ($env:GITHUB_EVENT_NAME -eq "push" -and $commit -ne $env:RUN_CONTEXT_SHA) {
+            throw "Pushed tag $tag does not resolve to the workflow commit."
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "commit=$commit" >> $env:GITHUB_OUTPUT
+
   quality-gate:
+    needs: resolve_release
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
@@ -22,6 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ needs.resolve_release.outputs.tag }}
           fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
@@ -37,15 +83,22 @@ jobs:
         run: chmod +x gradlew
       - name: Validate immutable release input
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.resolve_release.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.resolve_release.outputs.commit }}
         run: |
-          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') {
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
             throw "Formal Android releases require an exact vX.Y.Z tag."
+          }
+          $checkoutCommit = (git rev-parse HEAD).Trim()
+          if ($checkoutCommit -ne $env:RELEASE_COMMIT) {
+            throw "Checked-out commit does not match the immutable release tag."
           }
           git fetch origin main --no-tags
           if ($LASTEXITCODE -ne 0) { throw "Unable to fetch origin/main." }
-          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          git merge-base --is-ancestor $env:RELEASE_COMMIT origin/main
           if ($LASTEXITCODE -ne 0) { throw "Release tag must point to a commit reachable from main." }
-          $expectedHeader = "PixelDone $($env:GITHUB_REF_NAME)"
+          $expectedHeader = "PixelDone $($env:RELEASE_TAG)"
           $actualHeader = (Get-Content RELEASE_NOTES.md -TotalCount 1).Trim()
           if (-not $actualHeader.StartsWith($expectedHeader, [StringComparison]::Ordinal)) {
             throw "The first line of RELEASE_NOTES.md must start with '$expectedHeader'."
@@ -63,13 +116,15 @@ jobs:
       - name: Read and validate release metadata
         id: metadata
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.resolve_release.outputs.tag }}
         run: |
           $metadataPath = "app/build/outputs/apk/debug/output-metadata.json"
           if (-not (Test-Path $metadataPath)) { throw "Missing $metadataPath" }
           $metadata = Get-Content -Raw $metadataPath | ConvertFrom-Json
           $version = [string]$metadata.elements[0].versionName
           $versionCode = [long]$metadata.elements[0].versionCode
-          $tagVersion = $env:GITHUB_REF_NAME.Substring(1)
+          $tagVersion = $env:RELEASE_TAG.Substring(1)
           if ($version -ne $tagVersion) {
             throw "Tag version $tagVersion does not match Gradle versionName $version."
           }
@@ -123,7 +178,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
-          target: aosp_atd
+          target: google_apis
           arch: x86_64
           profile: pixel_6
           disable-animations: true
@@ -131,11 +186,13 @@ jobs:
           script: ./gradlew connectedDebugAndroidTest --stacktrace
 
   build-release:
-    needs: quality-gate
+    needs: [resolve_release, quality-gate]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_release.outputs.tag }}
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -244,13 +301,15 @@ jobs:
           retention-days: 7
 
   publish-github:
-    needs: [quality-gate, build-release]
+    needs: [resolve_release, quality-gate, build-release]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_release.outputs.tag }}
       - uses: actions/download-artifact@v7
         with:
           name: pixeldone-release-${{ needs.quality-gate.outputs.version }}
@@ -259,22 +318,26 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve_release.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.resolve_release.outputs.commit }}
         run: |
           ./.github/scripts/Publish-GitHubRelease.ps1 `
             -Repository $env:GITHUB_REPOSITORY `
-            -Tag $env:GITHUB_REF_NAME `
-            -ExpectedCommit $env:GITHUB_SHA `
-            -Title "PixelDone $env:GITHUB_REF_NAME" `
+            -Tag $env:RELEASE_TAG `
+            -ExpectedCommit $env:RELEASE_COMMIT `
+            -Title "PixelDone $env:RELEASE_TAG" `
             -NotesPath "release-artifacts/release-notes.md" `
             -ApkPath "release-artifacts/${{ needs.quality-gate.outputs.apk-name }}" `
             -ChecksumPath "release-artifacts/${{ needs.quality-gate.outputs.apk-name }}.sha256"
 
   mirror-gitee:
-    needs: [quality-gate, build-release, publish-github]
+    needs: [resolve_release, quality-gate, build-release, publish-github]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve_release.outputs.tag }}
       - uses: actions/download-artifact@v7
         with:
           name: pixeldone-release-${{ needs.quality-gate.outputs.version }}
@@ -283,13 +346,15 @@ jobs:
         shell: pwsh
         env:
           GITEE_ACCESS_TOKEN: ${{ secrets.GITEE_ACCESS_TOKEN }}
+          RELEASE_TAG: ${{ needs.resolve_release.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.resolve_release.outputs.commit }}
         run: |
           ./.github/scripts/Publish-GiteeRelease.ps1 `
             -Owner "milesxue" `
             -Repository "PixelDone" `
-            -Tag $env:GITHUB_REF_NAME `
-            -ExpectedCommit $env:GITHUB_SHA `
-            -Title "PixelDone $env:GITHUB_REF_NAME" `
+            -Tag $env:RELEASE_TAG `
+            -ExpectedCommit $env:RELEASE_COMMIT `
+            -Title "PixelDone $env:RELEASE_TAG" `
             -NotesPath "release-artifacts/release-notes.md" `
             -ApkPath "release-artifacts/${{ needs.quality-gate.outputs.apk-name }}" `
             -ChecksumPath "release-artifacts/${{ needs.quality-gate.outputs.apk-name }}.sha256"
