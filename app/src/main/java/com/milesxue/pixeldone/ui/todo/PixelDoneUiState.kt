@@ -94,6 +94,7 @@ sealed interface PixelDoneAction {
         val newPassword: String,
         val confirmation: String,
     ) : PixelDoneAction
+    data object DismissPasswordChangeFeedback : PixelDoneAction
     data object DismissAuthMessage : PixelDoneAction
     data object SystemActionConsumed : PixelDoneAction
 }

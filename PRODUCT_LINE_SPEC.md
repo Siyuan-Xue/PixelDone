@@ -62,6 +62,11 @@ Naming requirements:
 - Avoids overly abstract or emotional names.
 - Avoids names highly similar to existing major brands.
 
+Conversational alias rule:
+
+- When the user writes or says `Pixel Down`, including the lowercase form `pixel down`, interpret it as the existing `PixelDone` product by default.
+- Treat `Pixel Down` as a separate product or name only when the user explicitly distinguishes it from `PixelDone`.
+
 ### 3.2 Android App Name
 
 The Android launcher display name should match the product name by default. If the product name is too long, shorten the product name instead of inventing a separate launcher nickname.

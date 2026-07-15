@@ -467,6 +467,23 @@ class PixelDoneViewModelTest {
         assertNull(input.error)
         assertNull(input.message)
     }
+
+    @Test
+    fun dismissPasswordChangeFeedbackClearsEditorValidationError() {
+        val initial = createInitialChecklistState(emptyList(), createdAtMillis = 1L)
+        val viewModel = PixelDoneViewModel(
+            todoRepository = TodoRepository(InMemoryTodoStateStore(initial)),
+            reminderScheduler = FakeReminderScheduler(),
+            authSessionRepository = FakeAuthSessionRepository(),
+        )
+
+        viewModel.onAction(PixelDoneAction.ChangePassword("", "new-secret", "new-secret"))
+        assertEquals("All password fields are required.", viewModel.uiState.value.passwordChangeState.error)
+
+        viewModel.onAction(PixelDoneAction.DismissPasswordChangeFeedback)
+        assertNull(viewModel.uiState.value.passwordChangeState.error)
+        assertNull(viewModel.uiState.value.passwordChangeState.message)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

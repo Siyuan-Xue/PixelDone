@@ -363,6 +363,7 @@ private sealed interface EditorMode {
     data object NewChecklist : EditorMode
     data class EditChecklist(val id: String) : EditorMode
     data object CloudSignIn : EditorMode
+    data object ChangePassword : EditorMode
 }
 
 @Composable
@@ -482,6 +483,7 @@ internal fun PixelDoneApp() {
     val checklistEditorVisible =
         editorMode is EditorMode.NewChecklist || editorMode is EditorMode.EditChecklist
     val cloudSignInEditorVisible = editorMode is EditorMode.CloudSignIn
+    val passwordChangeEditorVisible = editorMode is EditorMode.ChangePassword
     val imagePreviewItem = todos.firstOrNull { it.id == imagePreviewTodoId }
 
     LaunchedEffect(darkTheme) {
@@ -546,6 +548,9 @@ internal fun PixelDoneApp() {
 
     LaunchedEffect(authSession.signedIn, authSession.cloudAvailable) {
         if (cloudSignInEditorVisible && (authSession.signedIn || !authSession.cloudAvailable)) {
+            editorMode = EditorMode.None
+        }
+        if (passwordChangeEditorVisible && (!authSession.signedIn || !authSession.cloudAvailable)) {
             editorMode = EditorMode.None
         }
     }
@@ -1089,8 +1094,10 @@ internal fun PixelDoneApp() {
     }
 
     fun cancelEditing() {
-        if (editorMode is EditorMode.CloudSignIn) {
-            viewModel.onAction(PixelDoneAction.CancelSignIn)
+        when (editorMode) {
+            EditorMode.CloudSignIn -> viewModel.onAction(PixelDoneAction.CancelSignIn)
+            EditorMode.ChangePassword -> viewModel.onAction(PixelDoneAction.DismissPasswordChangeFeedback)
+            else -> Unit
         }
         clearEditor()
         editorMode = EditorMode.None
@@ -1133,7 +1140,7 @@ internal fun PixelDoneApp() {
         navigateBackChecklist()
     }
 
-    BackHandler(enabled = cloudSignInEditorVisible) {
+    BackHandler(enabled = cloudSignInEditorVisible || passwordChangeEditorVisible) {
         cancelEditing()
     }
 
@@ -1303,6 +1310,21 @@ internal fun PixelDoneApp() {
 
     fun signUpToCloud() {
         viewModel.onAction(PixelDoneAction.SignUp)
+    }
+
+    fun openCloudPasswordEditor() {
+        if (!isSettingsSelected || !authSession.cloudAvailable || !authSession.signedIn) return
+        closeTransientControls()
+        clearEditor()
+        viewModel.onAction(PixelDoneAction.DismissPasswordChangeFeedback)
+        editorMode = EditorMode.ChangePassword
+    }
+
+    fun cancelCloudPasswordChange() {
+        viewModel.onAction(PixelDoneAction.DismissPasswordChangeFeedback)
+        if (editorMode is EditorMode.ChangePassword) {
+            editorMode = EditorMode.None
+        }
     }
 
     fun changeCloudPassword(currentPassword: String, newPassword: String, confirmation: String) {
@@ -1638,6 +1660,9 @@ internal fun PixelDoneApp() {
             cloudSignInEditorVisible = cloudSignInEditorVisible,
             onOpenCloudSignIn = ::openCloudSignInEditor,
             onCancelCloudSignIn = ::cancelCloudSignIn,
+            passwordChangeEditorVisible = passwordChangeEditorVisible,
+            onOpenPasswordChange = ::openCloudPasswordEditor,
+            onCancelPasswordChange = ::cancelCloudPasswordChange,
             onDeleteChecklist = {
                 editingChecklistId?.let { id ->
                     checklistState.lists
@@ -1859,6 +1884,9 @@ private fun PixelDoneScreen(
     cloudSignInEditorVisible: Boolean,
     onOpenCloudSignIn: () -> Unit,
     onCancelCloudSignIn: () -> Unit,
+    passwordChangeEditorVisible: Boolean,
+    onOpenPasswordChange: () -> Unit,
+    onCancelPasswordChange: () -> Unit,
     onDeleteChecklist: () -> Unit,
     sortMode: SortMode,
     onSortModeChange: (SortMode) -> Unit,
@@ -2023,6 +2051,9 @@ private fun PixelDoneScreen(
                 cloudSignInEditorVisible = cloudSignInEditorVisible,
                 onOpenCloudSignIn = onOpenCloudSignIn,
                 onCancelCloudSignIn = onCancelCloudSignIn,
+                passwordChangeEditorVisible = passwordChangeEditorVisible,
+                onOpenPasswordChange = onOpenPasswordChange,
+                onCancelPasswordChange = onCancelPasswordChange,
                 updateUiState = updateUiState,
                 onUpdateClick = onUpdateClick,
                 darkTheme = darkTheme,
@@ -2348,6 +2379,9 @@ private fun TaskWorkspacePanel(
     cloudSignInEditorVisible: Boolean,
     onOpenCloudSignIn: () -> Unit,
     onCancelCloudSignIn: () -> Unit,
+    passwordChangeEditorVisible: Boolean,
+    onOpenPasswordChange: () -> Unit,
+    onCancelPasswordChange: () -> Unit,
     updateUiState: AppUpdateUiState,
     onUpdateClick: () -> Unit,
     darkTheme: Boolean,
@@ -2405,7 +2439,7 @@ private fun TaskWorkspacePanel(
                 onSignOut = onSignOut,
                 onSyncNow = onSyncNow,
                 onOpenConflictDialog = onOpenConflictDialog,
-                onChangePassword = onChangePassword,
+                onOpenPasswordChange = onOpenPasswordChange,
                 updateUiState = updateUiState,
                 onUpdateClick = onUpdateClick,
                 dockConfig = dockConfig,
@@ -2500,6 +2534,13 @@ private fun TaskWorkspacePanel(
                 onCancelAuth = onCancelCloudSignIn,
                 compactForKeyboard = compactForKeyboard,
             )
+        } else if (isSettingsSelected && passwordChangeEditorVisible) {
+            PasswordChangeEditorPanel(
+                state = passwordChangeState,
+                onSubmit = onChangePassword,
+                onCancel = onCancelPasswordChange,
+                compactForKeyboard = compactForKeyboard,
+            )
         }
     }
 }
@@ -2520,7 +2561,7 @@ private fun SettingsPanel(
     authInput: AuthInputState,
     passwordChangeState: PasswordChangeState,
     onOpenCloudSignIn: () -> Unit,
-    onChangePassword: (String, String, String) -> Unit,
+    onOpenPasswordChange: () -> Unit,
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     onOpenConflictDialog: () -> Unit = {},
@@ -2571,7 +2612,7 @@ private fun SettingsPanel(
                     onSignOut = onSignOut,
                     onSyncNow = onSyncNow,
                     onOpenConflictDialog = onOpenConflictDialog,
-                    onChangePassword = onChangePassword,
+                    onOpenPasswordChange = onOpenPasswordChange,
                 )
             }
             SettingsSection(title = stringResource(R.string.settings_display)) {
@@ -2681,11 +2722,10 @@ internal fun SettingsCloudPanel(
     onSignOut: () -> Unit,
     onSyncNow: () -> Unit,
     onOpenConflictDialog: () -> Unit = {},
-    onChangePassword: (String, String, String) -> Unit,
+    onOpenPasswordChange: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = PixelDoneColors.current
-    var passwordEditorVisible by remember { mutableStateOf(false) }
     val accountLabel = when {
         !authSession.cloudAvailable -> stringResource(R.string.needs_setup)
         authSession.signedIn -> authSession.userEmail ?: authSession.userId ?: stringResource(R.string.signed_in)
@@ -2781,15 +2821,9 @@ internal fun SettingsCloudPanel(
             if (authSession.signedIn) {
                 SettingsTextAction(
                     text = stringResource(R.string.change_password),
-                    onClick = { passwordEditorVisible = !passwordEditorVisible },
+                    onClick = onOpenPasswordChange,
                     enabled = !passwordChangeState.busy,
                 )
-                if (passwordEditorVisible) {
-                    PasswordChangeEditor(
-                        state = passwordChangeState,
-                        onSubmit = onChangePassword,
-                    )
-                }
             }
         }
 
@@ -2807,64 +2841,6 @@ internal fun SettingsCloudPanel(
                 color = colors.success,
             )
         }
-        passwordChangeState.error?.let { error ->
-            Text(
-                text = localizedAuthText(error),
-                style = MaterialTheme.typography.labelSmall,
-                color = colors.error,
-            )
-        }
-    }
-}
-
-@Composable
-private fun PasswordChangeEditor(
-    state: PasswordChangeState,
-    onSubmit: (String, String, String) -> Unit,
-) {
-    val colors = PixelDoneColors.current
-    var currentPassword by remember { mutableStateOf("") }
-    var newPassword by remember { mutableStateOf("") }
-    var confirmation by remember { mutableStateOf("") }
-    LaunchedEffect(state.message) {
-        if (state.message != null) {
-            currentPassword = ""
-            newPassword = ""
-            confirmation = ""
-        }
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, colors.borderWeak, RectangleShape)
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        listOf(
-            Triple(currentPassword, stringResource(R.string.current_password)) { value: String -> currentPassword = value },
-            Triple(newPassword, stringResource(R.string.new_password)) { value: String -> newPassword = value },
-            Triple(confirmation, stringResource(R.string.confirm_new_password)) { value: String -> confirmation = value },
-        ).forEach { (value, label, update) ->
-            OutlinedTextField(
-                value = value,
-                onValueChange = update,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !state.busy,
-                shape = RectangleShape,
-                label = { Text(label) },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                colors = settingsTextFieldColors(colors),
-            )
-        }
-        PixelButton(
-            text = if (state.busy) stringResource(R.string.changing_password) else stringResource(R.string.change_password),
-            onClick = { onSubmit(currentPassword, newPassword, confirmation) },
-            enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth(),
-            primary = true,
-        )
     }
 }
 
@@ -3766,9 +3742,6 @@ private fun CloudAuthEditorPanel(
         authInput.mode == CloudAuthMode.SIGN_UP -> stringResource(R.string.sign_up)
         else -> stringResource(R.string.sign_in)
     }
-    var passwordVisible by remember { mutableStateOf(false) }
-    val passwordTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation()
-
     LaunchedEffect(Unit) {
         emailFocusRequester.requestFocus()
     }
@@ -3824,31 +3797,15 @@ private fun CloudAuthEditorPanel(
                 colors = settingsTextFieldColors(colors),
             )
             Spacer(modifier = Modifier.height(verticalGap))
-            OutlinedTextField(
+            PasswordEditorField(
                 value = authInput.password,
                 onValueChange = onAuthPasswordChange,
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
                 isError = authInput.error != null,
-                shape = RectangleShape,
-                textStyle = MaterialTheme.typography.bodyLarge,
-                label = { Text(stringResource(R.string.password)) },
+                label = stringResource(R.string.password),
                 enabled = !authInput.busy,
-                visualTransformation = passwordTransformation,
-                trailingIcon = {
-                    SettingsTextAction(
-                    text = if (passwordVisible) stringResource(R.string.hide) else stringResource(R.string.show),
-                        onClick = { passwordVisible = !passwordVisible },
-                        enabled = !authInput.busy,
-                        modifier = Modifier.width(56.dp),
-                    )
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done,
-                ),
+                imeAction = ImeAction.Done,
                 keyboardActions = KeyboardActions(onDone = { submitAuth() }),
-                colors = settingsTextFieldColors(colors),
             )
             authInput.error?.let { error ->
                 Spacer(modifier = Modifier.height(6.dp))
@@ -3876,6 +3833,165 @@ private fun CloudAuthEditorPanel(
                         focusManager.clearFocus()
                         onCancelAuth()
                     },
+                    modifier = Modifier.weight(1f),
+                    primary = false,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PasswordEditorField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    isError: Boolean = false,
+    imeAction: ImeAction = ImeAction.Next,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+) {
+    val colors = PixelDoneColors.current
+    var passwordVisible by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        singleLine = true,
+        isError = isError,
+        shape = RectangleShape,
+        textStyle = MaterialTheme.typography.bodyLarge,
+        label = { Text(label) },
+        enabled = enabled,
+        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            SettingsTextAction(
+                text = if (passwordVisible) stringResource(R.string.hide) else stringResource(R.string.show),
+                onClick = { passwordVisible = !passwordVisible },
+                enabled = enabled,
+                modifier = Modifier.width(56.dp),
+            )
+        },
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Password,
+            imeAction = imeAction,
+        ),
+        keyboardActions = keyboardActions,
+        colors = settingsTextFieldColors(colors),
+    )
+}
+
+@Composable
+internal fun PasswordChangeEditorPanel(
+    state: PasswordChangeState,
+    onSubmit: (String, String, String) -> Unit,
+    onCancel: () -> Unit,
+    compactForKeyboard: Boolean,
+) {
+    val focusManager = LocalFocusManager.current
+    val currentPasswordFocusRequester = remember { FocusRequester() }
+    val colors = PixelDoneColors.current
+    val verticalGap = if (compactForKeyboard) 8.dp else 12.dp
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        currentPasswordFocusRequester.requestFocus()
+    }
+    LaunchedEffect(state.message) {
+        if (state.message != null) {
+            currentPassword = ""
+            newPassword = ""
+            confirmation = ""
+        }
+    }
+
+    fun submit() {
+        onSubmit(currentPassword, newPassword, confirmation)
+        focusManager.clearFocus()
+    }
+
+    PixelPanel {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCancel() },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.change_password),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.textSecondary,
+            )
+            Text(
+                text = stringResource(R.string.cancel),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.primaryInteractive,
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(modifier = Modifier.fillMaxWidth()) {
+            PasswordEditorField(
+                value = currentPassword,
+                onValueChange = { currentPassword = it },
+                label = stringResource(R.string.current_password),
+                enabled = !state.busy,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(currentPasswordFocusRequester),
+                isError = state.error != null,
+            )
+            Spacer(modifier = Modifier.height(verticalGap))
+            PasswordEditorField(
+                value = newPassword,
+                onValueChange = { newPassword = it },
+                label = stringResource(R.string.new_password),
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+                isError = state.error != null,
+            )
+            Spacer(modifier = Modifier.height(verticalGap))
+            PasswordEditorField(
+                value = confirmation,
+                onValueChange = { confirmation = it },
+                label = stringResource(R.string.confirm_new_password),
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+                isError = state.error != null,
+                imeAction = ImeAction.Done,
+                keyboardActions = KeyboardActions(onDone = { submit() }),
+            )
+            state.error?.let { error ->
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = localizedAuthText(error),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.error,
+                )
+            }
+            Spacer(modifier = Modifier.height(verticalGap))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PixelButton(
+                    text = if (state.busy) {
+                        stringResource(R.string.changing_password)
+                    } else {
+                        stringResource(R.string.change_password)
+                    },
+                    onClick = ::submit,
+                    enabled = !state.busy,
+                    modifier = Modifier.weight(1f),
+                    primary = true,
+                )
+                PixelButton(
+                    text = stringResource(R.string.cancel),
+                    onClick = {
+                        focusManager.clearFocus()
+                        onCancel()
+                    },
+                    enabled = !state.busy,
                     modifier = Modifier.weight(1f),
                     primary = false,
                 )
@@ -5898,6 +6014,9 @@ private fun PhonePreview() {
             cloudSignInEditorVisible = false,
             onOpenCloudSignIn = {},
             onCancelCloudSignIn = {},
+            passwordChangeEditorVisible = false,
+            onOpenPasswordChange = {},
+            onCancelPasswordChange = {},
             onDeleteChecklist = {},
             sortMode = SortMode.PRIORITY,
             onSortModeChange = {},
@@ -6007,6 +6126,9 @@ private fun TabletPreview() {
             cloudSignInEditorVisible = false,
             onOpenCloudSignIn = {},
             onCancelCloudSignIn = {},
+            passwordChangeEditorVisible = false,
+            onOpenPasswordChange = {},
+            onCancelPasswordChange = {},
             onDeleteChecklist = {},
             sortMode = SortMode.TIME,
             onSortModeChange = {},

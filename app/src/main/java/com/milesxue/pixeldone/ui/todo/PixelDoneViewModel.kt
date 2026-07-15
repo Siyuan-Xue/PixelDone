@@ -139,6 +139,9 @@ class PixelDoneViewModel(
             PixelDoneAction.DismissConflictDialog -> dismissConflictDialog()
             is PixelDoneAction.ResolveConflict -> resolveConflict(action)
             is PixelDoneAction.ChangePassword -> changePassword(action)
+            PixelDoneAction.DismissPasswordChangeFeedback -> {
+                updatePasswordChangeState { it.copy(message = null, error = null) }
+            }
             PixelDoneAction.DismissAuthMessage -> updateAuthInput { it.copy(message = null, error = null) }
             PixelDoneAction.SystemActionConsumed -> {
                 _uiState.value = _uiState.value.copy(pendingSystemAction = null)
