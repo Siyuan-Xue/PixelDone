@@ -44,7 +44,7 @@ jobs:
           if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
             throw "Formal Android releases require an exact vX.Y.Z tag."
           }
-          git fetch origin "refs/tags/$tag:refs/tags/$tag" --force
+          git fetch origin "refs/tags/${tag}:refs/tags/${tag}" --force
           if ($LASTEXITCODE -ne 0) { throw "Unable to fetch release tag $tag." }
           $commit = (git rev-list -n 1 "$tag^{commit}").Trim()
           if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($commit)) {
