@@ -74,6 +74,44 @@ function Get-GiteeAttachments([long]$ReleaseId) {
     return $response
 }
 
+function Send-GiteeAttachment(
+    [string]$Path,
+    [long]$ReleaseId
+) {
+    $responsePath = Join-Path $env:RUNNER_TEMP ("gitee-upload-" + [guid]::NewGuid() + ".json")
+    try {
+        $arguments = @(
+            "--fail-with-body",
+            "--show-error",
+            "--location",
+            "--http1.1",
+            "--connect-timeout", "30",
+            "--max-time", [string]$AttachmentTimeoutSeconds,
+            "--expect100-timeout", "10",
+            "--progress-bar",
+            "--request", "POST",
+            "--form-string", "access_token=$($env:GITEE_ACCESS_TOKEN)",
+            "--form-string", "owner=$Owner",
+            "--form-string", "repo=$Repository",
+            "--form-string", "release_id=$ReleaseId",
+            "--form", "file=@$Path",
+            "--output", $responsePath,
+            "--write-out", "%{http_code}",
+            "$ApiBase/releases/$ReleaseId/attach_files"
+        )
+        $statusCode = & curl @arguments
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            throw "Gitee attachment upload failed with curl exit code $exitCode (HTTP $statusCode)."
+        }
+        if ($statusCode -notin @("200", "201")) {
+            throw "Gitee attachment upload returned unexpected HTTP status $statusCode."
+        }
+    } finally {
+        Remove-Item -LiteralPath $responsePath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Assert-GiteeAttachment(
     [pscustomobject]$Attachment,
     [string]$ExpectedPath,
@@ -153,7 +191,8 @@ if ((Normalize-Text ([string]$release.body)) -ne $expectedNotes) {
 $releaseId = [long]$release.id
 Write-Output "Verified Gitee Release metadata for $Tag (id $releaseId)."
 $attachments = Get-GiteeAttachments $releaseId
-foreach ($path in @($ApkPath, $ChecksumPath)) {
+# Verify the multipart endpoint with the tiny checksum before transferring the APK.
+foreach ($path in @($ChecksumPath, $ApkPath)) {
     $name = Split-Path -Leaf $path
     $matches = @($attachments | Where-Object { $_.name -eq $name })
     if ($matches.Count -gt 1) { throw "Gitee Release contains duplicate attachment $name." }
@@ -164,12 +203,7 @@ foreach ($path in @($ApkPath, $ChecksumPath)) {
     }
     $size = (Get-Item -LiteralPath $path).Length
     Write-Output "Uploading Gitee attachment $name ($size bytes)."
-    Invoke-RestMethod `
-        -Uri "$ApiBase/releases/$releaseId/attach_files" `
-        -Method Post `
-        -Headers $script:Headers `
-        -Form @{ file = Get-Item -LiteralPath $path } `
-        -TimeoutSec $AttachmentTimeoutSeconds | Out-Null
+    Send-GiteeAttachment $path $releaseId
     Write-Output "Gitee accepted attachment $name; refreshing the attachment list."
     $attachments = Get-GiteeAttachments $releaseId
     $uploaded = @($attachments | Where-Object { $_.name -eq $name })
