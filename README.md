@@ -147,7 +147,7 @@ macOS/Linux:
 ./gradlew assembleRelease
 ```
 
-Release signing is configured through the local, untracked `signing/release-signing.properties` file for formal releases.
+Local release signing is configured through the untracked `signing/release-signing.properties` file. GitHub Actions uses the equivalent `PIXELDONE_ANDROID_KEYSTORE_PATH`, `PIXELDONE_ANDROID_STORE_PASSWORD`, `PIXELDONE_ANDROID_KEY_ALIAS`, and `PIXELDONE_ANDROID_KEY_PASSWORD` environment variables with an ephemeral keystore restored from an encrypted repository secret.
 
 Cloud-enabled builds receive public Supabase client configuration at build time through Gradle properties, environment variables, or untracked `local.properties` entries:
 
@@ -175,7 +175,16 @@ The in-app update checker reads GitHub Releases first and uses the synced Gitee 
 https://gitee.com/milesxue/PixelDone/releases
 ```
 
-Gitee synchronization is configured outside this repository. Publish releases and APK assets to GitHub first, then verify the synced Gitee mirror so fallback update availability is healthy.
+GitHub is the release source of truth. A strict `vX.Y.Z` tag triggers `.github/workflows/release-android.yml`, which tests the app, builds and signs the formal APK once, publishes it to GitHub, waits for the mirrored Gitee tag to resolve to the same commit, and uploads the identical APK and SHA-256 file through the Gitee OpenAPI. Gitee does not run a second Android build.
+
+To publish the next formal release:
+
+1. Update `versionName`, increase `versionCode`, and update the first line and highlights in `RELEASE_NOTES.md`.
+2. Commit and push the release-ready source to `main`.
+3. Create and push the matching immutable `vX.Y.Z` tag.
+4. Verify that the GitHub Actions run completes both the GitHub and Gitee publication jobs.
+
+The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, and automated test results to the published release notes. Do not prebuild the formal APK locally merely to calculate this metadata.
 
 The current formal signed release APK is:
 

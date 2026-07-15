@@ -35,17 +35,48 @@ val releaseSigningRequested = gradle.startParameter.taskNames.any {
 
 if (releaseSigningPropertiesFile.isFile) {
     releaseSigningPropertiesFile.inputStream().use(releaseSigningProperties::load)
-} else if (releaseSigningRequested) {
-    throw org.gradle.api.GradleException(
-        "Missing release signing properties: ${releaseSigningPropertiesFile.absolutePath}"
-    )
 }
 
-fun releaseSigningProperty(name: String): String =
-    releaseSigningProperties.getProperty(name)
-        ?: throw org.gradle.api.GradleException(
-            "Missing release signing property '$name' in ${releaseSigningPropertiesFile.absolutePath}"
-        )
+fun releaseSigningValue(propertyName: String, environmentName: String): String? =
+    releaseSigningProperties.getProperty(propertyName)?.takeIf(String::isNotBlank)
+        ?: System.getenv(environmentName)?.takeIf(String::isNotBlank)
+
+val releaseSigningStoreFile = releaseSigningValue(
+    "storeFile",
+    "PIXELDONE_ANDROID_KEYSTORE_PATH",
+)
+val releaseSigningStorePassword = releaseSigningValue(
+    "storePassword",
+    "PIXELDONE_ANDROID_STORE_PASSWORD",
+)
+val releaseSigningKeyAlias = releaseSigningValue(
+    "keyAlias",
+    "PIXELDONE_ANDROID_KEY_ALIAS",
+)
+val releaseSigningKeyPassword = releaseSigningValue(
+    "keyPassword",
+    "PIXELDONE_ANDROID_KEY_PASSWORD",
+)
+val releaseSigningConfigured = listOf(
+    releaseSigningStoreFile,
+    releaseSigningStorePassword,
+    releaseSigningKeyAlias,
+    releaseSigningKeyPassword,
+).all { !it.isNullOrBlank() }
+val releaseSigningPartiallyConfigured = releaseSigningPropertiesFile.isFile || listOf(
+    "PIXELDONE_ANDROID_KEYSTORE_PATH",
+    "PIXELDONE_ANDROID_STORE_PASSWORD",
+    "PIXELDONE_ANDROID_KEY_ALIAS",
+    "PIXELDONE_ANDROID_KEY_PASSWORD",
+).any { !System.getenv(it).isNullOrBlank() }
+
+if ((releaseSigningRequested || releaseSigningPartiallyConfigured) && !releaseSigningConfigured) {
+    throw org.gradle.api.GradleException(
+        "Release signing requires storeFile/storePassword/keyAlias/keyPassword in " +
+            "${releaseSigningPropertiesFile.absolutePath} or the corresponding " +
+            "PIXELDONE_ANDROID_* environment variables."
+    )
+}
 
 val supabaseUrl = pixelDoneConfigValue(
     "PIXELDONE_SUPABASE_URL" to "pixeldone.supabaseUrl",
@@ -94,11 +125,11 @@ android {
 
     signingConfigs {
         create("release") {
-            if (releaseSigningPropertiesFile.isFile) {
-                storeFile = rootProject.file(releaseSigningProperty("storeFile"))
-                storePassword = releaseSigningProperty("storePassword")
-                keyAlias = releaseSigningProperty("keyAlias")
-                keyPassword = releaseSigningProperty("keyPassword")
+            if (releaseSigningConfigured) {
+                storeFile = rootProject.file(requireNotNull(releaseSigningStoreFile))
+                storePassword = requireNotNull(releaseSigningStorePassword)
+                keyAlias = requireNotNull(releaseSigningKeyAlias)
+                keyPassword = requireNotNull(releaseSigningKeyPassword)
             }
         }
     }
@@ -115,7 +146,7 @@ android {
             buildConfigField("String", "UPDATE_CHANNEL", "\"formal\"")
             buildConfigField("Boolean", "ALLOW_INSECURE_SUPABASE_HTTP", allowInsecureSupabaseHttp.toString())
             resValue("bool", "allow_insecure_supabase_http", allowInsecureSupabaseHttp.toString())
-            if (releaseSigningPropertiesFile.isFile) {
+            if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
             }
             optimization {

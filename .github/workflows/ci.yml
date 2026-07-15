@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Install Android SDK packages
+        shell: bash
+        run: sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+      - name: Prepare Gradle wrapper
+        shell: bash
+        run: chmod +x gradlew
+      - name: Test and build pull request without cloud configuration
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+      - name: Test and build main with required cloud configuration
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          PIXELDONE_SUPABASE_URL: ${{ secrets.PIXELDONE_SUPABASE_URL }}
+          PIXELDONE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PIXELDONE_SUPABASE_PUBLISHABLE_KEY }}
+          PIXELDONE_REQUIRE_CLOUD_CONFIG: "true"
+        run: |
+          test -n "$PIXELDONE_SUPABASE_URL" || { echo "Missing PIXELDONE_SUPABASE_URL" >&2; exit 1; }
+          test -n "$PIXELDONE_SUPABASE_PUBLISHABLE_KEY" || { echo "Missing PIXELDONE_SUPABASE_PUBLISHABLE_KEY" >&2; exit 1; }
+          ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+      - name: Verify debug APK outputs
+        shell: pwsh
+        run: |
+          $metadataPath = "app/build/outputs/apk/debug/output-metadata.json"
+          if (-not (Test-Path $metadataPath)) { throw "Missing $metadataPath" }
+          $metadata = Get-Content -Raw $metadataPath | ConvertFrom-Json
+          $version = [string]$metadata.elements[0].versionName
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "Debug metadata has no versionName" }
+          $expected = "app/build/outputs/apk/debug/PixelDone-$version-debug.apk"
+          foreach ($path in @("app/build/outputs/apk/debug/app-debug.apk", $expected)) {
+            if (-not (Test-Path $path)) { throw "Missing expected debug APK: $path" }
+          }

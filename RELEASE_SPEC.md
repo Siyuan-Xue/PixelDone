@@ -7,7 +7,7 @@ This document contains PixelDone-only release and infrastructure exceptions. The
 - Release PixelDone only from this independent repository.
 - Canonical Git remote, tags, and releases: `https://github.com/Siyuan-Xue/PixelDone`.
 - GitHub Releases is the primary in-app release/update source.
-- The user-managed mirror `https://gitee.com/milesxue/PixelDone/releases` is the fallback update source. Agents publish to GitHub and do not change local `origin` for mirror work.
+- The Actions-managed mirror `https://gitee.com/milesxue/PixelDone/releases` is the fallback update source. GitHub remains the source of truth, and mirror work must never change local `origin`.
 
 ## Channels
 
@@ -15,6 +15,30 @@ This document contains PixelDone-only release and infrastructure exceptions. The
 - Beta candidates use `vX.Y.Z-rc.N`, GitHub prerelease title `PixelDone vX.Y.Z-rc.N`, and asset `PixelDone-X.Y.Z-rc.N-debug.apk`.
 - Formal builds use `vX.Y.Z`, a normal GitHub Release, the `formal` update channel, long-lived release signing, and asset `PixelDone-X.Y.Z-release.apk`.
 - Never publish a debug APK as a formal release asset. A prerelease is distribution, not access control.
+
+## Formal Release Automation
+
+- Pull requests and pushes to `main` run `.github/workflows/ci.yml`. Pull requests build without cloud configuration or repository secrets; `main` builds require the public Supabase client configuration stored in GitHub Actions secrets.
+- A strict `vX.Y.Z` tag starts `.github/workflows/release-android.yml`. The tag must point to a commit reachable from `main`, match `android.defaultConfig.versionName`, and have a `versionCode` higher than the previous formal APK.
+- The release quality gate runs `testDebugUnitTest`, `lintDebug`, `assembleDebug`, and the connected instrumentation tests on an Android emulator before release signing material is restored.
+- GitHub Actions builds and signs the formal APK exactly once. GitHub and Gitee must receive the same APK, checksum file, release notes, tag, and commit SHA; Gitee must never rebuild the release independently.
+- The workflow verifies the release APK with `apksigner` and requires signing certificate SHA-256 `6D146E63D8F96D383FD9BBCFD61C61C343D7D7ECB6C98D33DB5BD7DBF56D2317`.
+- GitHub is published first. The Gitee job waits for the existing GitHub-to-Gitee code mirror to expose the same tag and commit, then creates the Gitee Release through OpenAPI and uploads the identical artifacts.
+- Publishing is resumable only for an otherwise matching Release that lacks an expected attachment. Never move a tag, replace an existing attachment, use a clobber option, or modify conflicting Release metadata.
+- If GitHub succeeds and Gitee fails, keep the valid GitHub Release and rerun only the failed Gitee job after the mirror or API recovers.
+- Automated mirroring starts with the first formal tag published after this workflow is introduced. Do not backfill historical Gitee Releases unless explicitly requested.
+
+Required GitHub repository secrets:
+
+- `PIXELDONE_SUPABASE_URL`
+- `PIXELDONE_SUPABASE_PUBLISHABLE_KEY`
+- `PIXELDONE_ANDROID_KEYSTORE_BASE64`
+- `PIXELDONE_ANDROID_STORE_PASSWORD`
+- `PIXELDONE_ANDROID_KEY_ALIAS`
+- `PIXELDONE_ANDROID_KEY_PASSWORD`
+- `GITEE_ACCESS_TOKEN`
+
+The Gitee token must have only the minimum project permission needed to create Releases and upload attachments. Signing secrets and the Gitee token must never be exposed to pull-request jobs, command output, release artifacts, or Gitee build systems.
 
 ## Supabase Release Gate
 

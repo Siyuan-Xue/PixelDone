@@ -1,0 +1,293 @@
+name: Release Android
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      version-code: ${{ steps.metadata.outputs.version-code }}
+      apk-name: ${{ steps.metadata.outputs.apk-name }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Install Android SDK packages
+        shell: bash
+        run: sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+      - name: Prepare Gradle wrapper
+        shell: bash
+        run: chmod +x gradlew
+      - name: Validate immutable release input
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Formal Android releases require an exact vX.Y.Z tag."
+          }
+          git fetch origin main --no-tags
+          if ($LASTEXITCODE -ne 0) { throw "Unable to fetch origin/main." }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw "Release tag must point to a commit reachable from main." }
+          $expectedHeader = "PixelDone $($env:GITHUB_REF_NAME)"
+          $actualHeader = (Get-Content RELEASE_NOTES.md -TotalCount 1).Trim()
+          if (-not $actualHeader.StartsWith($expectedHeader, [StringComparison]::Ordinal)) {
+            throw "The first line of RELEASE_NOTES.md must start with '$expectedHeader'."
+          }
+      - name: Run unit tests, lint, and debug build
+        shell: bash
+        env:
+          PIXELDONE_SUPABASE_URL: ${{ secrets.PIXELDONE_SUPABASE_URL }}
+          PIXELDONE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PIXELDONE_SUPABASE_PUBLISHABLE_KEY }}
+          PIXELDONE_REQUIRE_CLOUD_CONFIG: "true"
+        run: |
+          test -n "$PIXELDONE_SUPABASE_URL" || { echo "Missing PIXELDONE_SUPABASE_URL" >&2; exit 1; }
+          test -n "$PIXELDONE_SUPABASE_PUBLISHABLE_KEY" || { echo "Missing PIXELDONE_SUPABASE_PUBLISHABLE_KEY" >&2; exit 1; }
+          ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+      - name: Read and validate release metadata
+        id: metadata
+        shell: pwsh
+        run: |
+          $metadataPath = "app/build/outputs/apk/debug/output-metadata.json"
+          if (-not (Test-Path $metadataPath)) { throw "Missing $metadataPath" }
+          $metadata = Get-Content -Raw $metadataPath | ConvertFrom-Json
+          $version = [string]$metadata.elements[0].versionName
+          $versionCode = [long]$metadata.elements[0].versionCode
+          $tagVersion = $env:GITHUB_REF_NAME.Substring(1)
+          if ($version -ne $tagVersion) {
+            throw "Tag version $tagVersion does not match Gradle versionName $version."
+          }
+          if ($versionCode -le 0) { throw "versionCode must be positive." }
+          $debugApk = "app/build/outputs/apk/debug/PixelDone-$version-debug.apk"
+          foreach ($path in @("app/build/outputs/apk/debug/app-debug.apk", $debugApk)) {
+            if (-not (Test-Path $path)) { throw "Missing expected debug APK: $path" }
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "version-code=$versionCode" >> $env:GITHUB_OUTPUT
+          "apk-name=PixelDone-$version-release.apk" >> $env:GITHUB_OUTPUT
+      - name: Require release order and increasing versionCode
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_VERSION: ${{ steps.metadata.outputs.version }}
+          CURRENT_VERSION_CODE: ${{ steps.metadata.outputs.version-code }}
+        run: |
+          $releaseJson = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw "Unable to read existing GitHub releases." }
+          $previous = $releaseJson | ConvertFrom-Json |
+            Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -match '^v\d+\.\d+\.\d+$' } |
+            Select-Object -First 1
+          if ($null -eq $previous) { exit 0 }
+          $previousVersionText = $previous.tag_name.Substring(1)
+          if ([version]$env:CURRENT_VERSION -le [version]$previousVersionText) {
+            throw "Release version $env:CURRENT_VERSION must be newer than $previousVersionText."
+          }
+          $expectedPreviousAsset = "PixelDone-$previousVersionText-release.apk"
+          $asset = $previous.assets | Where-Object { $_.name -eq $expectedPreviousAsset } | Select-Object -First 1
+          if ($null -eq $asset) { throw "Previous release lacks $expectedPreviousAsset." }
+          $previousApk = Join-Path $env:RUNNER_TEMP $expectedPreviousAsset
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $previousApk
+          $aapt2 = Join-Path $env:ANDROID_HOME "build-tools/37.0.0/aapt2"
+          $badging = & $aapt2 dump badging $previousApk | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0 -or $badging -notmatch "versionCode='(\d+)'") {
+            throw "Unable to read versionCode from $expectedPreviousAsset."
+          }
+          $previousVersionCode = [long]$Matches[1]
+          if ([long]$env:CURRENT_VERSION_CODE -le $previousVersionCode) {
+            throw "versionCode $env:CURRENT_VERSION_CODE must exceed previous formal versionCode $previousVersionCode."
+          }
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run instrumentation tests on Android 16
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: aosp_atd
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: ./gradlew connectedDebugAndroidTest --stacktrace
+
+  build-release:
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Install Android SDK packages
+        shell: bash
+        run: sdkmanager "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
+      - name: Prepare Gradle wrapper
+        shell: bash
+        run: chmod +x gradlew
+      - name: Restore release keystore
+        id: signing
+        shell: pwsh
+        env:
+          KEYSTORE_BASE64: ${{ secrets.PIXELDONE_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:KEYSTORE_BASE64)) {
+            throw "Missing PIXELDONE_ANDROID_KEYSTORE_BASE64."
+          }
+          $keystorePath = Join-Path $env:RUNNER_TEMP "PixelDone-release.jks"
+          [IO.File]::WriteAllBytes($keystorePath, [Convert]::FromBase64String($env:KEYSTORE_BASE64))
+          "path=$keystorePath" >> $env:GITHUB_OUTPUT
+      - name: Build signed release APK
+        shell: bash
+        env:
+          PIXELDONE_SUPABASE_URL: ${{ secrets.PIXELDONE_SUPABASE_URL }}
+          PIXELDONE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.PIXELDONE_SUPABASE_PUBLISHABLE_KEY }}
+          PIXELDONE_REQUIRE_CLOUD_CONFIG: "true"
+          PIXELDONE_ANDROID_KEYSTORE_PATH: ${{ steps.signing.outputs.path }}
+          PIXELDONE_ANDROID_STORE_PASSWORD: ${{ secrets.PIXELDONE_ANDROID_STORE_PASSWORD }}
+          PIXELDONE_ANDROID_KEY_ALIAS: ${{ secrets.PIXELDONE_ANDROID_KEY_ALIAS }}
+          PIXELDONE_ANDROID_KEY_PASSWORD: ${{ secrets.PIXELDONE_ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$PIXELDONE_SUPABASE_URL" || { echo "Missing PIXELDONE_SUPABASE_URL" >&2; exit 1; }
+          test -n "$PIXELDONE_SUPABASE_PUBLISHABLE_KEY" || { echo "Missing PIXELDONE_SUPABASE_PUBLISHABLE_KEY" >&2; exit 1; }
+          test -n "$PIXELDONE_ANDROID_STORE_PASSWORD" || { echo "Missing PIXELDONE_ANDROID_STORE_PASSWORD" >&2; exit 1; }
+          test -n "$PIXELDONE_ANDROID_KEY_ALIAS" || { echo "Missing PIXELDONE_ANDROID_KEY_ALIAS" >&2; exit 1; }
+          test -n "$PIXELDONE_ANDROID_KEY_PASSWORD" || { echo "Missing PIXELDONE_ANDROID_KEY_PASSWORD" >&2; exit 1; }
+          ./gradlew assembleRelease --stacktrace
+      - name: Verify and stage immutable release artifacts
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.quality-gate.outputs.version }}
+          VERSION_CODE: ${{ needs.quality-gate.outputs.version-code }}
+          APK_NAME: ${{ needs.quality-gate.outputs.apk-name }}
+          EXPECTED_CERT_SHA256: 6D146E63D8F96D383FD9BBCFD61C61C343D7D7ECB6C98D33DB5BD7DBF56D2317
+        run: |
+          $defaultApk = "app/build/outputs/apk/release/app-release.apk"
+          $versionedApk = "app/build/outputs/apk/release/$env:APK_NAME"
+          foreach ($path in @($defaultApk, $versionedApk)) {
+            if (-not (Test-Path $path)) { throw "Missing expected release APK: $path" }
+          }
+          $defaultHash = (Get-FileHash -Algorithm SHA256 $defaultApk).Hash
+          $versionedHash = (Get-FileHash -Algorithm SHA256 $versionedApk).Hash
+          if ($defaultHash -ne $versionedHash) { throw "Default and versioned release APKs differ." }
+
+          $apksigner = Join-Path $env:ANDROID_HOME "build-tools/37.0.0/apksigner"
+          $signingOutput = & $apksigner verify --verbose --print-certs $versionedApk 2>&1
+          if ($LASTEXITCODE -ne 0) { throw "apksigner verification failed.`n$signingOutput" }
+          $certificateLine = $signingOutput | Where-Object { $_ -match 'certificate SHA-256 digest:' } | Select-Object -First 1
+          if ($null -eq $certificateLine -or $certificateLine -notmatch 'digest:\s*([0-9a-fA-F]{64})') {
+            throw "Unable to read APK signing certificate digest."
+          }
+          $certificateHash = $Matches[1].ToUpperInvariant()
+          if ($certificateHash -ne $env:EXPECTED_CERT_SHA256) {
+            throw "Signing certificate mismatch: $certificateHash"
+          }
+
+          $aapt2 = Join-Path $env:ANDROID_HOME "build-tools/37.0.0/aapt2"
+          $badging = & $aapt2 dump badging $versionedApk | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw "aapt2 could not inspect the release APK." }
+          if ($badging -notmatch "name='com\.milesxue\.pixeldone'") { throw "Unexpected applicationId in release APK." }
+          if ($badging -notmatch "versionCode='$env:VERSION_CODE'") { throw "Unexpected versionCode in release APK." }
+          if ($badging -notmatch "versionName='$([regex]::Escape($env:VERSION))'") { throw "Unexpected versionName in release APK." }
+
+          $artifactDir = Join-Path $env:RUNNER_TEMP "pixeldone-release"
+          New-Item -ItemType Directory -Force $artifactDir | Out-Null
+          $stagedApk = Join-Path $artifactDir $env:APK_NAME
+          Copy-Item $versionedApk $stagedApk
+          $checksumName = "$env:APK_NAME.sha256"
+          $checksumPath = Join-Path $artifactDir $checksumName
+          "$versionedHash  $env:APK_NAME" | Set-Content -Encoding ascii $checksumPath
+
+          $size = (Get-Item $stagedApk).Length
+          $sourceLines = Get-Content RELEASE_NOTES.md | Where-Object {
+            $_ -notmatch '^- (Release asset|SHA-256|Signing certificate SHA-256):'
+          }
+          $sourceNotes = ($sourceLines -join "`n").TrimEnd()
+          $verification = @(
+            "Automated release verification:",
+            "- GitHub Actions passed ``testDebugUnitTest``, ``lintDebug``, ``assembleDebug``, all connected instrumentation tests, and ``assembleRelease``.",
+            "- Release asset: ``$env:APK_NAME`` ($size bytes).",
+            "- SHA-256: ``$versionedHash``.",
+            "- Signing certificate SHA-256: ``$certificateHash``."
+          ) -join "`n"
+          $generatedNotes = "$sourceNotes`n`n$verification"
+          $generatedNotes.Trim() | Set-Content -Encoding utf8 (Join-Path $artifactDir "release-notes.md")
+      - name: Upload signed release artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pixeldone-release-${{ needs.quality-gate.outputs.version }}
+          path: ${{ runner.temp }}/pixeldone-release/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-github:
+    needs: [quality-gate, build-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          name: pixeldone-release-${{ needs.quality-gate.outputs.version }}
+          path: release-artifacts
+      - name: Create or safely complete GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./.github/scripts/Publish-GitHubRelease.ps1 `
+            -Repository $env:GITHUB_REPOSITORY `
+            -Tag $env:GITHUB_REF_NAME `
+            -ExpectedCommit $env:GITHUB_SHA `
+            -Title "PixelDone $env:GITHUB_REF_NAME" `
+            -NotesPath "release-artifacts/release-notes.md" `
+            -ApkPath "release-artifacts/${{ needs.quality-gate.outputs.apk-name }}" `
+            -ChecksumPath "release-artifacts/${{ needs.quality-gate.outputs.apk-name }}.sha256"
+
+  mirror-gitee:
+    needs: [quality-gate, build-release, publish-github]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          name: pixeldone-release-${{ needs.quality-gate.outputs.version }}
+          path: release-artifacts
+      - name: Mirror the identical release to Gitee
+        shell: pwsh
+        env:
+          GITEE_ACCESS_TOKEN: ${{ secrets.GITEE_ACCESS_TOKEN }}
+        run: |
+          ./.github/scripts/Publish-GiteeRelease.ps1 `
+            -Owner "milesxue" `
+            -Repository "PixelDone" `
+            -Tag $env:GITHUB_REF_NAME `
+            -ExpectedCommit $env:GITHUB_SHA `
+            -Title "PixelDone $env:GITHUB_REF_NAME" `
+            -NotesPath "release-artifacts/release-notes.md" `
+            -ApkPath "release-artifacts/${{ needs.quality-gate.outputs.apk-name }}" `
+            -ChecksumPath "release-artifacts/${{ needs.quality-gate.outputs.apk-name }}.sha256"
