@@ -140,13 +140,25 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          CURRENT_TAG: ${{ needs.resolve_release.outputs.tag }}
           CURRENT_VERSION: ${{ steps.metadata.outputs.version }}
           CURRENT_VERSION_CODE: ${{ steps.metadata.outputs.version-code }}
         run: |
           $releaseJson = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
           if ($LASTEXITCODE -ne 0) { throw "Unable to read existing GitHub releases." }
-          $previous = $releaseJson | ConvertFrom-Json |
-            Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -match '^v\d+\.\d+\.\d+$' } |
+          $response = $releaseJson | ConvertFrom-Json
+          $releases = if ($response -is [System.Array]) {
+            @($response.GetEnumerator())
+          } else {
+            @($response)
+          }
+          $previous = $releases |
+            Where-Object {
+              -not $_.draft -and
+              -not $_.prerelease -and
+              $_.tag_name -match '^v\d+\.\d+\.\d+$' -and
+              $_.tag_name -ne $env:CURRENT_TAG
+            } |
             Select-Object -First 1
           if ($null -eq $previous) { exit 0 }
           $previousVersionText = $previous.tag_name.Substring(1)
