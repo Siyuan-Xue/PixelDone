@@ -307,9 +307,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Manual retries use the current publishing scripts without moving the immutable app tag.
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.resolve_release.outputs.tag }}
       - uses: actions/download-artifact@v7
         with:
           name: pixeldone-release-${{ needs.quality-gate.outputs.version }}
@@ -335,9 +334,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Manual retries use the current publishing scripts without moving the immutable app tag.
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.resolve_release.outputs.tag }}
       - uses: actions/download-artifact@v7
         with:
           name: pixeldone-release-${{ needs.quality-gate.outputs.version }}

@@ -42,7 +42,12 @@ function Invoke-GiteeJson(
 
 function Find-GiteeTag {
     for ($page = 1; $page -le 10; $page++) {
-        $tags = @(Invoke-GiteeJson "$ApiBase/tags?per_page=100&page=$page")
+        $response = Invoke-GiteeJson "$ApiBase/tags?per_page=100&page=$page"
+        $tags = if ($response -is [System.Array]) {
+            @($response.GetEnumerator())
+        } else {
+            @($response)
+        }
         $match = $tags | Where-Object { $_.name -eq $Tag } | Select-Object -First 1
         if ($null -ne $match) { return $match }
         if ($tags.Count -lt 100) { break }
@@ -60,7 +65,11 @@ function Get-GiteeRelease {
 }
 
 function Get-GiteeAttachments([long]$ReleaseId) {
-    return @(Invoke-GiteeJson "$ApiBase/releases/$ReleaseId/attach_files")
+    $response = Invoke-GiteeJson "$ApiBase/releases/$ReleaseId/attach_files"
+    if ($response -is [System.Array]) {
+        return $response.GetEnumerator()
+    }
+    return $response
 }
 
 function Assert-GiteeAttachment(
