@@ -350,7 +350,7 @@ jobs:
   mirror-gitee:
     needs: [resolve_release, quality-gate, build-release, publish-github]
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 100
     steps:
       # Manual retries use the current publishing scripts without moving the immutable app tag.
       - uses: actions/checkout@v6
@@ -379,7 +379,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mirror_existing }}
     needs: resolve_release
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 100
     permissions:
       contents: read
     steps:

@@ -16,7 +16,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
 $ApiBase = "https://gitee.com/api/v5/repos/$Owner/$Repository"
-$AttachmentTimeoutSeconds = 1800
+$AttachmentTimeoutSeconds = 2700
 
 function Normalize-Text([string]$Value) {
     return ($Value -replace "`r`n", "`n").TrimEnd()
