@@ -107,8 +107,8 @@ android {
         applicationId = "com.milesxue.pixeldone"
         minSdk = 26
         targetSdk = 37
-        versionCode = 85
-        versionName = "3.2.4"
+        versionCode = 86
+        versionName = "3.2.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(
@@ -138,12 +138,18 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             buildConfigField("String", "UPDATE_CHANNEL", "\"beta\"")
+            buildConfigField("String", "EXPECTED_UPDATE_SIGNER_SHA256", "\"\"")
             buildConfigField("Boolean", "ALLOW_INSECURE_SUPABASE_HTTP", "true")
             resValue("bool", "allow_insecure_supabase_http", "true")
         }
         release {
             isDebuggable = false
             buildConfigField("String", "UPDATE_CHANNEL", "\"formal\"")
+            buildConfigField(
+                "String",
+                "EXPECTED_UPDATE_SIGNER_SHA256",
+                "\"6D146E63D8F96D383FD9BBCFD61C61C343D7D7ECB6C98D33DB5BD7DBF56D2317\"",
+            )
             buildConfigField("Boolean", "ALLOW_INSECURE_SUPABASE_HTTP", allowInsecureSupabaseHttp.toString())
             resValue("bool", "allow_insecure_supabase_http", allowInsecureSupabaseHttp.toString())
             if (releaseSigningConfigured) {

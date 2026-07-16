@@ -9,12 +9,18 @@ package com.milesxue.pixeldone.data.update
 internal class UpdateService(
     private val downloader: AppUpdateDownloader,
     private val channel: AppUpdateChannel,
+    private val checkCache: AppUpdateCheckCache,
 ) {
-    suspend fun check(currentVersion: String): AppUpdateCheckResult =
-        checkPixelDoneUpdate(
+    suspend fun check(
+        currentVersion: String,
+        forceRefresh: Boolean = false,
+    ): AppUpdateCheckResult {
+        if (!forceRefresh) checkCache.load(currentVersion)?.let { return it }
+        return checkPixelDoneUpdate(
             currentVersion = currentVersion,
             channel = channel,
-        )
+        ).also { result -> checkCache.save(currentVersion, result) }
+    }
 
     fun enqueue(request: AppUpdateDownloadRequest): AppUpdateDownloadResult =
         downloader.enqueue(request)
@@ -25,8 +31,16 @@ internal class UpdateService(
     ): AppUpdateDownloadCompletion =
         downloader.awaitCompletion(download, onProgress)
 
-    suspend fun requestInstall(download: AppUpdateDownload): AppUpdateInstallStartResult =
-        downloader.requestInstall(download)
+    suspend fun verifyDownloadedUpdate(download: AppUpdateDownload): AppUpdateVerificationResult =
+        downloader.verifyDownloadedUpdate(download)
+
+    suspend fun requestInstall(
+        download: AppUpdateDownload,
+        onProgress: (AppUpdateDownloadProgress) -> Unit = {},
+    ): AppUpdateInstallStartResult =
+        downloader.requestInstall(download, onProgress)
+
+    fun consumeInstallStatus(): AppUpdateInstallStatus? = downloader.consumeInstallStatus()
 
     fun cleanupInstalledUpdate(currentVersion: String): Boolean =
         downloader.cleanupInstalledUpdate(currentVersion)

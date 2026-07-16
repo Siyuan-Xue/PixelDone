@@ -164,6 +164,8 @@ import com.milesxue.pixeldone.data.update.AppUpdateDownloadCompletion
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadProgress
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadResult
 import com.milesxue.pixeldone.data.update.AppUpdateInstallStartResult
+import com.milesxue.pixeldone.data.update.AppUpdateInstallStatus
+import com.milesxue.pixeldone.data.update.AppUpdateVerificationResult
 import com.milesxue.pixeldone.data.update.AppUpdateCheckResult
 import com.milesxue.pixeldone.data.update.AppUpdateInfo
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
@@ -376,7 +378,9 @@ internal fun PixelDoneApp() {
     val latestUpdateText = stringResource(R.string.latest_version_status, BuildConfig.VERSION_NAME)
     val getVersionTemplate = stringResource(R.string.get_version_status)
     val allowInstallText = stringResource(R.string.allow_install)
-    val installingVersionTemplate = stringResource(R.string.installing_version)
+    val verifyingUpdateText = stringResource(R.string.verifying_update)
+    val preparingUpdateText = stringResource(R.string.preparing_update)
+    val waitingForInstallerText = stringResource(R.string.waiting_for_installer)
     val updateFailedText = stringResource(R.string.update_failed)
     val checkingUpdateText = stringResource(R.string.checking_update)
     val updateScope = rememberCoroutineScope()
@@ -431,6 +435,8 @@ internal fun PixelDoneApp() {
     var updateUiState by remember { mutableStateOf(AppUpdateUiState()) }
     var updateCheckInFlight by remember { mutableStateOf(false) }
     var activeUpdateDownload by remember { mutableStateOf<AppUpdateDownload?>(null) }
+    var updateDialogDownload by remember { mutableStateOf<AppUpdateDownload?>(null) }
+    var installHandoffStarted by remember { mutableStateOf(false) }
     var showUpdatePromptDialog by remember { mutableStateOf(false) }
     var updatePromptInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var showUpdateProgressDialog by remember { mutableStateOf(false) }
@@ -1370,6 +1376,8 @@ internal fun PixelDoneApp() {
     }
 
     fun openDownloadedUpdate(download: AppUpdateDownload): Boolean {
+        updateDialogDownload = download
+        showUpdateProgressDialog = true
         when (updateInstallPermissionAction(hasInstallUpdatePermission())) {
             UpdateInstallPermissionAction.RequestInstallPermission -> {
                 pendingUpdateInstallDownload = download
@@ -1386,13 +1394,31 @@ internal fun PixelDoneApp() {
         pendingUpdateInstallDownload = null
         updateUiState = AppUpdateUiState(
             status = UpdateUiStatus.Installing,
-            message = String.format(Locale.getDefault(), installingVersionTemplate, download.version),
+            info = updateUiState.info,
+            message = preparingUpdateText,
         )
         updateScope.launch {
-            if (updateService.requestInstall(download) == AppUpdateInstallStartResult.Failed) {
+            val result = updateService.requestInstall(download) { progress ->
+                updateUiState = AppUpdateUiState(
+                    status = UpdateUiStatus.Installing,
+                    info = updateUiState.info,
+                    message = preparingUpdateText,
+                    progress = progress,
+                )
+            }
+            if (result == AppUpdateInstallStartResult.Failed) {
+                showUpdateProgressDialog = false
+                updateDialogDownload = null
                 updateUiState = AppUpdateUiState(
                     status = UpdateUiStatus.Offline,
                     message = updateFailedText,
+                )
+            } else {
+                installHandoffStarted = true
+                updateUiState = AppUpdateUiState(
+                    status = UpdateUiStatus.Installing,
+                    info = updateUiState.info,
+                    message = waitingForInstallerText,
                 )
             }
         }
@@ -1413,6 +1439,7 @@ internal fun PixelDoneApp() {
                 when (val result = updateService.enqueue(request)) {
                     is AppUpdateDownloadResult.Started -> {
                         activeUpdateDownload = result.download
+                        updateDialogDownload = result.download
                         updateUiState = AppUpdateUiState(
                             status = UpdateUiStatus.Downloading,
                             info = info,
@@ -1433,22 +1460,26 @@ internal fun PixelDoneApp() {
                         }
                         activeUpdateDownload = null
                         if (
-                            completion == AppUpdateDownloadCompletion.Success &&
-                            openDownloadedUpdate(result.download)
+                            completion == AppUpdateDownloadCompletion.Success
                         ) {
-                            showUpdateProgressDialog = false
-                            updateProgressDialogDismissed = false
                             updateUiState = AppUpdateUiState(
                                 status = UpdateUiStatus.Installing,
-                                message = String.format(Locale.getDefault(), installingVersionTemplate, info.version),
+                                info = info,
+                                message = verifyingUpdateText,
                             )
-                            return@launch
+                            when (updateService.verifyDownloadedUpdate(result.download)) {
+                                AppUpdateVerificationResult.Verified -> {
+                                    if (openDownloadedUpdate(result.download)) return@launch
+                                }
+                                AppUpdateVerificationResult.Failed -> Unit
+                            }
                         }
                     }
                     AppUpdateDownloadResult.Failed -> Unit
                 }
             }
             showUpdateProgressDialog = false
+            updateDialogDownload = null
             updateProgressDialogDismissed = false
             updateUiState = AppUpdateUiState(
                 status = UpdateUiStatus.Offline,
@@ -1538,6 +1569,26 @@ internal fun PixelDoneApp() {
                     if (pendingInstall != null && hasInstallUpdatePermission()) {
                         openDownloadedUpdate(pendingInstall)
                     }
+                    if (installHandoffStarted) {
+                        when (updateService.consumeInstallStatus()) {
+                            AppUpdateInstallStatus.Prompted -> {
+                                installHandoffStarted = false
+                                showUpdateProgressDialog = false
+                                updateDialogDownload = null
+                                updateUiState = AppUpdateUiState()
+                            }
+                            AppUpdateInstallStatus.Failed -> {
+                                installHandoffStarted = false
+                                showUpdateProgressDialog = false
+                                updateDialogDownload = null
+                                updateUiState = AppUpdateUiState(
+                                    status = UpdateUiStatus.Offline,
+                                    message = updateFailedText,
+                                )
+                            }
+                            null -> Unit
+                        }
+                    }
                     val fullScreenFollowUpTodoId = pendingFullScreenPermissionTodoId
                     pendingFullScreenPermissionTodoId = null
                     fullScreenFollowUpTodoId?.let { id ->
@@ -1604,7 +1655,7 @@ internal fun PixelDoneApp() {
         updateScope.launch {
             try {
                 applyUpdateCheckResult(
-                    result = updateService.check(BuildConfig.VERSION_NAME),
+                    result = updateService.check(BuildConfig.VERSION_NAME, forceRefresh = true),
                     showCurrentOrOfflineStatus = true,
                 )
             } finally {
@@ -1815,7 +1866,7 @@ internal fun PixelDoneApp() {
         )
         UpdateDownloadProgressDialog(
             download = if (showUpdateProgressDialog && !updateProgressDialogDismissed) {
-                activeUpdateDownload
+                updateDialogDownload
             } else {
                 null
             },
@@ -5450,10 +5501,16 @@ private fun UpdateDownloadProgressDialog(
     val message = updateUiState.message ?: formatLocalizedUpdateDownloadMessage(context, download.version)
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (updateUiState.status == UpdateUiStatus.Downloading) onDismiss()
+        },
         title = {
             Text(
-                text = stringResource(R.string.downloading_update),
+                text = if (updateUiState.status == UpdateUiStatus.Downloading) {
+                    stringResource(R.string.downloading_update)
+                } else {
+                    stringResource(R.string.install_updates)
+                },
                 style = MaterialTheme.typography.titleMedium,
                 color = colors.textPrimary,
             )
@@ -5468,18 +5525,22 @@ private fun UpdateDownloadProgressDialog(
                     overflow = TextOverflow.Ellipsis,
                 )
                 UpdateProgressBar(progress = updateUiState.progress)
-                Text(
-                    text = stringResource(R.string.download_continues_silently),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                )
+                if (updateUiState.status == UpdateUiStatus.Downloading) {
+                    Text(
+                        text = stringResource(R.string.download_continues_silently),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                }
             }
         },
         confirmButton = {
-            DialogTextActionButton(
-                text = stringResource(R.string.close),
-                onClick = onDismiss,
-            )
+            if (updateUiState.status == UpdateUiStatus.Downloading) {
+                DialogTextActionButton(
+                    text = stringResource(R.string.close),
+                    onClick = onDismiss,
+                )
+            }
         },
         shape = RectangleShape,
         containerColor = colors.surface,

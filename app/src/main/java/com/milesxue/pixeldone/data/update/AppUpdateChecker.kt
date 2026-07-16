@@ -54,6 +54,7 @@ internal typealias GiteeRelease = AppRelease
 internal data class AppUpdateDownloadSource(
     val source: AppUpdateSource,
     val url: String,
+    val checksumUrl: String = "$url.sha256",
 )
 
 internal data class AppUpdateInfo(
@@ -210,6 +211,7 @@ private suspend fun checkSourceUpdate(
             ) ?: return AppUpdateCheckResult.Unavailable
         }
         val asset = findReleaseApkAsset(assets, candidate.fileName) ?: continue
+        val checksumAsset = findReleaseChecksumAsset(assets, candidate.fileName)
         return AppUpdateCheckResult.Available(
             AppUpdateInfo(
                 version = candidate.version.normalized,
@@ -219,6 +221,7 @@ private suspend fun checkSourceUpdate(
                     AppUpdateDownloadSource(
                         source = source,
                         url = asset.downloadUrl,
+                        checksumUrl = checksumAsset?.downloadUrl ?: "${asset.downloadUrl}.sha256",
                     ),
                 ),
             ),
@@ -244,6 +247,7 @@ internal fun releasesToUpdateCheckResult(
     candidates.forEach { candidate ->
         val asset = findReleaseApkAsset(candidate.release.assets, candidate.fileName)
         if (asset != null) {
+            val checksumAsset = findReleaseChecksumAsset(candidate.release.assets, candidate.fileName)
             return AppUpdateCheckResult.Available(
                 AppUpdateInfo(
                     version = candidate.version.normalized,
@@ -253,6 +257,7 @@ internal fun releasesToUpdateCheckResult(
                         AppUpdateDownloadSource(
                             source = AppUpdateSource.Gitee,
                             url = asset.downloadUrl,
+                            checksumUrl = checksumAsset?.downloadUrl ?: "${asset.downloadUrl}.sha256",
                         ),
                     ),
                 ),
@@ -293,7 +298,14 @@ private suspend fun fallbackGiteeDownloadSources(
         ) ?: return emptyList()
     }
     val asset = findReleaseApkAsset(assets, fileName) ?: return emptyList()
-    return listOf(AppUpdateDownloadSource(AppUpdateSource.Gitee, asset.downloadUrl))
+    val checksumAsset = findReleaseChecksumAsset(assets, fileName)
+    return listOf(
+        AppUpdateDownloadSource(
+            source = AppUpdateSource.Gitee,
+            url = asset.downloadUrl,
+            checksumUrl = checksumAsset?.downloadUrl ?: "${asset.downloadUrl}.sha256",
+        ),
+    )
 }
 
 internal suspend fun fetchGiteeReleases(
@@ -388,6 +400,14 @@ internal fun findReleaseApkAsset(
     fileName: String,
 ): ReleaseAsset? =
     assets.firstOrNull { asset -> asset.name.equals(fileName, ignoreCase = true) }
+
+internal fun findReleaseChecksumAsset(
+    assets: List<ReleaseAsset>,
+    apkFileName: String,
+): ReleaseAsset? =
+    assets.firstOrNull { asset ->
+        asset.name.equals("$apkFileName.sha256", ignoreCase = true)
+    }
 
 internal fun updateApkFileName(
     projectName: String,

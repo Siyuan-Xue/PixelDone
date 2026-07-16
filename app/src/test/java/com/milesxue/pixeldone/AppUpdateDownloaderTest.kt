@@ -11,6 +11,8 @@ import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
 import com.milesxue.pixeldone.data.update.fullScreenIntentPermissionStateForUpdate
 import com.milesxue.pixeldone.data.update.isPixelDoneUpdateApkFileName
 import com.milesxue.pixeldone.data.update.isUpdateDownloadStalled
+import com.milesxue.pixeldone.data.update.parseUpdateChecksum
+import com.milesxue.pixeldone.data.update.sha256Hex
 import com.milesxue.pixeldone.data.update.shouldCleanInstalledUpdate
 import com.milesxue.pixeldone.data.update.staleUpdateApkFileNames
 import com.milesxue.pixeldone.data.update.updateApkVersion
@@ -28,6 +30,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppUpdateDownloaderTest {
+    @Test
+    fun parseUpdateChecksum_requiresExactHashAndApkFileName() {
+        val hash = "a".repeat(64)
+        assertEquals(
+            hash.uppercase(),
+            parseUpdateChecksum("$hash  PixelDone-3.2.5-release.apk", "PixelDone-3.2.5-release.apk"),
+        )
+        assertNull(parseUpdateChecksum("$hash  other.apk", "PixelDone-3.2.5-release.apk"))
+        assertNull(parseUpdateChecksum("not-a-hash  PixelDone-3.2.5-release.apk", "PixelDone-3.2.5-release.apk"))
+    }
+
+    @Test
+    fun sha256Hex_usesUppercaseDigest() {
+        assertEquals(
+            "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD",
+            sha256Hex("abc".toByteArray()),
+        )
+    }
+
     @Test
     fun updateReleaseApkFileName_usesExactFormalReleaseAssetName() {
         assertEquals(

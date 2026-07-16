@@ -22,12 +22,12 @@ internal class UpdateInstallActivity : Activity() {
             finish()
             return
         }
-        if (
-            statusIntent.getIntExtra(
+        val status = statusIntent.getIntExtra(
                 PackageInstaller.EXTRA_STATUS,
                 PackageInstaller.STATUS_FAILURE,
-            ) == PackageInstaller.STATUS_PENDING_USER_ACTION
-        ) {
+            )
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            recordUpdateInstallStatus(this, AppUpdateInstallStatus.Prompted)
             val confirmationIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 statusIntent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
             } else {
@@ -35,6 +35,8 @@ internal class UpdateInstallActivity : Activity() {
                 statusIntent.getParcelableExtra(Intent.EXTRA_INTENT) as? Intent
             }
             confirmationIntent?.let { runCatching { startActivity(it) } }
+        } else if (status != PackageInstaller.STATUS_SUCCESS) {
+            recordUpdateInstallStatus(this, AppUpdateInstallStatus.Failed)
         }
         finish()
     }

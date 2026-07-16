@@ -30,4 +30,7 @@
     <string name="sync_network_error_detail">Сеть недоступна. Проверьте Wi-Fi, мобильную сеть или VPN.</string>
     <string name="this_device">Это устройство</string><string name="cloud_version">Облачная версия</string><string name="use_this_device">Использовать с устройства</string><string name="use_cloud_version">Использовать облачную версию</string>
     <string name="conflict_settings_title">Настройки · Язык</string><string name="conflict_empty">Пусто</string><string name="status_active">Активна</string><string name="status_completed">Выполнена</string>
+    <string name="verifying_update">Проверка целостности обновления…</string>
+    <string name="preparing_update">Подготовка установщика Android…</string>
+    <string name="waiting_for_installer">Ожидание подтверждения установки Android…</string>
 </resources>

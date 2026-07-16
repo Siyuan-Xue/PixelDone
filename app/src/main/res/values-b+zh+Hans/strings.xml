@@ -33,4 +33,7 @@
     <string name="sync_network_error_detail">网络不可用。请检查 Wi-Fi、移动数据或 VPN。</string>
     <string name="this_device">此设备</string><string name="cloud_version">云端版本</string><string name="use_this_device">使用此设备版本</string><string name="use_cloud_version">使用云端版本</string>
     <string name="conflict_settings_title">设置 · 语言</string><string name="conflict_empty">空</string><string name="status_active">未完成</string><string name="status_completed">已完成</string>
+    <string name="verifying_update">正在校验更新完整性…</string>
+    <string name="preparing_update">正在准备 Android 安装程序…</string>
+    <string name="waiting_for_installer">正在等待 Android 安装确认…</string>
 </resources>

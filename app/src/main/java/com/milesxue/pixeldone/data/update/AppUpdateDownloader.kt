@@ -9,10 +9,15 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import com.milesxue.pixeldone.BuildConfig
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -20,14 +25,16 @@ import kotlinx.coroutines.withContext
 
 internal const val UpdateApkMimeType = "application/vnd.android.package-archive"
 private const val UpdateDownloadPollMillis = 750L
-private const val UpdateDownloadMaxWaitMillis = 10 * 60 * 1_000L
-private const val UpdateDownloadStalledWaitMillis = 30 * 1_000L
+private const val UpdateDownloadMaxWaitMillis = 30 * 60 * 1_000L
+private const val UpdateDownloadStalledWaitMillis = 90 * 1_000L
 private const val UpdatePreferencesName = "pixel_done_update_downloads"
 private const val ActiveDownloadVersionKey = "active_download_version"
 private const val ActiveDownloadIdKey = "active_download_id"
 private const val ActiveDownloadFileNameKey = "active_download_file_name"
 private const val ActiveDownloadSourceKey = "active_download_source"
 private const val ActiveDownloadUrlKey = "active_download_url"
+private const val ActiveDownloadChecksumUrlKey = "active_download_checksum_url"
+private const val UpdateInstallStatusKey = "update_install_status"
 private val PixelDoneUpdateApkRegex =
     Regex(
         "^${Regex.escape(PixelDoneProjectName)}-" +
@@ -35,6 +42,23 @@ private val PixelDoneUpdateApkRegex =
             "(\\d+(?:\\.\\d+){0,2}(?:-rc\\.\\d+)?)-debug)\\.apk$",
         RegexOption.IGNORE_CASE,
     )
+
+internal fun recordUpdateInstallStatus(context: Context, status: AppUpdateInstallStatus) {
+    context.applicationContext
+        .getSharedPreferences(UpdatePreferencesName, Context.MODE_PRIVATE)
+        .edit()
+        .putString(UpdateInstallStatusKey, status.name)
+        .apply()
+}
+
+internal fun consumeUpdateInstallStatus(context: Context): AppUpdateInstallStatus? {
+    val preferences = context.applicationContext
+        .getSharedPreferences(UpdatePreferencesName, Context.MODE_PRIVATE)
+    val status = preferences.getString(UpdateInstallStatusKey, null)
+        ?.let { value -> runCatching { AppUpdateInstallStatus.valueOf(value) }.getOrNull() }
+    if (status != null) preferences.edit().remove(UpdateInstallStatusKey).apply()
+    return status
+}
 
 internal fun updateReleaseApkFileName(version: String): String =
     updateApkFileName(PixelDoneProjectName, version, AppUpdateChannel.Formal)
@@ -105,6 +129,7 @@ internal data class AppUpdateDownloadRequest(
     val fileName: String,
     val source: AppUpdateSource,
     val url: String,
+    val checksumUrl: String = "$url.sha256",
 )
 
 internal fun appUpdateDownloadRequests(info: AppUpdateInfo): List<AppUpdateDownloadRequest> =
@@ -114,6 +139,7 @@ internal fun appUpdateDownloadRequests(info: AppUpdateInfo): List<AppUpdateDownl
             fileName = info.fileName,
             source = source.source,
             url = source.url,
+            checksumUrl = source.checksumUrl,
         )
     }
 
@@ -123,6 +149,7 @@ internal data class AppUpdateDownload(
     val fileName: String,
     val source: AppUpdateSource,
     val url: String,
+    val checksumUrl: String = "$url.sha256",
 )
 
 internal data class AppUpdateDownloadProgress(
@@ -148,6 +175,29 @@ internal enum class AppUpdateInstallStartResult {
     Requested,
     Failed,
 }
+
+internal enum class AppUpdateVerificationResult {
+    Verified,
+    Failed,
+}
+
+internal enum class AppUpdateInstallStatus {
+    Prompted,
+    Failed,
+}
+
+internal fun parseUpdateChecksum(text: String, expectedFileName: String): String? {
+    val match = Regex("^([0-9a-fA-F]{64})\\s+(.+)$")
+        .matchEntire(text.trim())
+        ?: return null
+    if (match.groupValues[2].trim() != expectedFileName) return null
+    return match.groupValues[1].uppercase()
+}
+
+internal fun sha256Hex(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { byte -> "%02X".format(byte) }
 
 internal fun fullScreenIntentPermissionStateForUpdate(
     sdkInt: Int,
@@ -204,6 +254,7 @@ internal class AppUpdateDownloader(context: Context) {
                 fileName = fileName,
                 source = request.source,
                 url = request.url,
+                checksumUrl = request.checksumUrl,
             )
             rememberActiveDownload(download)
             AppUpdateDownloadResult.Started(download)
@@ -280,6 +331,48 @@ internal class AppUpdateDownloader(context: Context) {
     }
 
     suspend fun requestInstall(download: AppUpdateDownload): AppUpdateInstallStartResult {
+        return requestInstall(download) { }
+    }
+
+    suspend fun verifyDownloadedUpdate(download: AppUpdateDownload): AppUpdateVerificationResult =
+        withContext(Dispatchers.IO) {
+            val file = downloadedApkFile(download.fileName)
+            val verified = try {
+                verifyDownloadedFile(download, file)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                false
+            }
+            if (verified) {
+                AppUpdateVerificationResult.Verified
+            } else {
+                forgetAndDelete(download)
+                AppUpdateVerificationResult.Failed
+            }
+        }
+
+    private fun verifyDownloadedFile(download: AppUpdateDownload, file: File): Boolean {
+        if (!file.isFile || file.length() <= 0L) return false
+        val checksumText = fetchChecksum(download.checksumUrl) ?: return false
+        val expectedHash = parseUpdateChecksum(checksumText, download.fileName) ?: return false
+        val actualHash = file.inputStream().buffered().use { input ->
+            val digest = MessageDigest.getInstance("SHA-256")
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+            digest.digest().joinToString("") { byte -> "%02X".format(byte) }
+        }
+        return actualHash == expectedHash && verifyArchiveIdentity(file, download.version)
+    }
+
+    suspend fun requestInstall(
+        download: AppUpdateDownload,
+        onProgress: (AppUpdateDownloadProgress) -> Unit,
+    ): AppUpdateInstallStartResult {
         val fullScreenIntentGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             appContext.getSystemService(NotificationManager::class.java)
                 ?.canUseFullScreenIntent() == true
@@ -322,7 +415,20 @@ internal class AppUpdateDownloader(context: Context) {
                 packageInstaller.openSession(sessionId).use { session ->
                     file.inputStream().buffered().use { input ->
                         session.openWrite("base.apk", 0L, file.length()).use { output ->
-                            input.copyTo(output)
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            var copied = 0L
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                output.write(buffer, 0, read)
+                                copied += read
+                                onProgress(
+                                    AppUpdateDownloadProgress(
+                                        bytesDownloaded = copied,
+                                        totalBytes = file.length(),
+                                    ),
+                                )
+                            }
                             session.fsync(output)
                         }
                     }
@@ -350,6 +456,76 @@ internal class AppUpdateDownloader(context: Context) {
             }
         }
     }
+
+    fun consumeInstallStatus(): AppUpdateInstallStatus? =
+        consumeUpdateInstallStatus(appContext)
+
+    private fun fetchChecksum(url: String): String? {
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                instanceFollowRedirects = true
+                connectTimeout = 15_000
+                readTimeout = 15_000
+                setRequestProperty("Accept", "text/plain")
+                setRequestProperty("User-Agent", PixelDoneProjectName)
+            }
+            if (connection.responseCode !in 200..299) return null
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun verifyArchiveIdentity(file: File, expectedVersion: String): Boolean {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            PackageManager.GET_SIGNATURES
+        }
+        val archive = appContext.packageManager.getPackageArchiveInfo(file.absolutePath, flags)
+            ?: return false
+        if (archive.packageName != appContext.packageName) return false
+        if (archive.versionName != expectedVersion) return false
+        val archiveVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            archive.longVersionCode
+        } else {
+            archive.versionCode.toLong()
+        }
+        if (archiveVersionCode <= BuildConfig.VERSION_CODE.toLong()) return false
+
+        val installed = appContext.packageManager.getPackageInfo(appContext.packageName, flags)
+        val archiveHashes = packageSignatures(archive).map(::signatureSha256).toSet()
+        val installedHashes = packageSignatures(installed).map(::signatureSha256).toSet()
+        if (archiveHashes.isEmpty() || archiveHashes.intersect(installedHashes).isEmpty()) return false
+        val expectedSigner = BuildConfig.EXPECTED_UPDATE_SIGNER_SHA256.trim().uppercase()
+        return expectedSigner.isEmpty() ||
+            (expectedSigner in archiveHashes && expectedSigner in installedHashes)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun packageSignatures(info: android.content.pm.PackageInfo): List<Signature> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = info.signingInfo ?: return emptyList()
+            val signers = if (signingInfo.hasMultipleSigners()) {
+                signingInfo.apkContentsSigners
+            } else {
+                signingInfo.signingCertificateHistory
+            }
+            signers?.toList().orEmpty()
+        } else {
+            info.signatures?.toList().orEmpty()
+        }
+    }
+
+    private fun signatureSha256(signature: Signature): String =
+        sha256Hex(signature.toByteArray())
 
     private fun downloadSnapshot(downloadId: Long): AppUpdateDownloadSnapshot? {
         val query = DownloadManager.Query().setFilterById(downloadId)
@@ -437,6 +613,9 @@ internal class AppUpdateDownloader(context: Context) {
         val url = preferences.getString(ActiveDownloadUrlKey, null)
             ?.takeIf { it.isNotBlank() }
             ?: return null
+        val checksumUrl = preferences.getString(ActiveDownloadChecksumUrlKey, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: "$url.sha256"
         val downloadId = preferences.getLong(ActiveDownloadIdKey, -1L)
             .takeIf { it >= 0L }
             ?: return null
@@ -446,6 +625,7 @@ internal class AppUpdateDownloader(context: Context) {
             fileName = fileName,
             source = source,
             url = url,
+            checksumUrl = checksumUrl,
         )
     }
 
@@ -456,6 +636,7 @@ internal class AppUpdateDownloader(context: Context) {
             .putString(ActiveDownloadFileNameKey, download.fileName)
             .putString(ActiveDownloadSourceKey, download.source.name)
             .putString(ActiveDownloadUrlKey, download.url)
+            .putString(ActiveDownloadChecksumUrlKey, download.checksumUrl)
             .apply()
     }
 
@@ -468,6 +649,7 @@ internal class AppUpdateDownloader(context: Context) {
             .remove(ActiveDownloadFileNameKey)
             .remove(ActiveDownloadSourceKey)
             .remove(ActiveDownloadUrlKey)
+            .remove(ActiveDownloadChecksumUrlKey)
             .apply()
     }
 

@@ -33,4 +33,7 @@
     <string name="sync_network_error_detail">الشبكة غير متاحة. تحقق من Wi-Fi أو بيانات الهاتف أو VPN.</string>
     <string name="this_device">هذا الجهاز</string><string name="cloud_version">إصدار السحابة</string><string name="use_this_device">استخدام إصدار هذا الجهاز</string><string name="use_cloud_version">استخدام إصدار السحابة</string>
     <string name="conflict_settings_title">الإعدادات · اللغة</string><string name="conflict_empty">فارغ</string><string name="status_active">نشط</string><string name="status_completed">مكتمل</string>
+    <string name="verifying_update">جارٍ التحقق من سلامة التحديث…</string>
+    <string name="preparing_update">جارٍ إعداد مثبّت Android…</string>
+    <string name="waiting_for_installer">بانتظار تأكيد التثبيت من Android…</string>
 </resources>

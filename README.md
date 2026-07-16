@@ -56,7 +56,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Check GitHub Releases automatically on app start, with synced Gitee Releases as fallback, and show a quiet footer update state when a release is available.
 - Show an update prompt dialog for users who have not disabled update prompts.
 - Download only the exact latest channel-matching APK through Android DownloadManager: formal release APKs for release builds and RC debug APKs for `PixelDone-beta`, trying GitHub first and synced Gitee second.
-- Show `downloading` with live footer progress while an in-app update APK downloads silently.
+- Show download, SHA-256/signature verification, installer staging, and Android handoff progress for in-app updates.
 - Show a dismissible update progress dialog when an update is started from a prompt or footer.
 - Keep update downloads running silently when the progress dialog is closed.
 - Reuse the active latest update download instead of queueing older release APKs.
@@ -119,7 +119,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - `data/settings/`: DataStore-backed settings; language mode syncs through Cloud while theme, Dock, and update preferences remain local.
 - `data/sync/` and `domain/sync/`: Supabase Auth, 3.2 transaction RPCs, private Storage attachment transfer, Realtime invalidation subscriptions, persistent conflicts, field merges, mutation UUIDs, cursors, and tombstones.
 - `data/image/`: private image-copying, content-signature/hash validation, on-demand remote caching, safe file-path handling, and preview bitmap sampling.
-- `data/update/`: GitHub-first release checks, synced Gitee fallback, DownloadManager integration, and state-preserving PackageInstaller sessions.
+- `data/update/`: cached GitHub-first release checks, synced Gitee fallback, APK checksum/signing verification, DownloadManager integration, and state-preserving PackageInstaller sessions.
 - `reminder/`: AlarmManager, notification, boot, receiver, foreground service, and XHigh full-screen alarm integration.
 - `ui/todo/`: screen route, Dock presentation, update/permission presentation rules, UI state holder, and ViewModel teaching entry point.
 - `ui/todo/components/`: reusable pixel-style Compose controls and icons.
@@ -189,7 +189,7 @@ The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.2.4-release.apk
+app/build/outputs/apk/release/PixelDone-3.2.5-release.apk
 ```
 
 ## Install
@@ -197,7 +197,7 @@ app/build/outputs/apk/release/PixelDone-3.2.4-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.2.4-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.2.5-release.apk
 ```
 
 The formal package name is:
@@ -214,4 +214,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.2.4 (versionCode 85) is the current formal signed Android release. It moves password changes into the same bottom editor area used by sign-in, sign-up, and todo editing, while preserving the established authentication and global sign-out behavior. The remote data contract remains 3.2, so no server migration is required.
+3.2.5 (versionCode 86) is the current formal signed Android release. It verifies update checksums, package identity, versions, and signing certificates before installation, keeps GitHub-first/Gitee-fallback delivery, and preserves visible progress until Android's installer takes over. The remote data contract remains 3.2, so no server migration is required.

@@ -39,8 +39,7 @@ internal data class AppUpdateUiState(
 
     val shouldAutoRestore: Boolean
         get() = status == UpdateUiStatus.Latest ||
-            status == UpdateUiStatus.Offline ||
-            status == UpdateUiStatus.Installing
+            status == UpdateUiStatus.Offline
 }
 
 internal fun formatUpdateDownloadMessage(
