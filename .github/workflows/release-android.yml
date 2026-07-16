@@ -327,6 +327,8 @@ jobs:
     steps:
       # Manual retries use the current publishing scripts without moving the immutable app tag.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v7
         with:
           name: pixeldone-release-${{ needs.quality-gate.outputs.version }}
