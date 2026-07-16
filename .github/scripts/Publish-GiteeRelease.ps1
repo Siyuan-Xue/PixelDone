@@ -16,7 +16,9 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
 $ApiBase = "https://gitee.com/api/v5/repos/$Owner/$Repository"
-$AttachmentTimeoutSeconds = 2700
+# Gitee's attachment endpoint can sustain very low upload throughput for release APKs.
+# Keep this below the 100-minute workflow limit while allowing a verified retry to finish.
+$AttachmentTimeoutSeconds = 5400
 
 function Normalize-Text([string]$Value) {
     return ($Value -replace "`r`n", "`n").TrimEnd()
