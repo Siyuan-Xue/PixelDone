@@ -104,10 +104,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Unable to fetch origin/main." }
           git merge-base --is-ancestor $env:RELEASE_COMMIT origin/main
           if ($LASTEXITCODE -ne 0) { throw "Release tag must point to a commit reachable from main." }
-          $expectedHeader = "PixelDone $($env:RELEASE_TAG)"
+          $expectedHeader = "# PixelDone $($env:RELEASE_TAG.Substring(1))"
           $actualHeader = (Get-Content RELEASE_NOTES.md -TotalCount 1).Trim()
-          if (-not $actualHeader.StartsWith($expectedHeader, [StringComparison]::Ordinal)) {
-            throw "The first line of RELEASE_NOTES.md must start with '$expectedHeader'."
+          if ($actualHeader -ne $expectedHeader) {
+            throw "The first line of RELEASE_NOTES.md must equal '$expectedHeader'."
           }
       - name: Run unit tests, lint, and debug build
         shell: bash
