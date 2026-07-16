@@ -69,7 +69,7 @@ internal class SupabaseTodoAttachmentRemoteStore(
                 requestMethod = method
                 connectTimeout = 10_000
                 readTimeout = 30_000
-                setRequestProperty("apikey", config.publishableKey)
+                setRequestProperty("apikey", config.normalizedPublishableKey)
                 setRequestProperty("Authorization", "Bearer $token")
                 setRequestProperty("Accept", "application/json, application/octet-stream")
                 if (upsert) setRequestProperty("x-upsert", "true")

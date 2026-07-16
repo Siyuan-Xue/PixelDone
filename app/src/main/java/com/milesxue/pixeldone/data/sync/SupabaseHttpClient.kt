@@ -41,7 +41,7 @@ internal class SupabaseHttpClient(
                 connectTimeout = 10_000
                 readTimeout = 15_000
                 setRequestProperty("Accept", "application/json")
-                setRequestProperty("apikey", config.publishableKey)
+                setRequestProperty("apikey", config.normalizedPublishableKey)
                 bearerToken?.let { setRequestProperty("Authorization", "Bearer $it") }
                 prefer?.let { setRequestProperty("Prefer", it) }
                 if (body != null) {

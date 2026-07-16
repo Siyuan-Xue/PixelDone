@@ -1,3 +1,4 @@
+import java.net.URI
 import java.util.Properties
 
 plugins {
@@ -13,11 +14,23 @@ if (localPropertiesFile.isFile) {
     localPropertiesFile.inputStream().use(localProperties::load)
 }
 
+fun normalizePixelDoneConfigValue(value: String): String {
+    var normalized = value
+    do {
+        val previous = normalized
+        normalized = normalized
+            .trim { character -> character.isWhitespace() || character == '\uFEFF' }
+            .removePrefix("\u00EF\u00BB\u00BF")
+            .removeSuffix("\u00EF\u00BB\u00BF")
+    } while (normalized != previous)
+    return normalized
+}
+
 fun pixelDoneConfigValue(vararg candidates: Pair<String, String>): String {
     for ((gradleName, localName) in candidates) {
-        providers.gradleProperty(gradleName).orNull?.let { return it }
-        localProperties.getProperty(localName)?.let { return it }
-        System.getenv(gradleName)?.let { return it }
+        providers.gradleProperty(gradleName).orNull?.let { return normalizePixelDoneConfigValue(it) }
+        localProperties.getProperty(localName)?.let { return normalizePixelDoneConfigValue(it) }
+        System.getenv(gradleName)?.let { return normalizePixelDoneConfigValue(it) }
     }
     return ""
 }
@@ -92,10 +105,34 @@ val requireCloudConfig = pixelDoneBooleanConfigValue(
 // Formal PixelDone releases must support the current direct-IP HTTP Supabase endpoint.
 val allowInsecureSupabaseHttp = true
 
-if (requireCloudConfig && (supabaseUrl.isBlank() || supabasePublishableKey.isBlank())) {
-    throw org.gradle.api.GradleException(
-        "PIXELDONE_REQUIRE_CLOUD_CONFIG=true requires PIXELDONE_SUPABASE_URL and PIXELDONE_SUPABASE_PUBLISHABLE_KEY."
-    )
+fun isValidSupabaseHttpUrl(value: String): Boolean {
+    if (value.any { it == '\uFEFF' || it == '\"' || it == '\'' }) return false
+    val parsed = runCatching { URI(value) }.getOrNull() ?: return false
+    return parsed.scheme?.lowercase() in setOf("http", "https") &&
+        !parsed.host.isNullOrBlank()
+}
+
+fun isValidSupabasePublishableKey(value: String): Boolean =
+    value.isNotBlank() && value.none { character ->
+        character.isWhitespace() || character == '\uFEFF' || character == '\"' || character == '\''
+    }
+
+if (requireCloudConfig) {
+    if (supabaseUrl.isBlank() || supabasePublishableKey.isBlank()) {
+        throw org.gradle.api.GradleException(
+            "PIXELDONE_REQUIRE_CLOUD_CONFIG=true requires PIXELDONE_SUPABASE_URL and PIXELDONE_SUPABASE_PUBLISHABLE_KEY."
+        )
+    }
+    if (!isValidSupabaseHttpUrl(supabaseUrl)) {
+        throw org.gradle.api.GradleException(
+            "PIXELDONE_SUPABASE_URL must be an HTTP or HTTPS URL with a host."
+        )
+    }
+    if (!isValidSupabasePublishableKey(supabasePublishableKey)) {
+        throw org.gradle.api.GradleException(
+            "PIXELDONE_SUPABASE_PUBLISHABLE_KEY contains invalid characters."
+        )
+    }
 }
 
 
@@ -107,8 +144,8 @@ android {
         applicationId = "com.milesxue.pixeldone"
         minSdk = 26
         targetSdk = 37
-        versionCode = 86
-        versionName = "3.2.5"
+        versionCode = 87
+        versionName = "3.2.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(
@@ -212,6 +249,10 @@ tasks.matching { it.name == "assembleDebug" }.configureEach {
 
 tasks.matching { it.name == "assembleRelease" }.configureEach {
     finalizedBy(copyVersionedReleaseApk)
+}
+
+tasks.matching { it.name == "connectedDebugAndroidTest" }.configureEach {
+    dependsOn(copyVersionedDebugApk)
 }
 
 dependencies {

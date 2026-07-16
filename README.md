@@ -189,7 +189,7 @@ The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.2.5-release.apk
+app/build/outputs/apk/release/PixelDone-3.2.6-release.apk
 ```
 
 ## Install
@@ -197,7 +197,7 @@ app/build/outputs/apk/release/PixelDone-3.2.5-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.2.5-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.2.6-release.apk
 ```
 
 The formal package name is:
@@ -214,4 +214,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.2.5 (versionCode 86) is the current formal signed Android release. It verifies update checksums, package identity, versions, and signing certificates before installation, keeps GitHub-first/Gitee-fallback delivery, and preserves visible progress until Android's installer takes over. The remote data contract remains 3.2, so no server migration is required.
+3.2.6 (versionCode 87) is the current formal signed Android release. It removes boundary BOM characters from Cloud configuration while preserving the direct-IP HTTP deployment contract, and it prevents cancelled or stale todo edits from creating duplicates during priority changes. The remote data contract remains 3.2, so no server migration is required.

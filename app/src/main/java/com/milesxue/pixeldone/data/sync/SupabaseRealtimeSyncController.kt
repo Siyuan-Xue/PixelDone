@@ -64,7 +64,7 @@ internal class SupabaseRealtimeSyncController(
     private suspend fun subscribe(session: com.milesxue.pixeldone.domain.sync.AuthSession) {
         val userId = requireNotNull(session.userId)
         val token = requireNotNull(session.accessToken)
-        val client = createSupabaseClient(config.normalizedBaseUrl, config.publishableKey) {
+        val client = createSupabaseClient(config.normalizedBaseUrl, config.normalizedPublishableKey) {
             install(Realtime) {
                 disconnectOnSessionLoss = false
                 requireValidSession = false

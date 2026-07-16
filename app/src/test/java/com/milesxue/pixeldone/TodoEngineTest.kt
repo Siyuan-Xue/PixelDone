@@ -3,11 +3,14 @@ package com.milesxue.pixeldone
 import com.milesxue.pixeldone.data.todo.TodoJsonCodec
 import com.milesxue.pixeldone.domain.todo.*
 import com.milesxue.pixeldone.ui.todo.CompletionSortDelayMillis
+import com.milesxue.pixeldone.ui.todo.EditorMode
 import com.milesxue.pixeldone.ui.todo.PendingTodoToggleFeedback
 import com.milesxue.pixeldone.ui.todo.SystemReminderPermissionDecision
 import com.milesxue.pixeldone.ui.todo.SystemReminderPermissionTarget
 import com.milesxue.pixeldone.ui.todo.TodoListHighlightRequest
 import com.milesxue.pixeldone.ui.todo.TodoRowClickAction
+import com.milesxue.pixeldone.ui.todo.TodoSubmissionTarget
+import com.milesxue.pixeldone.ui.todo.applyTodoSubmission
 import com.milesxue.pixeldone.ui.todo.consumeTodoListHighlightRequest
 import com.milesxue.pixeldone.ui.todo.defaultDueAtMillis
 import com.milesxue.pixeldone.ui.todo.firstRevealTargetIndex
@@ -18,6 +21,7 @@ import com.milesxue.pixeldone.ui.todo.nextTodoListClockRefreshDelayMillis
 import com.milesxue.pixeldone.ui.todo.recordTodoToggle
 import com.milesxue.pixeldone.ui.todo.systemReminderPermissionDecision
 import com.milesxue.pixeldone.ui.todo.todoRowClickAction
+import com.milesxue.pixeldone.ui.todo.todoSubmissionTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -180,6 +184,103 @@ class TodoEngineTest {
                 dueAtMillis = 2L,
             ),
         )
+    }
+
+    @Test
+    fun editingTodoUpdatesOnlyItsExistingId() {
+        val initial = listOf(
+            item("a", TodoPriority.MEDIUM, due = 1L),
+            item("b", TodoPriority.LOW, due = 2L),
+        )
+        val target = todoSubmissionTarget(EditorMode.EditTask("a"))
+
+        assertEquals(TodoSubmissionTarget.Update("a"), target)
+        val result = applyTodoSubmission(
+            items = initial,
+            target = requireNotNull(target),
+            titleInput = "a",
+            priority = TodoPriority.HIGH,
+            dueAtMillis = 3L,
+            reminderRepeat = ReminderRepeat.NONE,
+            createdAtMillis = 99L,
+            newTodoId = { error("Editing must not allocate a new todo ID") },
+        )
+
+        assertEquals(2, result?.items?.size)
+        assertEquals(listOf("a", "b"), result?.items?.map { it.id })
+        assertEquals(TodoPriority.HIGH, result?.items?.first { it.id == "a" }?.priority)
+        assertEquals(initial[1], result?.items?.first { it.id == "b" })
+    }
+
+    @Test
+    fun cancellingAThenEditingBDoesNotCreateADuplicate() {
+        val initial = listOf(
+            item("a", TodoPriority.MEDIUM, due = 1L),
+            item("b", TodoPriority.MEDIUM, due = 2L),
+        )
+
+        assertEquals(TodoSubmissionTarget.Update("a"), todoSubmissionTarget(EditorMode.EditTask("a")))
+        assertNull(todoSubmissionTarget(EditorMode.None))
+        val targetB = requireNotNull(todoSubmissionTarget(EditorMode.EditTask("b")))
+        val result = applyTodoSubmission(
+            items = initial,
+            target = targetB,
+            titleInput = "b",
+            priority = TodoPriority.HIGH,
+            dueAtMillis = 4L,
+            reminderRepeat = ReminderRepeat.NONE,
+            createdAtMillis = 99L,
+            newTodoId = { error("Editing must not allocate a new todo ID") },
+        )
+
+        assertEquals(2, result?.items?.size)
+        assertEquals(initial[0], result?.items?.first { it.id == "a" })
+        assertEquals(TodoPriority.HIGH, result?.items?.first { it.id == "b" }?.priority)
+    }
+
+    @Test
+    fun inactiveOrCancelledEditorCannotSubmitAndMissingEditTargetNeverCreates() {
+        assertNull(todoSubmissionTarget(EditorMode.None))
+        assertNull(todoSubmissionTarget(EditorMode.NewChecklist))
+        assertNull(todoSubmissionTarget(EditorMode.CloudSignIn))
+
+        val initial = listOf(item("a", TodoPriority.MEDIUM, due = 1L))
+        val result = applyTodoSubmission(
+            items = initial,
+            target = TodoSubmissionTarget.Update("missing"),
+            titleInput = "a",
+            priority = TodoPriority.HIGH,
+            dueAtMillis = 2L,
+            reminderRepeat = ReminderRepeat.NONE,
+            createdAtMillis = 99L,
+            newTodoId = { error("Missing edits must not allocate a new todo ID") },
+        )
+
+        assertNull(result)
+        assertEquals(1, initial.size)
+    }
+
+    @Test
+    fun onlyNewTaskModeCreatesAndLegitimateDuplicateTitlesRemainAllowed() {
+        val initial = listOf(
+            item("existing", TodoPriority.MEDIUM, due = 1L).copy(title = "Same title"),
+        )
+        val target = todoSubmissionTarget(EditorMode.NewTask)
+
+        assertEquals(TodoSubmissionTarget.Create, target)
+        val result = applyTodoSubmission(
+            items = initial,
+            target = requireNotNull(target),
+            titleInput = "Same title",
+            priority = TodoPriority.HIGH,
+            dueAtMillis = 2L,
+            reminderRepeat = ReminderRepeat.NONE,
+            createdAtMillis = 99L,
+            newTodoId = { "new" },
+        )
+
+        assertEquals(listOf("existing", "new"), result?.items?.map { it.id })
+        assertEquals(listOf("Same title", "Same title"), result?.items?.map { it.title })
     }
 
     @Test

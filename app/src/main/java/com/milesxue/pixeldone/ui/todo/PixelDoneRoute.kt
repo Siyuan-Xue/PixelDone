@@ -198,7 +198,6 @@ import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodoAfterReminder
 import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodosAfterReminder
 import com.milesxue.pixeldone.domain.todo.completedTodoCount
 import com.milesxue.pixeldone.domain.todo.createTodoChecklist
-import com.milesxue.pixeldone.domain.todo.createTodoItem
 import com.milesxue.pixeldone.domain.todo.deleteAllTrashTodos
 import com.milesxue.pixeldone.domain.todo.deleteTodoChecklist
 import com.milesxue.pixeldone.domain.todo.isChecklistNameAvailable
@@ -226,7 +225,6 @@ import com.milesxue.pixeldone.domain.todo.toggleTodoCompletion
 import com.milesxue.pixeldone.domain.todo.trashTodos
 import com.milesxue.pixeldone.domain.todo.updateChecklistItems
 import com.milesxue.pixeldone.domain.todo.updateTodoImageFileName
-import com.milesxue.pixeldone.domain.todo.updateTodoItem
 import com.milesxue.pixeldone.domain.todo.visibleTodos
 import com.milesxue.pixeldone.reminder.ActiveXHighAlarm
 import com.milesxue.pixeldone.reminder.XHighAlarmService
@@ -356,16 +354,6 @@ internal data class PendingTodoToggleFeedback(
             }
             .keys
     }
-}
-
-private sealed interface EditorMode {
-    data object None : EditorMode
-    data object NewTask : EditorMode
-    data class EditTask(val id: String) : EditorMode
-    data object NewChecklist : EditorMode
-    data class EditChecklist(val id: String) : EditorMode
-    data object CloudSignIn : EditorMode
-    data object ChangePassword : EditorMode
 }
 
 @Composable
@@ -978,75 +966,51 @@ internal fun PixelDoneApp() {
 
     fun submitTodo(): Boolean {
         if (!isNormalChecklistSelected) return false
-        val editingId = editingTaskId
-        var affectedTodoId = editingId
+        val submissionTarget = todoSubmissionTarget(editorMode) ?: return false
         val nowMillis = System.currentTimeMillis()
         val normalizedDueAtMillis = normalizeRepeatingDueAtMillis(
             dueAtMillis = dueAtMillis,
             reminderRepeat = selectedReminderRepeat,
             nowMillis = nowMillis,
         )
-        val updatedTodos = if (editingId == null) {
-            if (titleInput.isBlank()) {
-                return false
-            }
-            val newTodoId = UUID.randomUUID().toString()
-            affectedTodoId = newTodoId
-            val item = createTodoItem(
-                id = newTodoId,
-                titleInput = titleInput,
-                priority = selectedPriority,
-                dueAtMillis = normalizedDueAtMillis,
-                createdAtMillis = nowMillis,
-                reminderRepeat = selectedReminderRepeat,
-            )
+        val submissionResult = applyTodoSubmission(
+            items = todos,
+            target = submissionTarget,
+            titleInput = titleInput,
+            priority = selectedPriority,
+            dueAtMillis = normalizedDueAtMillis,
+            reminderRepeat = selectedReminderRepeat,
+            createdAtMillis = nowMillis,
+            newTodoId = { UUID.randomUUID().toString() },
+        ) ?: return false
 
-            if (item == null) {
-                return false
-            }
-            todos + item
-        } else {
-            updateTodoItem(
-                items = todos,
-                id = editingId,
-                titleInput = titleInput,
-                priority = selectedPriority,
-                dueAtMillis = normalizedDueAtMillis,
-                reminderRepeat = selectedReminderRepeat,
-            ) ?: run {
-                return false
-            }
-        }
-
-        val updatedState = updateSelectedTodos(updatedTodos) ?: return false
-        affectedTodoId?.let { id ->
-            revealAndHighlightTodos(setOf(id))
-        }
-        affectedTodoId
-            ?.let { id -> normalTodos(updatedState).firstOrNull { it.id == id } }
+        val updatedState = updateSelectedTodos(submissionResult.items) ?: return false
+        revealAndHighlightTodos(setOf(submissionResult.affectedTodoId))
+        normalTodos(updatedState)
+            .firstOrNull { it.id == submissionResult.affectedTodoId }
             ?.let(::requestReminderPermissionsIfNeeded)
-        clearEditor()
         editorMode = EditorMode.None
+        clearEditor()
         return true
     }
 
     fun startEditing(item: TodoItem) {
         if (!isNormalChecklistSelected) return
         closeTransientControls()
-        editorMode = EditorMode.EditTask(item.id)
         titleInput = item.title
         selectedPriority = item.priority
         selectedReminderRepeat = item.reminderRepeat
         dueAtMillis = item.dueAtMillis
+        editorMode = EditorMode.EditTask(item.id)
     }
 
     fun startEditingChecklist(checklist: TodoChecklist) {
         if (!isNormalChecklist(checklist)) return
         closeTransientControls()
         headerExpanded = true
-        editorMode = EditorMode.EditChecklist(checklist.id)
         checklistNameInput = checklist.name
         checklistEditorError = null
+        editorMode = EditorMode.EditChecklist(checklist.id)
     }
 
     fun submitChecklist(): Boolean {
@@ -1100,13 +1064,14 @@ internal fun PixelDoneApp() {
     }
 
     fun cancelEditing() {
-        when (editorMode) {
+        val cancelledMode = editorMode
+        editorMode = EditorMode.None
+        when (cancelledMode) {
             EditorMode.CloudSignIn -> viewModel.onAction(PixelDoneAction.CancelSignIn)
             EditorMode.ChangePassword -> viewModel.onAction(PixelDoneAction.DismissPasswordChangeFeedback)
             else -> Unit
         }
         clearEditor()
-        editorMode = EditorMode.None
     }
 
     fun selectChecklist(id: String, recordBackStack: Boolean = true) {
