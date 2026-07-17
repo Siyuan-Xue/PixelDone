@@ -1,5 +1,7 @@
 package com.milesxue.pixeldone
 
+import android.app.ActivityOptions
+import android.app.PendingIntent
 import android.content.pm.PackageInstaller
 import com.milesxue.pixeldone.data.update.AppUpdateDownload
 import com.milesxue.pixeldone.data.update.AppUpdateDownloadSource
@@ -9,6 +11,7 @@ import com.milesxue.pixeldone.data.update.AppUpdateSource
 import com.milesxue.pixeldone.data.update.activeUpdateDownloadMatchesLatest
 import com.milesxue.pixeldone.data.update.appUpdateDownloadRequests
 import com.milesxue.pixeldone.data.update.fullScreenIntentPermissionStateForUpdate
+import com.milesxue.pixeldone.data.update.installPromptBackgroundActivityStartMode
 import com.milesxue.pixeldone.data.update.isPixelDoneUpdateApkFileName
 import com.milesxue.pixeldone.data.update.isUpdateDownloadStalled
 import com.milesxue.pixeldone.data.update.parseUpdateChecksum
@@ -17,6 +20,9 @@ import com.milesxue.pixeldone.data.update.shouldCleanInstalledUpdate
 import com.milesxue.pixeldone.data.update.staleUpdateApkFileNames
 import com.milesxue.pixeldone.data.update.updateApkVersion
 import com.milesxue.pixeldone.data.update.updateReleaseApkFileName
+import com.milesxue.pixeldone.data.update.UpdateInstallStatusAction
+import com.milesxue.pixeldone.data.update.UpdateInstallStatusPendingIntentFlags
+import com.milesxue.pixeldone.data.update.updateInstallStatusAction
 import com.milesxue.pixeldone.ui.todo.formatDownloadedMegabytes
 import com.milesxue.pixeldone.ui.todo.formatUpdateDownloadMessage
 import com.milesxue.pixeldone.ui.todo.shouldShowAvailableUpdateDialog
@@ -300,5 +306,55 @@ class AppUpdateDownloaderTest {
                 currentlyGranted = false,
             ),
         )
+    }
+
+    @Test
+    fun updateInstallStatusAction_onlyLaunchesAValidPendingUserPrompt() {
+        assertEquals(
+            UpdateInstallStatusAction.LaunchPrompt,
+            updateInstallStatusAction(
+                status = PackageInstaller.STATUS_PENDING_USER_ACTION,
+                hasConfirmationIntent = true,
+            ),
+        )
+        assertEquals(
+            UpdateInstallStatusAction.Fail,
+            updateInstallStatusAction(
+                status = PackageInstaller.STATUS_PENDING_USER_ACTION,
+                hasConfirmationIntent = false,
+            ),
+        )
+        assertEquals(
+            UpdateInstallStatusAction.Clear,
+            updateInstallStatusAction(
+                status = PackageInstaller.STATUS_SUCCESS,
+                hasConfirmationIntent = false,
+            ),
+        )
+        assertEquals(
+            UpdateInstallStatusAction.Fail,
+            updateInstallStatusAction(
+                status = PackageInstaller.STATUS_FAILURE_ABORTED,
+                hasConfirmationIntent = false,
+            ),
+        )
+    }
+
+    @Test
+    fun installPromptBackgroundActivityStartMode_tracksAndroidBalRequirements() {
+        assertNull(installPromptBackgroundActivityStartMode(sdkInt = 33))
+        @Suppress("DEPRECATION")
+        val installPromptMode = ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+        assertEquals(installPromptMode, installPromptBackgroundActivityStartMode(sdkInt = 34))
+        assertEquals(installPromptMode, installPromptBackgroundActivityStartMode(sdkInt = 35))
+        assertEquals(installPromptMode, installPromptBackgroundActivityStartMode(sdkInt = 36))
+        assertEquals(installPromptMode, installPromptBackgroundActivityStartMode(sdkInt = 37))
+    }
+
+    @Test
+    fun installStatusCallbackIsOneShotAndMutable() {
+        assertTrue(UpdateInstallStatusPendingIntentFlags and PendingIntent.FLAG_ONE_SHOT != 0)
+        assertTrue(UpdateInstallStatusPendingIntentFlags and PendingIntent.FLAG_MUTABLE != 0)
+        assertTrue(UpdateInstallStatusPendingIntentFlags and PendingIntent.FLAG_UPDATE_CURRENT != 0)
     }
 }

@@ -35,6 +35,30 @@ private const val ActiveDownloadSourceKey = "active_download_source"
 private const val ActiveDownloadUrlKey = "active_download_url"
 private const val ActiveDownloadChecksumUrlKey = "active_download_checksum_url"
 private const val UpdateInstallStatusKey = "update_install_status"
+// The session requires user action, so consume its first callback and avoid cold-starting PixelDone
+// again for the final result after Android has replaced the package.
+internal const val UpdateInstallStatusPendingIntentFlags =
+    PendingIntent.FLAG_UPDATE_CURRENT or
+        PendingIntent.FLAG_MUTABLE or
+        PendingIntent.FLAG_ONE_SHOT
+
+internal fun updateInstallStatusPendingIntent(
+    context: Context,
+    sessionId: Int,
+): PendingIntent {
+    val appContext = context.applicationContext
+    val callbackIntent = Intent(appContext, UpdateInstallStatusReceiver::class.java).apply {
+        action = UpdateInstallStatusReceiver.ACTION_INSTALL_STATUS
+        putExtra(UpdateInstallStatusReceiver.EXTRA_INSTALL_SESSION_ID, sessionId)
+    }
+    return PendingIntent.getBroadcast(
+        appContext,
+        sessionId,
+        callbackIntent,
+        UpdateInstallStatusPendingIntentFlags,
+    )
+}
+
 private val PixelDoneUpdateApkRegex =
     Regex(
         "^${Regex.escape(PixelDoneProjectName)}-" +
@@ -58,6 +82,14 @@ internal fun consumeUpdateInstallStatus(context: Context): AppUpdateInstallStatu
         ?.let { value -> runCatching { AppUpdateInstallStatus.valueOf(value) }.getOrNull() }
     if (status != null) preferences.edit().remove(UpdateInstallStatusKey).apply()
     return status
+}
+
+internal fun clearUpdateInstallStatus(context: Context) {
+    context.applicationContext
+        .getSharedPreferences(UpdatePreferencesName, Context.MODE_PRIVATE)
+        .edit()
+        .remove(UpdateInstallStatusKey)
+        .apply()
 }
 
 internal fun updateReleaseApkFileName(version: String): String =
@@ -432,15 +464,7 @@ internal class AppUpdateDownloader(context: Context) {
                             session.fsync(output)
                         }
                     }
-                    val callbackIntent = Intent(appContext, UpdateInstallActivity::class.java).apply {
-                        action = UpdateInstallActivity.ACTION_INSTALL_STATUS
-                    }
-                    val callback = PendingIntent.getActivity(
-                        appContext,
-                        sessionId,
-                        callbackIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-                    )
+                    val callback = updateInstallStatusPendingIntent(appContext, sessionId)
                     session.commit(callback.intentSender)
                     committed = true
                 }

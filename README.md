@@ -61,9 +61,9 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Keep update downloads running silently when the progress dialog is closed.
 - Reuse the active latest update download instead of queueing older release APKs.
 - Clean stale or already-installed update APK files from the app-private update directory.
-- Open the system install confirmation after an in-app update APK finishes downloading.
+- Open the system install confirmation through an Android background-launch-authorized handoff after an in-app update APK finishes downloading, and fail safely if Android does not accept the handoff within 15 seconds.
 - Open Android's install-unknown-apps settings first when update installation permission is missing.
-- Install in-app updates through Android PackageInstaller sessions and preserve the existing Android 14+ full-screen intent access choice across upgrades.
+- Install in-app updates through Android PackageInstaller sessions, preserve the existing Android 14+ full-screen intent access choice across upgrades, and consume the installer callback once so package replacement cannot cold-start PixelDone again.
 - Check quietly for the latest release on every app start without suppressing an available update.
 - Keep Android 14+ full-screen intent permission checks tied to the system grant and preserve STOP/SNOOZE access when Android denies full-screen launch.
 - Treat a direct return from Android's Full Screen access page as no grant instead of repeatedly reopening the permission page.
@@ -189,7 +189,7 @@ The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.2.6-release.apk
+app/build/outputs/apk/release/PixelDone-3.2.7-release.apk
 ```
 
 ## Install
@@ -197,7 +197,7 @@ app/build/outputs/apk/release/PixelDone-3.2.6-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.2.6-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.2.7-release.apk
 ```
 
 The formal package name is:
@@ -214,4 +214,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.2.6 (versionCode 87) is the current formal signed Android release. It removes boundary BOM characters from Cloud configuration while preserving the direct-IP HTTP deployment contract, and it prevents cancelled or stale todo edits from creating duplicates during priority changes. The remote data contract remains 3.2, so no server migration is required.
+3.2.7 (versionCode 88) is the current formal signed Android release. It reliably hands in-app updates to Android's installer without leaving PixelDone stuck on the confirmation wait state, and it prevents the final package-replacement callback from cold-starting the app again after an upgrade. The existing permission choices, direct-IP HTTP deployment contract, and remote data contract 3.2 remain unchanged, so no permission reset or server migration is required.

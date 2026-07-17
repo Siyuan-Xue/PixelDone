@@ -1,23 +1,22 @@
-# PixelDone 3.2.6
+# PixelDone 3.2.7
 
-PixelDone 3.2.6 fixes Cloud configuration loading and prevents priority edits from creating duplicate todos.
+PixelDone 3.2.7 fixes the Android installer handoff and prevents the app from reopening itself after an in-app upgrade.
 
-## Cloud configuration
+## Installer confirmation
 
-- Removes boundary BOM and whitespace from the Supabase URL and publishable key at both build time and runtime.
-- Validates that configured endpoints use HTTP or HTTPS and include a host while continuing to support the established direct-IP cleartext HTTP deployment.
-- Uses the normalized URL and key consistently for REST, attachment, and Realtime clients without exposing the key in diagnostics.
+- Replaces the transparent installer callback activity with a non-exported status receiver.
+- Explicitly authorizes the one trusted Android installer confirmation handoff under the current background activity launch rules.
+- Stops waiting after 15 seconds when Android does not accept the handoff, instead of leaving the update dialog stuck indefinitely.
 
-## Todo editing
+## Upgrade lifecycle
 
-- Saves a new todo only while the editor is explicitly in new-task mode.
-- Updates only the active todo ID while editing; a missing or cancelled target now fails safely instead of falling back to a new UUID.
-- Closes the active edit target before clearing its draft, preventing a cancelled edit followed by a priority change on another todo from duplicating an item.
-- Preserves legitimate todos that share the same title; no title-based deduplication was added.
+- Consumes the PackageInstaller status callback once after the required user-confirmation event, preventing the final package-replacement result from cold-starting PixelDone.
+- Preserves the existing full-screen intent access choice across Android 14+ upgrades.
+- Keeps notification, exact-alarm, full-screen alarm, and install-source permission handling unchanged; no permission reconfiguration is required.
 
 ## Release status
 
-- `versionName` is 3.2.6 and `versionCode` is 87.
+- `versionName` is 3.2.7 and `versionCode` is 88.
 - The remote data contract remains 3.2 and requires no Supabase migration.
 - The cleartext HTTP deployment contract is unchanged; no HTTPS/TLS migration is required.
 - The release uses the established long-lived PixelDone signing identity.

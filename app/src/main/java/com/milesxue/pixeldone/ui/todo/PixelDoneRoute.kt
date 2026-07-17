@@ -13,6 +13,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -233,6 +234,7 @@ import com.milesxue.pixeldone.ui.theme.PixelDonePalette
 internal const val CompletionSortDelayMillis = 2_000L
 private const val MinuteMillis = 60_000L
 private const val TodoHighlightFadeMillis = 180
+private const val UpdateInstallHandoffTimeoutMillis = 15_000L
 
 private const val DeveloperCredit = "CODEX & XUE"
 private val PixelReadTopBarContentHeight = 36.dp
@@ -425,6 +427,7 @@ internal fun PixelDoneApp() {
     var activeUpdateDownload by remember { mutableStateOf<AppUpdateDownload?>(null) }
     var updateDialogDownload by remember { mutableStateOf<AppUpdateDownload?>(null) }
     var installHandoffStarted by remember { mutableStateOf(false) }
+    var installHandoffDeadlineMillis by remember { mutableStateOf<Long?>(null) }
     var showUpdatePromptDialog by remember { mutableStateOf(false) }
     var updatePromptInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
     var showUpdateProgressDialog by remember { mutableStateOf(false) }
@@ -1340,6 +1343,25 @@ internal fun PixelDoneApp() {
         updateProgressDialogDismissed = true
     }
 
+    fun finishInstallHandoff() {
+        installHandoffStarted = false
+        installHandoffDeadlineMillis = null
+        showUpdateProgressDialog = false
+        updateDialogDownload = null
+        updateUiState = AppUpdateUiState()
+    }
+
+    fun failInstallHandoff() {
+        installHandoffStarted = false
+        installHandoffDeadlineMillis = null
+        showUpdateProgressDialog = false
+        updateDialogDownload = null
+        updateUiState = AppUpdateUiState(
+            status = UpdateUiStatus.Offline,
+            message = updateFailedText,
+        )
+    }
+
     fun openDownloadedUpdate(download: AppUpdateDownload): Boolean {
         updateDialogDownload = download
         showUpdateProgressDialog = true
@@ -1362,6 +1384,7 @@ internal fun PixelDoneApp() {
             info = updateUiState.info,
             message = preparingUpdateText,
         )
+        updateService.consumeInstallStatus()
         updateScope.launch {
             val result = updateService.requestInstall(download) { progress ->
                 updateUiState = AppUpdateUiState(
@@ -1372,19 +1395,29 @@ internal fun PixelDoneApp() {
                 )
             }
             if (result == AppUpdateInstallStartResult.Failed) {
-                showUpdateProgressDialog = false
-                updateDialogDownload = null
-                updateUiState = AppUpdateUiState(
-                    status = UpdateUiStatus.Offline,
-                    message = updateFailedText,
-                )
+                failInstallHandoff()
             } else {
+                val handoffDeadline =
+                    SystemClock.elapsedRealtime() + UpdateInstallHandoffTimeoutMillis
                 installHandoffStarted = true
+                installHandoffDeadlineMillis = handoffDeadline
                 updateUiState = AppUpdateUiState(
                     status = UpdateUiStatus.Installing,
                     info = updateUiState.info,
                     message = waitingForInstallerText,
                 )
+                updateScope.launch {
+                    delay(UpdateInstallHandoffTimeoutMillis)
+                    val activity = context as? ComponentActivity
+                    if (
+                        installHandoffStarted &&
+                        installHandoffDeadlineMillis == handoffDeadline &&
+                        activity?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true
+                    ) {
+                        updateService.consumeInstallStatus()
+                        failInstallHandoff()
+                    }
+                }
             }
         }
         return true
@@ -1536,22 +1569,14 @@ internal fun PixelDoneApp() {
                     }
                     if (installHandoffStarted) {
                         when (updateService.consumeInstallStatus()) {
-                            AppUpdateInstallStatus.Prompted -> {
-                                installHandoffStarted = false
-                                showUpdateProgressDialog = false
-                                updateDialogDownload = null
-                                updateUiState = AppUpdateUiState()
+                            AppUpdateInstallStatus.Prompted -> finishInstallHandoff()
+                            AppUpdateInstallStatus.Failed -> failInstallHandoff()
+                            null -> if (
+                                installHandoffDeadlineMillis
+                                    ?.let { deadline -> SystemClock.elapsedRealtime() >= deadline } == true
+                            ) {
+                                failInstallHandoff()
                             }
-                            AppUpdateInstallStatus.Failed -> {
-                                installHandoffStarted = false
-                                showUpdateProgressDialog = false
-                                updateDialogDownload = null
-                                updateUiState = AppUpdateUiState(
-                                    status = UpdateUiStatus.Offline,
-                                    message = updateFailedText,
-                                )
-                            }
-                            null -> Unit
                         }
                     }
                     val fullScreenFollowUpTodoId = pendingFullScreenPermissionTodoId
