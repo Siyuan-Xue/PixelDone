@@ -28,6 +28,14 @@ This document contains PixelDone-only release and infrastructure exceptions. The
 - If GitHub succeeds and Gitee fails, keep the valid GitHub Release and rerun only the failed Gitee job after the mirror or API recovers.
 - Automated mirroring starts with the first formal tag published after this workflow is introduced. Do not backfill historical Gitee Releases unless explicitly requested.
 
+## Workflow Handoff
+
+- The PixelDone Android formal release workflow has been verified stable.
+- After completing local release verification, committing and pushing `main`, pushing the intended immutable release tag, and confirming that `.github/workflows/release-android.yml` was triggered for that tag and commit, Codex should end the task as soon as no manual work remains.
+- Codex is not required to poll the workflow to completion, watch individual jobs, or verify the final GitHub and Gitee assets during the same task.
+- The handoff must include the workflow URL and its last observed status. A running workflow must not be reported as a successful Release.
+- A known failure, conflicting tag or asset, or partial Release that already requires recovery is remaining manual work and must be handled or reported before ending the task.
+
 Required GitHub repository secrets:
 
 - `PIXELDONE_SUPABASE_URL`
