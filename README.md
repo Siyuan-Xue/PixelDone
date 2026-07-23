@@ -159,7 +159,7 @@ pixeldone.requireCloudConfig=true
 
 Formal and debug builds intentionally use the configured direct-IP HTTP Supabase endpoint. HTTP is the durable deployment choice and there is no planned HTTPS migration. This transport does not provide confidentiality or server identity verification; never place service-role credentials or other secrets in client configuration.
 
-Before running a 3.2 client, the operator must first execute `docs/pixeldone-supabase-3.2.0-storage-policies.sql` as `supabase_storage_admin`, then execute `docs/pixeldone-supabase-3.2.0-migration.sql` against an existing 3.1 schema and return its verification output. Supabase-managed Storage table ownership must not be changed. The 3.2 client intentionally has no legacy schema fallback and must not be released before this gate is confirmed.
+Before running a 3.2 client, the operator must first execute `docs/pixeldone-supabase-3.2.0-storage-policies.sql` as `supabase_storage_admin`, then execute the corrected `docs/pixeldone-supabase-3.2.0-migration.sql` against an existing 3.1 schema and return its verification output. Deployments created with an earlier copy of the 3.2 migration must also run `docs/pixeldone-supabase-3.2.8-attachment-hotfix.sql`; its final `attachment_validator_hotfix` result must be `true`. Supabase-managed Storage table ownership must not be changed. The 3.2 client intentionally has no legacy schema fallback and must not be released before this gate is confirmed.
 
 ## Release And Update Source
 
@@ -189,7 +189,7 @@ The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.2.7-release.apk
+app/build/outputs/apk/release/PixelDone-3.2.8-release.apk
 ```
 
 ## Install
@@ -197,7 +197,7 @@ app/build/outputs/apk/release/PixelDone-3.2.7-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.2.7-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.2.8-release.apk
 ```
 
 The formal package name is:
@@ -214,4 +214,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.2.7 (versionCode 88) is the current formal signed Android release. It reliably hands in-app updates to Android's installer without leaving PixelDone stuck on the confirmation wait state, and it prevents the final package-replacement callback from cold-starting the app again after an upgrade. The existing permission choices, direct-IP HTTP deployment contract, and remote data contract 3.2 remain unchanged, so no permission reset or server migration is required.
+3.2.8 (versionCode 89) is the current formal signed Android release. It fixes attachment mutations in existing 3.2 deployments and ensures ordinary PostgREST/database execution errors are no longer misreported as `SERVER UPDATE REQUIRED`. The remote contract remains 3.2, but servers created with the earlier faulty migration must run the focused 3.2.8 attachment hotfix before syncing images. The existing permission choices and direct-IP HTTP deployment contract remain unchanged.

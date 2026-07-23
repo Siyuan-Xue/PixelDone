@@ -18,6 +18,17 @@ class SupabaseHttpClientTest {
     }
 
     @Test
+    fun parsesPostgrestDatabaseErrorCode() {
+        val error = parseSupabaseError(
+            responseBody = """{"code":"42883","message":"operator does not exist"}""",
+            statusCode = 404,
+        )
+
+        assertEquals("42883", error.code)
+        assertEquals("operator does not exist", error.message)
+    }
+
+    @Test
     fun preservesNonJsonBodyWithoutInventingAnErrorCode() {
         val error = parseSupabaseError("gateway unavailable", 503)
 

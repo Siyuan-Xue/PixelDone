@@ -69,7 +69,7 @@ internal class SupabaseRemoteTodoDataSource(
             body = body,
         )
     } catch (error: SyncRemoteException) {
-        if (error.statusCode == 404 || error.statusCode == 400) {
+        if (error.remoteCode == MissingRpcErrorCode) {
             throw SyncSchemaMismatchException(
                 "PixelDone Cloud schema $ExpectedRemoteSchemaVersion is required. Run the 3.2 migration SQL.",
             )
@@ -110,6 +110,10 @@ internal class SupabaseRemoteTodoDataSource(
     }
 
     private fun String.toContractParts(): List<Int>? = split('.').map { it.toIntOrNull() ?: return null }
+
+    private companion object {
+        const val MissingRpcErrorCode = "PGRST202"
+    }
 }
 
 @Serializable

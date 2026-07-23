@@ -9,6 +9,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 internal interface SupabaseRequestClient {
     suspend fun request(
@@ -107,7 +110,10 @@ internal fun parseSupabaseError(responseBody: String, statusCode: Int): Supabase
         runCatching { SupabaseErrorJson.decodeFromString(SupabaseErrorPayload.serializer(), body) }.getOrNull()
     }
     return SupabaseErrorDetails(
-        code = payload?.errorCode?.trim()?.takeIf(String::isNotEmpty),
+        code = (
+            payload?.errorCode
+                ?: (payload?.postgrestCode as? JsonPrimitive)?.contentOrNull
+        )?.trim()?.takeIf(String::isNotEmpty),
         message = payload?.message?.takeIf(String::isNotBlank)
             ?: payload?.msg?.takeIf(String::isNotBlank)
             ?: responseBody.takeIf(String::isNotBlank)
@@ -118,6 +124,7 @@ internal fun parseSupabaseError(responseBody: String, statusCode: Int): Supabase
 @Serializable
 private data class SupabaseErrorPayload(
     @SerialName("error_code") val errorCode: String? = null,
+    @SerialName("code") val postgrestCode: JsonElement? = null,
     val message: String? = null,
     val msg: String? = null,
 )

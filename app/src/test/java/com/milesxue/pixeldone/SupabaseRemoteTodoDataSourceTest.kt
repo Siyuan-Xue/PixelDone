@@ -110,6 +110,43 @@ class SupabaseRemoteTodoDataSourceTest {
         assertEquals(SyncContractRequiredAction.UPDATE_SERVER, error.requiredAction)
     }
 
+    @Test
+    fun missingTransactionalRpcRequiresServerUpdate() = runTest {
+        val client = FailingSupabaseRequestClient(
+            SyncRemoteException(
+                message = "Could not find the function public.pixeldone_pull_changes",
+                statusCode = 404,
+                remoteCode = "PGRST202",
+            ),
+        )
+
+        val error = runCatching {
+            SupabaseRemoteTodoDataSource(client).pullChanges(session, 0L)
+        }.exceptionOrNull()
+
+        assertTrue(error is SyncSchemaMismatchException)
+        assertEquals(
+            SyncContractRequiredAction.UPDATE_SERVER,
+            (error as SyncSchemaMismatchException).requiredAction,
+        )
+    }
+
+    @Test
+    fun databaseExecutionFailureIsNotMisreportedAsServerUpdate() = runTest {
+        val failure = SyncRemoteException(
+            message = "operator does not exist: boolean || bigint",
+            statusCode = 404,
+            remoteCode = "42883",
+        )
+
+        val error = runCatching {
+            SupabaseRemoteTodoDataSource(FailingSupabaseRequestClient(failure))
+                .pullChanges(session, 0L)
+        }.exceptionOrNull()
+
+        assertEquals(failure, error)
+    }
+
     private data class RecordedSupabaseRequest(
         val method: String,
         val path: String,
@@ -150,5 +187,18 @@ class SupabaseRemoteTodoDataSourceTest {
                  "settings":null,"tombstones":[],"conflicts":[],"image_cleanup_paths":[]}
             """
         }
+    }
+
+    private class FailingSupabaseRequestClient(
+        private val failure: SyncRemoteException,
+    ) : SupabaseRequestClient {
+        override suspend fun request(
+            method: String,
+            path: String,
+            bearerToken: String?,
+            query: List<Pair<String, String>>,
+            prefer: String?,
+            body: String?,
+        ): String = throw failure
     }
 }

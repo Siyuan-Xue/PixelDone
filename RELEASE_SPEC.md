@@ -52,6 +52,7 @@ The Gitee token must have only the minimum project permission needed to create R
 
 - PixelDone 3.2 is a hard remote-schema cutover from 3.1. It adds private Supabase Storage image objects, transactional attachment metadata, and a durable image cleanup queue.
 - The operator manually runs `docs/pixeldone-supabase-3.2.0-storage-policies.sql` as `supabase_storage_admin`, then runs `docs/pixeldone-supabase-3.2.0-migration.sql` as the PixelDone public-schema owner, and returns the verification output before a 3.2 RC is tagged or published. Never change ownership of Supabase-managed Storage tables.
+- Existing 3.2 deployments created with a migration copy from before PixelDone 3.2.8 must run `docs/pixeldone-supabase-3.2.8-attachment-hotfix.sql` as the owner of `public.pixeldone_apply_mutation`. Its verification must return `attachment_validator_hotfix = true`, and an authenticated attachment mutation must complete before 3.2.8 or later is tagged.
 - The app must report `SERVER UPDATE REQUIRED` when the server does not provide schema `3.2`; do not add a legacy fallback.
 - The `pixeldone-todo-images` bucket must remain private. Clients may contain only the publishable/anon key and must never contain a Storage service-role key.
 - Formal and debug builds intentionally allow the configured direct-IP Supabase endpoint over cleartext HTTP. HTTP is the durable PixelDone deployment contract; there is no planned HTTPS migration. Keep the risk disclosure in README and release notes, and never broaden the client to unrelated cleartext endpoints.

@@ -144,8 +144,8 @@ android {
         applicationId = "com.milesxue.pixeldone"
         minSdk = 26
         targetSdk = 37
-        versionCode = 88
-        versionName = "3.2.7"
+        versionCode = 89
+        versionName = "3.2.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField(

@@ -465,10 +465,10 @@ begin
 
     if nullif(v_row->>'deleted_at_millis', '') is null then
       v_expected_prefix := v_owner::text || '/' || (v_row->>'todo_local_id') || '/';
-      if v_row->>'object_path' not like (v_expected_prefix || '%') ||
-         position('..' in (v_row->>'object_path')) > 0 ||
-         (v_row->>'content_sha256') !~ '^[0-9a-f]{64}$' ||
-         (v_row->>'content_type') not in ('image/jpeg', 'image/png', 'image/webp') ||
+      if v_row->>'object_path' not like (v_expected_prefix || '%') or
+         position('..' in (v_row->>'object_path')) > 0 or
+         (v_row->>'content_sha256') !~ '^[0-9a-f]{64}$' or
+         (v_row->>'content_type') not in ('image/jpeg', 'image/png', 'image/webp') or
          (v_row->>'byte_size')::bigint not between 1 and 10485760 then
         raise exception 'invalid PixelDone attachment descriptor' using errcode = '22023';
       end if;

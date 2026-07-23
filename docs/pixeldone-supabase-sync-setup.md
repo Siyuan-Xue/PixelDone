@@ -18,6 +18,8 @@ Back up PostgreSQL and the Storage volume. The official Supabase ownership model
 
 2. Run `docs/pixeldone-supabase-3.2.0-migration.sql` in Studio SQL Editor, or as the owner of the existing PixelDone objects in `public`. The script refuses to cut over if the four Storage policies are absent.
 
+3. If the server was created with a copy of the 3.2 migration from before PixelDone 3.2.8, run `docs/pixeldone-supabase-3.2.8-attachment-hotfix.sql` as the owner of `public.pixeldone_apply_mutation`. The original attachment validator accidentally used PostgreSQL's concatenation operator (`||`) between boolean expressions, so any mutation containing an active attachment failed with SQLSTATE `42883`. The hotfix changes only those boolean operators, preserves contract `3.2`, reloads PostgREST's schema cache, and is safe to rerun. Its final `attachment_validator_hotfix` value must be `true`.
+
 The earlier single-file candidate attempted `ALTER TABLE storage.objects` and could fail with `42501: must be owner of table objects` in Studio. Because it ran inside `BEGIN`/`COMMIT`, that failure rolled back the attempted migration; do not change the table owner to work around it.
 
 Do not tag or publish 3.2 until the final verification queries return:
@@ -28,8 +30,9 @@ Do not tag or publish 3.2 until the final verification queries return:
 - four owner-scoped Storage policies (select, insert, update, and delete);
 - `todo_checklists`, `todo_items`, `todo_attachments`, `user_settings`, and `sync_tombstones` in `supabase_realtime`;
 - one active `pixeldone-expired-trash-daily` cron at `15 3 * * *` UTC.
+- `attachment_validator_hotfix = true` when the 3.2.8 hotfix verification query is run.
 
-The client shows `SERVER UPDATE REQUIRED` if these RPCs are absent or return another schema version.
+The client shows `SERVER UPDATE REQUIRED` only if the required transactional RPC is absent or the RPC returns an incompatible schema version. Database execution failures retain their actual PostgREST/SQLSTATE error instead of being mislabeled as a schema upgrade requirement.
 
 ## Runtime Configuration
 
