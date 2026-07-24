@@ -6,6 +6,7 @@ import com.milesxue.pixeldone.domain.todo.TodoChecklistState
 import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.domain.todo.TrashChecklistId
+import com.milesxue.pixeldone.widget.configuredWidgetChecklistId
 import com.milesxue.pixeldone.widget.widgetChecklists
 import com.milesxue.pixeldone.widget.widgetRowLimit
 import com.milesxue.pixeldone.widget.widgetTodos
@@ -38,6 +39,15 @@ class PixelDoneWidgetRulesTest {
         assertEquals(1, widgetRowLimit(110f))
         assertEquals(3, widgetRowLimit(180f))
         assertEquals(5, widgetRowLimit(250f))
+    }
+
+    @Test
+    fun widgetConfigurationRequiresAnExplicitValidSelection() {
+        val main = checklist(id = "main", items = emptyList())
+
+        assertEquals(null, configuredWidgetChecklistId(listOf(main), configuredChecklistId = null))
+        assertEquals(null, configuredWidgetChecklistId(listOf(main), configuredChecklistId = "missing"))
+        assertEquals("main", configuredWidgetChecklistId(listOf(main), configuredChecklistId = "main"))
     }
 
     private fun checklist(id: String, items: List<TodoItem>) = TodoChecklist(

@@ -55,4 +55,12 @@
     <string name="widget_more_items">%1$d de plus</string>
     <string name="widget_complete_task">Terminer %1$s</string>
     <string name="widget_no_lists">Créez d’abord une liste dans PixelDone.</string>
+    <string name="widget_select_list">Touchez pour choisir une liste</string>
+    <string name="widget_selected_list">%1$s ▼</string>
+    <string name="widget_show_list">Afficher cette liste</string>
+    <string name="widget_preview_list_name">MAIN</string>
+    <string name="widget_preview_count">3</string>
+    <string name="widget_preview_task_one">Planifier la journée</string>
+    <string name="widget_preview_task_two">Relire les notes</string>
+    <string name="widget_preview_task_three">Envoyer la mise à jour</string>
 </resources>

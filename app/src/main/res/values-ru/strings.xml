@@ -55,4 +55,12 @@
     <string name="widget_more_items">Ещё %1$d</string>
     <string name="widget_complete_task">Завершить %1$s</string>
     <string name="widget_no_lists">Сначала создайте список в PixelDone.</string>
+    <string name="widget_select_list">Нажмите, чтобы выбрать список</string>
+    <string name="widget_selected_list">%1$s ▼</string>
+    <string name="widget_show_list">Показать этот список</string>
+    <string name="widget_preview_list_name">MAIN</string>
+    <string name="widget_preview_count">3</string>
+    <string name="widget_preview_task_one">Спланировать день</string>
+    <string name="widget_preview_task_two">Просмотреть заметки</string>
+    <string name="widget_preview_task_three">Отправить обновление</string>
 </resources>

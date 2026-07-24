@@ -5523,11 +5523,13 @@ private fun UpdateAvailableDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     text = stringResource(R.string.update_available_detail, currentVersion, info.version),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textSecondary,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = colors.textPrimary,
                 )
-                Text(
+                Row(
                     modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
                         .toggleable(
                             value = neverShowUpdateDialog,
                             role = Role.Checkbox,
@@ -5541,13 +5543,26 @@ private fun UpdateAvailableDialog(
                             }
                         }
                         .padding(vertical = 2.dp),
-                    text = stringResource(R.string.do_not_show_again),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (neverShowUpdateDialog) colors.primaryInteractive else colors.textSecondary,
-                    fontWeight = if (neverShowUpdateDialog) FontWeight.Bold else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Checkbox(
+                        checked = neverShowUpdateDialog,
+                        onCheckedChange = null,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = colors.primaryInteractive,
+                            uncheckedColor = colors.textSecondary,
+                            checkmarkColor = colors.background,
+                        ),
+                    )
+                    Text(
+                        text = stringResource(R.string.do_not_show_again),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         },
         confirmButton = {
@@ -5996,14 +6011,18 @@ private fun MarkdownExportDialog(
             )
         },
         confirmButton = {
-            DialogActionRow {
-                DialogTextActionButton(
+            DialogActionRow(modifier = Modifier.fillMaxWidth()) {
+                PixelButton(
                     text = stringResource(R.string.copy_simple),
                     onClick = onSimpleCopy,
+                    modifier = Modifier.weight(1f),
+                    clayOutline = true,
                 )
                 PixelButton(
                     text = stringResource(R.string.copy_detailed),
                     onClick = onDetailedCopy,
+                    modifier = Modifier.weight(1f),
+                    clayOutline = true,
                 )
             }
         },

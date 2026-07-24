@@ -34,7 +34,6 @@ import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import com.milesxue.pixeldone.MainActivity
 import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
 import com.milesxue.pixeldone.domain.todo.TodoChecklist
@@ -100,10 +99,6 @@ object PixelDoneWidgetUpdater {
     }
 }
 
-private val Background = ColorProvider(
-    day = Color(0xFFD1CFC5),
-    night = Color(0xFF5E5D59),
-)
 private val Surface = ColorProvider(
     day = Color(0xFFFAF9F5),
     night = Color(0xFF1F1E1D),
@@ -140,122 +135,121 @@ private fun PixelDoneWidgetContent(
     val remaining = todos.size - visibleTodos.size
     val reconfigureIntent = Intent(context, PixelDoneWidgetConfigurationActivity::class.java).apply {
         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+        addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
+        )
     }
+    val reconfigureAction = actionStartActivity(reconfigureIntent)
 
-    Box(
+    Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(Background)
-            .padding(2.dp),
+            .background(Surface)
+            .padding(10.dp),
     ) {
-        Column(
-            modifier = GlanceModifier
-                .fillMaxSize()
-                .background(Surface)
-                .padding(10.dp),
-        ) {
-            if (checklist == null) {
-                Text(
-                    text = context.getString(
-                        if (configuredChecklistId == null) {
-                            R.string.widget_choose_list
-                        } else {
-                            R.string.widget_list_missing
-                        },
-                    ),
-                    style = TextStyle(
-                        color = PrimaryText,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                    ),
-                    maxLines = 2,
-                )
-                Spacer(modifier = GlanceModifier.height(8.dp))
-                Text(
-                    text = context.getString(R.string.widget_reconfigure),
-                    modifier = GlanceModifier
-                        .background(RaisedSurface)
-                        .padding(8.dp)
-                        .clickable(actionStartActivity(reconfigureIntent)),
-                    style = TextStyle(
-                        color = Primary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                    ),
-                    maxLines = 2,
-                )
-                return@Column
-            }
-
-            val openListAction = actionStartActivity(
-                MainActivity.openChecklistIntent(context, checklist.id),
+        if (checklist == null) {
+            Text(
+                text = context.getString(
+                    if (configuredChecklistId == null) {
+                        R.string.widget_choose_list
+                    } else {
+                        R.string.widget_list_missing
+                    },
+                ),
+                style = TextStyle(
+                    color = PrimaryText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                ),
+                maxLines = 2,
             )
-            Row(
+            Spacer(modifier = GlanceModifier.height(8.dp))
+            Text(
+                text = context.getString(
+                    if (configuredChecklistId == null) {
+                        R.string.widget_select_list
+                    } else {
+                        R.string.widget_reconfigure
+                    },
+                ),
                 modifier = GlanceModifier
                     .fillMaxWidth()
-                    .clickable(openListAction),
-                verticalAlignment = Alignment.Vertical.CenterVertically,
-            ) {
-                Text(
-                    text = checklist.name,
-                    modifier = GlanceModifier.defaultWeight(),
-                    style = TextStyle(
-                        color = PrimaryText,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                    ),
-                    maxLines = 1,
-                )
-                Spacer(modifier = GlanceModifier.width(8.dp))
-                Text(
-                    text = todos.size.toString(),
-                    style = TextStyle(
-                        color = Primary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                    ),
-                    maxLines = 1,
-                )
-            }
-            Spacer(modifier = GlanceModifier.height(8.dp))
+                    .background(RaisedSurface)
+                    .padding(8.dp)
+                    .clickable(reconfigureAction),
+                style = TextStyle(
+                    color = Primary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                ),
+                maxLines = 2,
+            )
+            return@Column
+        }
 
-            if (todos.isEmpty()) {
+        Row(
+            modifier = GlanceModifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Vertical.CenterVertically,
+        ) {
+            Text(
+                text = context.getString(R.string.widget_selected_list, checklist.name),
+                modifier = GlanceModifier
+                    .defaultWeight()
+                    .clickable(reconfigureAction),
+                style = TextStyle(
+                    color = PrimaryText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                ),
+                maxLines = 1,
+            )
+            Spacer(modifier = GlanceModifier.width(8.dp))
+            Text(
+                text = todos.size.toString(),
+                style = TextStyle(
+                    color = Primary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                ),
+                maxLines = 1,
+            )
+        }
+        Spacer(modifier = GlanceModifier.height(8.dp))
+
+        if (todos.isEmpty()) {
+            Text(
+                text = context.getString(R.string.widget_all_done),
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .background(RaisedSurface)
+                    .padding(10.dp),
+                style = TextStyle(
+                    color = SecondaryText,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
+                ),
+            )
+        } else {
+            visibleTodos.forEach { item ->
+                WidgetTodoRow(
+                    checklist = checklist,
+                    item = item,
+                )
+                Spacer(modifier = GlanceModifier.height(4.dp))
+            }
+            if (remaining > 0) {
                 Text(
-                    text = context.getString(R.string.widget_all_done),
-                    modifier = GlanceModifier
-                        .fillMaxWidth()
-                        .background(RaisedSurface)
-                        .padding(10.dp)
-                        .clickable(openListAction),
+                    text = context.getString(R.string.widget_more_items, remaining),
+                    modifier = GlanceModifier.fillMaxWidth(),
                     style = TextStyle(
                         color = SecondaryText,
                         fontWeight = FontWeight.Medium,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                     ),
+                    maxLines = 1,
                 )
-            } else {
-                visibleTodos.forEach { item ->
-                    WidgetTodoRow(
-                        context = context,
-                        checklist = checklist,
-                        item = item,
-                    )
-                    Spacer(modifier = GlanceModifier.height(4.dp))
-                }
-                if (remaining > 0) {
-                    Text(
-                        text = context.getString(R.string.widget_more_items, remaining),
-                        modifier = GlanceModifier
-                            .fillMaxWidth()
-                            .clickable(openListAction),
-                        style = TextStyle(
-                            color = SecondaryText,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 12.sp,
-                        ),
-                        maxLines = 1,
-                    )
-                }
             }
         }
     }
@@ -264,13 +258,9 @@ private fun PixelDoneWidgetContent(
 @androidx.glance.GlanceComposable
 @androidx.compose.runtime.Composable
 private fun WidgetTodoRow(
-    context: Context,
     checklist: TodoChecklist,
     item: TodoItem,
 ) {
-    val openListAction = actionStartActivity(
-        MainActivity.openChecklistIntent(context, checklist.id),
-    )
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
@@ -303,8 +293,7 @@ private fun WidgetTodoRow(
             text = item.title,
             modifier = GlanceModifier
                 .defaultWeight()
-                .padding(horizontal = 8.dp)
-                .clickable(openListAction),
+                .padding(horizontal = 8.dp),
             style = TextStyle(
                 color = PrimaryText,
                 fontWeight = FontWeight.Medium,

@@ -1,26 +1,24 @@
-# PixelDone 3.3.0
+# PixelDone 3.3.1
 
-PixelDone 3.3.0 adds Markdown checklist export and a configurable Android home-screen widget.
-
-## Markdown export
-
-- Adds `EXPORT MARKDOWN` to the configurable Dock actions.
-- Asks for confirmation before copying and offers simple or detailed Markdown.
-- Exports every task in the current checklist, including completed tasks hidden by the current view, while preserving the current sort order.
-- Simple export contains a checklist heading and Markdown task checkboxes. Detailed export also includes localized priority, due-date, and repeat metadata.
-- Escapes Markdown-sensitive characters and flattens line breaks in checklist and task titles.
+PixelDone 3.3.1 fixes Android home-screen widget setup, preview, navigation, and dialog affordances.
 
 ## Android widget
 
-- Adds a resizable launcher widget implemented with AndroidX Glance.
-- Lets each widget instance select one normal checklist.
-- Shows unfinished tasks in the checklist's configured sort order and adapts the number of visible rows to the widget size.
-- Opens the selected checklist when the widget body is tapped.
-- Marks tasks complete directly from the widget; completed rows disappear from the widget.
+- Replaces the widget picker's indefinite Glance loading placeholder with a representative PixelDone checklist preview and a matching legacy preview drawable.
+- Adds the widget without interrupting the launcher with an automatic list picker. An unconfigured widget now asks the user to choose a list in place.
+- Requires an explicit list choice, updates the exact widget instance, and returns to the launcher after configuration.
+- Removes implicit jumps into the PixelDone app from the widget header, task labels, empty state, and overflow count.
+- Uses the checklist heading only as an explicit list-change control while task checkboxes continue to complete tasks directly.
+- Removes the square outer border so launcher-provided rounded clipping remains visually consistent.
+
+## Dialog polish
+
+- Adds a visible checkbox and stronger body/label type hierarchy to the available-update prompt.
+- Gives simple and detailed Markdown copy equal-width, equal-emphasis actions.
 
 ## Release status
 
-- `versionName` is 3.3.0 and `versionCode` is 90.
+- `versionName` is 3.3.1 and `versionCode` is 91.
 - The remote data contract remains 3.2. Existing servers created with the earlier faulty migration still require the focused 3.2.8 attachment hotfix; its verification must return `attachment_validator_hotfix = true`.
 - The cleartext HTTP deployment contract is unchanged; no HTTPS/TLS migration is required.
 - The release uses the established long-lived PixelDone signing identity.

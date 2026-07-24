@@ -58,4 +58,12 @@
     <string name="widget_more_items">还有 %1$d 项</string>
     <string name="widget_complete_task">完成 %1$s</string>
     <string name="widget_no_lists">请先在 PixelDone 中创建清单。</string>
+    <string name="widget_select_list">点击选择要显示的清单</string>
+    <string name="widget_selected_list">%1$s ▼</string>
+    <string name="widget_show_list">显示此清单</string>
+    <string name="widget_preview_list_name">MAIN</string>
+    <string name="widget_preview_count">3</string>
+    <string name="widget_preview_task_one">规划今天</string>
+    <string name="widget_preview_task_two">整理笔记</string>
+    <string name="widget_preview_task_three">发送更新</string>
 </resources>

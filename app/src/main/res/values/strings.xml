@@ -235,4 +235,12 @@
     <string name="widget_more_items">%1$d more</string>
     <string name="widget_complete_task">Complete %1$s</string>
     <string name="widget_no_lists">Create a list in PixelDone first.</string>
+    <string name="widget_select_list">Tap to choose a list</string>
+    <string name="widget_selected_list">%1$s ▼</string>
+    <string name="widget_show_list">Show this list</string>
+    <string name="widget_preview_list_name">MAIN</string>
+    <string name="widget_preview_count">3</string>
+    <string name="widget_preview_task_one">Plan the day</string>
+    <string name="widget_preview_task_two">Review notes</string>
+    <string name="widget_preview_task_three">Send the update</string>
 </resources>

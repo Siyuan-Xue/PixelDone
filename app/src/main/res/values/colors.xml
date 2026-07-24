@@ -7,4 +7,9 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="pixeldone_widget_surface">#FFFAF9F5</color>
+    <color name="pixeldone_widget_raised">#FFF0EEE6</color>
+    <color name="pixeldone_widget_primary">#FFD97757</color>
+    <color name="pixeldone_widget_text_primary">#FF141413</color>
+    <color name="pixeldone_widget_text_secondary">#FF5E5D59</color>
 </resources>

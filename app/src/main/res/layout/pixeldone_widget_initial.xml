@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/pixeldone_widget_surface"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans-serif"
+        android:includeFontPadding="false"
+        android:text="@string/widget_choose_list"
+        android:textColor="@color/pixeldone_widget_text_primary"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/pixeldone_widget_raised"
+        android:fontFamily="sans-serif"
+        android:includeFontPadding="false"
+        android:padding="8dp"
+        android:text="@string/widget_select_list"
+        android:textColor="@color/pixeldone_widget_primary"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+</LinearLayout>

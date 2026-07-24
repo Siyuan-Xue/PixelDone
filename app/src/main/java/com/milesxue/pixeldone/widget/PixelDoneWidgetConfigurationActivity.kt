@@ -50,7 +50,6 @@ class PixelDoneWidgetConfigurationActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyPixelDoneLanguage(pixelDoneAppContainer().settingsStore.loadSettings().languageMode)
         super.onCreate(savedInstanceState)
-        setResult(Activity.RESULT_CANCELED)
 
         appWidgetId = intent?.getIntExtra(
             AppWidgetManager.EXTRA_APPWIDGET_ID,
@@ -60,12 +59,17 @@ class PixelDoneWidgetConfigurationActivity : AppCompatActivity() {
             finish()
             return
         }
+        setResult(
+            Activity.RESULT_CANCELED,
+            Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId),
+        )
 
         val container = pixelDoneAppContainer()
         val checklists = widgetChecklists(container.todoRepository.loadTodoState())
-        val initialChecklistId = PixelDoneWidgetConfigStore.checklistId(this, appWidgetId)
-            ?.takeIf { configuredId -> checklists.any { it.id == configuredId } }
-            ?: checklists.firstOrNull()?.id
+        val initialChecklistId = configuredWidgetChecklistId(
+            checklists = checklists,
+            configuredChecklistId = PixelDoneWidgetConfigStore.checklistId(this, appWidgetId),
+        )
         val darkTheme = container.settingsStore.loadSettings().darkTheme
         applyPixelDoneSystemBars(darkTheme)
 
@@ -93,6 +97,13 @@ class PixelDoneWidgetConfigurationActivity : AppCompatActivity() {
             finish()
         }
     }
+}
+
+internal fun configuredWidgetChecklistId(
+    checklists: List<TodoChecklist>,
+    configuredChecklistId: String?,
+): String? = configuredChecklistId?.takeIf { configuredId ->
+    checklists.any { it.id == configuredId }
 }
 
 @Composable
@@ -166,7 +177,7 @@ private fun WidgetConfigurationScreen(
             }
         }
         PixelButton(
-            text = stringResource(R.string.widget_save),
+            text = stringResource(R.string.widget_show_list),
             onClick = { selectedChecklistId?.let(onSave) },
             enabled = selectedChecklistId != null,
             modifier = Modifier.fillMaxWidth(),
