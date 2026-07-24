@@ -36,4 +36,26 @@
     <string name="verifying_update">正在校验更新完整性…</string>
     <string name="preparing_update">正在准备 Android 安装程序…</string>
     <string name="waiting_for_installer">正在等待 Android 安装确认…</string>
+    <string name="export_markdown">导出 Markdown</string>
+    <string name="export_markdown_detail">将当前清单复制为 Markdown</string>
+    <string name="export_markdown_dialog_title">导出 Markdown</string>
+    <string name="copy_detailed">详细复制</string>
+    <string name="copy_simple">简略复制</string>
+    <string name="markdown_copied">已复制 Markdown</string>
+    <string name="copy_export_markdown">将当前清单复制为 Markdown</string>
+    <string name="export_priority_label">优先级</string>
+    <string name="export_due_label">截止时间</string>
+    <string name="export_repeat_label">重复</string>
+    <string name="export_none">无</string>
+    <string name="widget_name">PixelDone 清单</string>
+    <string name="widget_description">在桌面查看并完成一个清单中的未完成待办。</string>
+    <string name="widget_choose_list">选择清单</string>
+    <string name="widget_choose_list_detail">小组件将显示所选清单中的未完成待办。</string>
+    <string name="widget_save">添加小组件</string>
+    <string name="widget_all_done">全部完成</string>
+    <string name="widget_list_missing">清单不可用</string>
+    <string name="widget_reconfigure">选择其他清单</string>
+    <string name="widget_more_items">还有 %1$d 项</string>
+    <string name="widget_complete_task">完成 %1$s</string>
+    <string name="widget_no_lists">请先在 PixelDone 中创建清单。</string>
 </resources>

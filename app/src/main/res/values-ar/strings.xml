@@ -36,4 +36,26 @@
     <string name="verifying_update">جارٍ التحقق من سلامة التحديث…</string>
     <string name="preparing_update">جارٍ إعداد مثبّت Android…</string>
     <string name="waiting_for_installer">بانتظار تأكيد التثبيت من Android…</string>
+    <string name="export_markdown">تصدير Markdown</string>
+    <string name="export_markdown_detail">نسخ القائمة الحالية بصيغة Markdown</string>
+    <string name="export_markdown_dialog_title">تصدير Markdown</string>
+    <string name="copy_detailed">نسخ مفصل</string>
+    <string name="copy_simple">نسخ مبسط</string>
+    <string name="markdown_copied">تم نسخ Markdown</string>
+    <string name="copy_export_markdown">نسخ القائمة الحالية بصيغة Markdown</string>
+    <string name="export_priority_label">الأولوية</string>
+    <string name="export_due_label">الموعد</string>
+    <string name="export_repeat_label">التكرار</string>
+    <string name="export_none">لا يوجد</string>
+    <string name="widget_name">قائمة PixelDone</string>
+    <string name="widget_description">اعرض المهام غير المكتملة وأكملها من قائمة واحدة.</string>
+    <string name="widget_choose_list">اختر قائمة</string>
+    <string name="widget_choose_list_detail">ستعرض الأداة المهام غير المكتملة من القائمة المحددة.</string>
+    <string name="widget_save">إضافة الأداة</string>
+    <string name="widget_all_done">اكتمل الكل</string>
+    <string name="widget_list_missing">القائمة غير متاحة</string>
+    <string name="widget_reconfigure">اختر قائمة أخرى</string>
+    <string name="widget_more_items">%1$d أخرى</string>
+    <string name="widget_complete_task">إكمال %1$s</string>
+    <string name="widget_no_lists">أنشئ قائمة في PixelDone أولاً.</string>
 </resources>

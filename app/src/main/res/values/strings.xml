@@ -213,4 +213,26 @@
     <string name="verifying_update">Verifying update integrity…</string>
     <string name="preparing_update">Preparing the Android installer…</string>
     <string name="waiting_for_installer">Waiting for Android install confirmation…</string>
+    <string name="export_markdown">Export Markdown</string>
+    <string name="export_markdown_detail">Copy the current list as Markdown</string>
+    <string name="export_markdown_dialog_title">Export Markdown</string>
+    <string name="copy_detailed">Detailed copy</string>
+    <string name="copy_simple">Simple copy</string>
+    <string name="markdown_copied">Markdown copied</string>
+    <string name="copy_export_markdown">Copy the current list as Markdown</string>
+    <string name="export_priority_label">Priority</string>
+    <string name="export_due_label">Due</string>
+    <string name="export_repeat_label">Repeat</string>
+    <string name="export_none">None</string>
+    <string name="widget_name">PixelDone list</string>
+    <string name="widget_description">View and complete unfinished tasks from one list.</string>
+    <string name="widget_choose_list">Choose a list</string>
+    <string name="widget_choose_list_detail">This widget will show unfinished tasks from the selected list.</string>
+    <string name="widget_save">Add widget</string>
+    <string name="widget_all_done">All done</string>
+    <string name="widget_list_missing">List unavailable</string>
+    <string name="widget_reconfigure">Choose another list</string>
+    <string name="widget_more_items">%1$d more</string>
+    <string name="widget_complete_task">Complete %1$s</string>
+    <string name="widget_no_lists">Create a list in PixelDone first.</string>
 </resources>

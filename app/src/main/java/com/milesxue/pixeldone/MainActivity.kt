@@ -1,11 +1,16 @@
 package com.milesxue.pixeldone
 
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -22,15 +27,44 @@ import com.milesxue.pixeldone.ui.todo.PixelDoneApp
  * Storage, reminders, and update dependencies are created by the Application/DI layer.
  */
 class MainActivity : AppCompatActivity() {
+    private var requestedChecklistId by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         applyPixelDoneLanguage(pixelDoneAppContainer().settingsStore.loadSettings().languageMode)
         super.onCreate(savedInstanceState)
+        requestedChecklistId = intent.requestedChecklistId()
         applyPixelDoneSystemBars()
         setContent {
-            PixelDoneApp()
+            PixelDoneApp(
+                requestedChecklistId = requestedChecklistId,
+                onChecklistRequestConsumed = { requestedChecklistId = null },
+            )
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestedChecklistId = intent.requestedChecklistId()
+    }
+
+    companion object {
+        internal const val ActionOpenChecklist = "com.milesxue.pixeldone.action.OPEN_CHECKLIST"
+        internal const val ExtraChecklistId = "com.milesxue.pixeldone.extra.CHECKLIST_ID"
+
+        fun openChecklistIntent(context: Context, checklistId: String): Intent =
+            Intent(context, MainActivity::class.java).apply {
+                action = ActionOpenChecklist
+                putExtra(ExtraChecklistId, checklistId)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+    }
 }
+
+private fun Intent?.requestedChecklistId(): String? =
+    this?.takeIf { it.action == MainActivity.ActionOpenChecklist }
+        ?.getStringExtra(MainActivity.ExtraChecklistId)
+        ?.takeIf(String::isNotBlank)
 
 internal fun applyPixelDoneLanguage(language: AppLanguage) {
     val locales = language.localeTag

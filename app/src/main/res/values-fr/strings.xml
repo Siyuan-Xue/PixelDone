@@ -33,4 +33,26 @@
     <string name="verifying_update">Vérification de l’intégrité de la mise à jour…</string>
     <string name="preparing_update">Préparation du programme d’installation Android…</string>
     <string name="waiting_for_installer">En attente de la confirmation d’installation Android…</string>
+    <string name="export_markdown">Exporter en Markdown</string>
+    <string name="export_markdown_detail">Copier la liste actuelle en Markdown</string>
+    <string name="export_markdown_dialog_title">Exporter en Markdown</string>
+    <string name="copy_detailed">Copie détaillée</string>
+    <string name="copy_simple">Copie simple</string>
+    <string name="markdown_copied">Markdown copié</string>
+    <string name="copy_export_markdown">Copier la liste actuelle en Markdown</string>
+    <string name="export_priority_label">Priorité</string>
+    <string name="export_due_label">Échéance</string>
+    <string name="export_repeat_label">Répétition</string>
+    <string name="export_none">Aucun</string>
+    <string name="widget_name">Liste PixelDone</string>
+    <string name="widget_description">Consultez et terminez les tâches d’une liste.</string>
+    <string name="widget_choose_list">Choisir une liste</string>
+    <string name="widget_choose_list_detail">Le widget affichera les tâches inachevées de la liste choisie.</string>
+    <string name="widget_save">Ajouter le widget</string>
+    <string name="widget_all_done">Tout est terminé</string>
+    <string name="widget_list_missing">Liste indisponible</string>
+    <string name="widget_reconfigure">Choisir une autre liste</string>
+    <string name="widget_more_items">%1$d de plus</string>
+    <string name="widget_complete_task">Terminer %1$s</string>
+    <string name="widget_no_lists">Créez d’abord une liste dans PixelDone.</string>
 </resources>

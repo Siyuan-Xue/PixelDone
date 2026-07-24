@@ -2,6 +2,7 @@ package com.milesxue.pixeldone
 
 import android.app.Application
 import com.milesxue.pixeldone.di.PixelDoneAppContainer
+import com.milesxue.pixeldone.widget.PixelDoneWidgetUpdater
 
 /**
  * Application-level entry point.
@@ -16,5 +17,9 @@ class PixelDoneApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         appContainer = PixelDoneAppContainer(this)
+        appContainer.todoRepository.observeTodoState {
+            PixelDoneWidgetUpdater.requestUpdate(this)
+        }
+        PixelDoneWidgetUpdater.requestUpdate(this)
     }
 }

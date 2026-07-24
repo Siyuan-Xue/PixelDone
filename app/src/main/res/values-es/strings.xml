@@ -33,4 +33,26 @@
     <string name="verifying_update">Verificando la integridad de la actualización…</string>
     <string name="preparing_update">Preparando el instalador de Android…</string>
     <string name="waiting_for_installer">Esperando la confirmación de instalación de Android…</string>
+    <string name="export_markdown">Exportar Markdown</string>
+    <string name="export_markdown_detail">Copiar la lista actual como Markdown</string>
+    <string name="export_markdown_dialog_title">Exportar Markdown</string>
+    <string name="copy_detailed">Copia detallada</string>
+    <string name="copy_simple">Copia simple</string>
+    <string name="markdown_copied">Markdown copiado</string>
+    <string name="copy_export_markdown">Copiar la lista actual como Markdown</string>
+    <string name="export_priority_label">Prioridad</string>
+    <string name="export_due_label">Vencimiento</string>
+    <string name="export_repeat_label">Repetición</string>
+    <string name="export_none">Ninguno</string>
+    <string name="widget_name">Lista de PixelDone</string>
+    <string name="widget_description">Consulta y completa tareas pendientes de una lista.</string>
+    <string name="widget_choose_list">Elegir una lista</string>
+    <string name="widget_choose_list_detail">El widget mostrará las tareas pendientes de la lista elegida.</string>
+    <string name="widget_save">Añadir widget</string>
+    <string name="widget_all_done">Todo hecho</string>
+    <string name="widget_list_missing">Lista no disponible</string>
+    <string name="widget_reconfigure">Elegir otra lista</string>
+    <string name="widget_more_items">%1$d más</string>
+    <string name="widget_complete_task">Completar %1$s</string>
+    <string name="widget_no_lists">Crea primero una lista en PixelDone.</string>
 </resources>

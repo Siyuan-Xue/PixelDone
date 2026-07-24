@@ -23,6 +23,7 @@ class DockRulesTest {
                 DockAction.HIDE_DONE,
                 DockAction.DELETE_DONE,
                 DockAction.BATCH_DELETE,
+                DockAction.EXPORT_MARKDOWN,
             ),
             AllDockActions,
         )
@@ -197,5 +198,6 @@ class DockRulesTest {
 
         assertEquals(MaxDockActions, actionCount)
         assertEquals(false, DockItem.Action(DockAction.BATCH_DELETE) in items)
+        assertEquals(false, DockItem.Action(DockAction.EXPORT_MARKDOWN) in items)
     }
 }

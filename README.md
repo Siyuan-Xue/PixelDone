@@ -189,7 +189,7 @@ The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.2.8-release.apk
+app/build/outputs/apk/release/PixelDone-3.3.0-release.apk
 ```
 
 ## Install
@@ -197,7 +197,7 @@ app/build/outputs/apk/release/PixelDone-3.2.8-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.2.8-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.3.0-release.apk
 ```
 
 The formal package name is:
@@ -214,4 +214,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.2.8 (versionCode 89) is the current formal signed Android release. It fixes attachment mutations in existing 3.2 deployments and ensures ordinary PostgREST/database execution errors are no longer misreported as `SERVER UPDATE REQUIRED`. The remote contract remains 3.2, but servers created with the earlier faulty migration must run the focused 3.2.8 attachment hotfix before syncing images. The existing permission choices and direct-IP HTTP deployment contract remain unchanged.
+3.3.0 (versionCode 90) is the current formal signed Android release. It adds Markdown export to the configurable Dock and a resizable launcher widget for viewing and completing unfinished tasks from a selected checklist. The remote contract remains 3.2, and the existing permission choices and direct-IP HTTP deployment contract remain unchanged.

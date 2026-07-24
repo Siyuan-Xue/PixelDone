@@ -75,6 +75,7 @@ internal fun dockActionState(
         active = batchDeleteActive,
         enabled = totalCount > 0,
     ),
+    DockAction.EXPORT_MARKDOWN to DockActionUiState(active = false),
 )
 
 internal fun previewDockActionState(): Map<DockAction, DockActionUiState> = mapOf(
@@ -83,6 +84,7 @@ internal fun previewDockActionState(): Map<DockAction, DockActionUiState> = mapO
     DockAction.HIDE_DONE to DockActionUiState(active = false),
     DockAction.DELETE_DONE to DockActionUiState(active = false),
     DockAction.BATCH_DELETE to DockActionUiState(active = false),
+    DockAction.EXPORT_MARKDOWN to DockActionUiState(active = false),
 )
 
 @Composable
@@ -374,6 +376,15 @@ internal fun DockActionIcon(
                 line(16f, 10.2f, 16f, 16.1f, thinStrokeWidth)
                 line(17.8f, 10.2f, 17.8f, 16.1f, thinStrokeWidth)
             }
+            DockAction.EXPORT_MARKDOWN -> {
+                rect(4f, 3.5f, 14.5f, 18.5f, strokeWidth)
+                line(7f, 8f, 11.5f, 8f, thinStrokeWidth)
+                line(7f, 11.5f, 11.5f, 11.5f, thinStrokeWidth)
+                line(7f, 15f, 10f, 15f, thinStrokeWidth)
+                line(12.5f, 13f, 19f, 6.5f, strokeWidth)
+                line(14.5f, 6.5f, 19f, 6.5f, strokeWidth)
+                line(19f, 6.5f, 19f, 11f, strokeWidth)
+            }
         }
     }
 }
@@ -385,6 +396,7 @@ internal fun DockAction.settingsTitle(): String = when (this) {
     DockAction.HIDE_DONE -> stringResource(R.string.hide_done)
     DockAction.DELETE_DONE -> stringResource(R.string.clean_done)
     DockAction.BATCH_DELETE -> stringResource(R.string.quick_delete)
+    DockAction.EXPORT_MARKDOWN -> stringResource(R.string.export_markdown)
 }
 
 @Composable
@@ -394,6 +406,7 @@ internal fun DockAction.settingsValue(): String = when (this) {
     DockAction.HIDE_DONE -> stringResource(R.string.hide_done_detail)
     DockAction.DELETE_DONE -> stringResource(R.string.clean_done_detail)
     DockAction.BATCH_DELETE -> stringResource(R.string.quick_delete_detail)
+    DockAction.EXPORT_MARKDOWN -> stringResource(R.string.export_markdown_detail)
 }
 
 @Composable
@@ -403,4 +416,5 @@ private fun DockAction.contentDescription(): String = when (this) {
     DockAction.HIDE_DONE -> stringResource(R.string.toggle_done_visibility)
     DockAction.DELETE_DONE -> stringResource(R.string.clean_completed_tasks)
     DockAction.BATCH_DELETE -> stringResource(R.string.toggle_quick_delete)
+    DockAction.EXPORT_MARKDOWN -> stringResource(R.string.copy_export_markdown)
 }

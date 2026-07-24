@@ -7,6 +7,8 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -15,6 +17,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -148,6 +151,8 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
@@ -182,6 +187,9 @@ import com.milesxue.pixeldone.domain.todo.DockAction
 import com.milesxue.pixeldone.domain.todo.DockConfig
 import com.milesxue.pixeldone.domain.todo.DockPlusPlacement
 import com.milesxue.pixeldone.domain.todo.MaxDockActions
+import com.milesxue.pixeldone.domain.todo.MarkdownExportFormatters
+import com.milesxue.pixeldone.domain.todo.MarkdownExportLabels
+import com.milesxue.pixeldone.domain.todo.MarkdownExportMode
 import com.milesxue.pixeldone.domain.todo.ReminderCapability
 import com.milesxue.pixeldone.domain.todo.ReminderRepeat
 import com.milesxue.pixeldone.domain.todo.SettingsChecklistId
@@ -199,6 +207,7 @@ import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodoAfterReminder
 import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodosAfterReminder
 import com.milesxue.pixeldone.domain.todo.completedTodoCount
 import com.milesxue.pixeldone.domain.todo.createTodoChecklist
+import com.milesxue.pixeldone.domain.todo.exportChecklistToMarkdown
 import com.milesxue.pixeldone.domain.todo.deleteAllTrashTodos
 import com.milesxue.pixeldone.domain.todo.deleteTodoChecklist
 import com.milesxue.pixeldone.domain.todo.isChecklistNameAvailable
@@ -359,7 +368,10 @@ internal data class PendingTodoToggleFeedback(
 }
 
 @Composable
-internal fun PixelDoneApp() {
+internal fun PixelDoneApp(
+    requestedChecklistId: String? = null,
+    onChecklistRequestConsumed: () -> Unit = {},
+) {
     val context = LocalContext.current
     val checklistLockedText = stringResource(R.string.checklist_locked)
     val nameRequiredText = stringResource(R.string.name_required)
@@ -373,6 +385,17 @@ internal fun PixelDoneApp() {
     val waitingForInstallerText = stringResource(R.string.waiting_for_installer)
     val updateFailedText = stringResource(R.string.update_failed)
     val checkingUpdateText = stringResource(R.string.checking_update)
+    val exportPriorityText = stringResource(R.string.export_priority_label)
+    val exportDueText = stringResource(R.string.export_due_label)
+    val exportRepeatText = stringResource(R.string.export_repeat_label)
+    val exportNoneText = stringResource(R.string.export_none)
+    val markdownCopiedText = stringResource(R.string.markdown_copied)
+    val priorityXHighText = stringResource(R.string.priority_xhigh)
+    val priorityHighText = stringResource(R.string.priority_high)
+    val priorityMediumText = stringResource(R.string.priority_medium)
+    val priorityLowText = stringResource(R.string.priority_low)
+    val repeatDailyText = stringResource(R.string.repeat_daily)
+    val repeatWeeklyText = stringResource(R.string.repeat_weekly)
     val updateScope = rememberCoroutineScope()
     val appContainer = remember(context) { context.pixelDoneAppContainer() }
     val todoRepository = remember(appContainer) { appContainer.todoRepository }
@@ -420,6 +443,7 @@ internal fun PixelDoneApp() {
     var pendingFullScreenPermissionTodoId by remember { mutableStateOf<String?>(null) }
     var pendingUpdateInstallDownload by remember { mutableStateOf<AppUpdateDownload?>(null) }
     var deleteConfirmation by remember { mutableStateOf<DeleteConfirmation?>(null) }
+    var markdownExportVisible by remember { mutableStateOf(false) }
     var imagePreviewTodoId by remember { mutableStateOf<String?>(null) }
     var pendingImageTodoId by remember { mutableStateOf<String?>(null) }
     var updateUiState by remember { mutableStateOf(AppUpdateUiState()) }
@@ -564,6 +588,51 @@ internal fun PixelDoneApp() {
         ) ?: return null
         updateChecklistState(updatedState)
         return updatedState
+    }
+
+    fun copyCurrentChecklistAsMarkdown(mode: MarkdownExportMode) {
+        if (!isNormalChecklistSelected) return
+        val dateFormatter = DateFormat.getDateTimeInstance(
+            DateFormat.SHORT,
+            DateFormat.SHORT,
+            Locale.getDefault(),
+        )
+        val markdown = exportChecklistToMarkdown(
+            checklist = selectedChecklist,
+            sortMode = sortMode,
+            mode = mode,
+            labels = MarkdownExportLabels(
+                priority = exportPriorityText,
+                due = exportDueText,
+                repeat = exportRepeatText,
+                none = exportNoneText,
+            ),
+            formatters = MarkdownExportFormatters(
+                priority = { priority ->
+                    when (priority) {
+                        TodoPriority.XHIGH -> priorityXHighText
+                        TodoPriority.HIGH -> priorityHighText
+                        TodoPriority.MEDIUM -> priorityMediumText
+                        TodoPriority.LOW -> priorityLowText
+                    }
+                },
+                due = { dueAtMillis -> dateFormatter.format(Date(dueAtMillis)) },
+                repeat = { repeat ->
+                    when (repeat) {
+                        ReminderRepeat.DAILY -> repeatDailyText
+                        ReminderRepeat.WEEKLY -> repeatWeeklyText
+                        ReminderRepeat.NONE -> exportNoneText
+                    }
+                },
+            ),
+        )
+        context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(
+            ClipData.newPlainText(selectedChecklist.name, markdown),
+        )
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+            Toast.makeText(context, markdownCopiedText, Toast.LENGTH_SHORT).show()
+        }
+        markdownExportVisible = false
     }
 
     fun requestTodoListScroll(intent: TodoListScrollIntent) {
@@ -1096,6 +1165,15 @@ internal fun PixelDoneApp() {
         displayOrderIds = emptyList()
         requestTodoListScroll(TodoListScrollIntent.ScrollToTop)
         headerExpanded = false
+    }
+
+    LaunchedEffect(requestedChecklistId, checklistIds) {
+        val requestedId = requestedChecklistId ?: return@LaunchedEffect
+        val requestedChecklist = checklistState.lists.firstOrNull { it.id == requestedId }
+        if (requestedChecklist != null && isNormalChecklist(requestedChecklist)) {
+            selectChecklist(requestedId)
+        }
+        onChecklistRequestConsumed()
     }
 
     fun navigateBackChecklist() {
@@ -1779,6 +1857,7 @@ internal fun PixelDoneApp() {
                     }
                 }
             },
+            onExportMarkdown = { markdownExportVisible = true },
             onRestoreTodo = ::restoreTrashTodo,
             onDeleteAllTrash = {
                 val trashCount = trashTodos(checklistState).size
@@ -1868,6 +1947,12 @@ internal fun PixelDoneApp() {
             onConfirm = ::confirmDelete,
             onDismiss = { deleteConfirmation = null },
         )
+        MarkdownExportDialog(
+            visible = markdownExportVisible,
+            onDetailedCopy = { copyCurrentChecklistAsMarkdown(MarkdownExportMode.DETAILED) },
+            onSimpleCopy = { copyCurrentChecklistAsMarkdown(MarkdownExportMode.SIMPLE) },
+            onDismiss = { markdownExportVisible = false },
+        )
         TodoImagePreviewDialog(
             item = imagePreviewItem,
             imageStore = imageStore,
@@ -1940,6 +2025,7 @@ private fun PixelDoneScreen(
     onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteEditingTodo: () -> Unit,
     onDeleteCompleted: () -> Unit,
+    onExportMarkdown: () -> Unit,
     onRestoreTodo: (String) -> Unit,
     onDeleteAllTrash: () -> Unit,
     targetMoveChecklists: List<TodoChecklist>,
@@ -2045,6 +2131,7 @@ private fun PixelDoneScreen(
                 onOpenTodoImage = onOpenTodoImage,
                 onDeleteEditingTodo = onDeleteEditingTodo,
                 onDeleteCompleted = onDeleteCompleted,
+                onExportMarkdown = onExportMarkdown,
                 onRestoreTodo = onRestoreTodo,
                 onDeleteAllTrash = onDeleteAllTrash,
                 targetMoveChecklists = targetMoveChecklists,
@@ -2373,6 +2460,7 @@ private fun TaskWorkspacePanel(
     onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteEditingTodo: () -> Unit,
     onDeleteCompleted: () -> Unit,
+    onExportMarkdown: () -> Unit,
     onRestoreTodo: (String) -> Unit,
     onDeleteAllTrash: () -> Unit,
     targetMoveChecklists: List<TodoChecklist>,
@@ -2507,6 +2595,7 @@ private fun TaskWorkspacePanel(
                 onEditTodo = onEditTodo,
                 onOpenTodoImage = onOpenTodoImage,
                 onDeleteCompleted = onDeleteCompleted,
+                onExportMarkdown = onExportMarkdown,
                 onRestoreTodo = onRestoreTodo,
                 onDeleteAllTrash = onDeleteAllTrash,
                 targetMoveChecklists = targetMoveChecklists,
@@ -4203,6 +4292,7 @@ private fun TodoListPanel(
     onEditTodo: (TodoItem) -> Unit,
     onOpenTodoImage: (TodoItem) -> Unit,
     onDeleteCompleted: () -> Unit,
+    onExportMarkdown: () -> Unit,
     onRestoreTodo: (String) -> Unit,
     onDeleteAllTrash: () -> Unit,
     targetMoveChecklists: List<TodoChecklist>,
@@ -4483,6 +4573,7 @@ private fun TodoListPanel(
                                 DockAction.HIDE_DONE -> onHideCompletedChange(!hideCompleted)
                                 DockAction.DELETE_DONE -> onDeleteCompleted()
                                 DockAction.BATCH_DELETE -> onToggleBatchDelete()
+                                DockAction.EXPORT_MARKDOWN -> onExportMarkdown()
                             }
                         },
                         onAddClick = onOpenTaskEditor,
@@ -5878,6 +5969,50 @@ private fun DeleteConfirmationDialog(
     )
 }
 
+@Composable
+private fun MarkdownExportDialog(
+    visible: Boolean,
+    onDetailedCopy: () -> Unit,
+    onSimpleCopy: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (!visible) return
+
+    val colors = PixelDoneColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.export_markdown_dialog_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = colors.textPrimary,
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(R.string.export_markdown_detail),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textSecondary,
+            )
+        },
+        confirmButton = {
+            DialogActionRow {
+                DialogTextActionButton(
+                    text = stringResource(R.string.copy_simple),
+                    onClick = onSimpleCopy,
+                )
+                PixelButton(
+                    text = stringResource(R.string.copy_detailed),
+                    onClick = onDetailedCopy,
+                )
+            }
+        },
+        shape = RectangleShape,
+        containerColor = colors.surface,
+        tonalElevation = 0.dp,
+    )
+}
+
 private val DateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 private val TimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 private val DateTimeUiFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
@@ -6080,6 +6215,7 @@ private fun PhonePreview() {
             onOpenTodoImage = {},
             onDeleteEditingTodo = {},
             onDeleteCompleted = {},
+            onExportMarkdown = {},
             onRestoreTodo = {},
             onDeleteAllTrash = {},
             targetMoveChecklists = checklists.filter {
@@ -6192,6 +6328,7 @@ private fun TabletPreview() {
             onOpenTodoImage = {},
             onDeleteEditingTodo = {},
             onDeleteCompleted = {},
+            onExportMarkdown = {},
             onRestoreTodo = {},
             onDeleteAllTrash = {},
             targetMoveChecklists = checklists.filter {

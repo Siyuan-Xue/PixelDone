@@ -12,6 +12,7 @@ enum class DockAction {
     HIDE_DONE,
     DELETE_DONE,
     BATCH_DELETE,
+    EXPORT_MARKDOWN,
 }
 
 data class DockConfig(
@@ -44,6 +45,7 @@ val AllDockActions: List<DockAction> = listOf(
     DockAction.HIDE_DONE,
     DockAction.DELETE_DONE,
     DockAction.BATCH_DELETE,
+    DockAction.EXPORT_MARKDOWN,
 )
 
 fun normalizeDockActions(actions: List<DockAction>): List<DockAction> {

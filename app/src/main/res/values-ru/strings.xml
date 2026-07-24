@@ -33,4 +33,26 @@
     <string name="verifying_update">Проверка целостности обновления…</string>
     <string name="preparing_update">Подготовка установщика Android…</string>
     <string name="waiting_for_installer">Ожидание подтверждения установки Android…</string>
+    <string name="export_markdown">Экспорт Markdown</string>
+    <string name="export_markdown_detail">Скопировать текущий список в Markdown</string>
+    <string name="export_markdown_dialog_title">Экспорт Markdown</string>
+    <string name="copy_detailed">Подробная копия</string>
+    <string name="copy_simple">Краткая копия</string>
+    <string name="markdown_copied">Markdown скопирован</string>
+    <string name="copy_export_markdown">Скопировать текущий список в Markdown</string>
+    <string name="export_priority_label">Приоритет</string>
+    <string name="export_due_label">Срок</string>
+    <string name="export_repeat_label">Повтор</string>
+    <string name="export_none">Нет</string>
+    <string name="widget_name">Список PixelDone</string>
+    <string name="widget_description">Просматривайте и завершайте задачи одного списка.</string>
+    <string name="widget_choose_list">Выберите список</string>
+    <string name="widget_choose_list_detail">Виджет покажет незавершённые задачи выбранного списка.</string>
+    <string name="widget_save">Добавить виджет</string>
+    <string name="widget_all_done">Всё выполнено</string>
+    <string name="widget_list_missing">Список недоступен</string>
+    <string name="widget_reconfigure">Выбрать другой список</string>
+    <string name="widget_more_items">Ещё %1$d</string>
+    <string name="widget_complete_task">Завершить %1$s</string>
+    <string name="widget_no_lists">Сначала создайте список в PixelDone.</string>
 </resources>
