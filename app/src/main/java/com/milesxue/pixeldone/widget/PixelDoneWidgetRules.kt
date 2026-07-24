@@ -17,8 +17,11 @@ internal fun widgetTodos(checklist: TodoChecklist): List<TodoItem> =
         hideCompleted = true,
     )
 
-internal fun widgetRowLimit(heightDp: Float): Int = when {
-    heightDp < 140f -> 1
-    heightDp < 200f -> 3
-    else -> 5
+internal fun widgetItemId(todoId: String): Long {
+    var hash = -3750763034362895579L
+    todoId.forEach { character ->
+        hash = hash xor character.code.toLong()
+        hash *= 1099511628211L
+    }
+    return hash
 }

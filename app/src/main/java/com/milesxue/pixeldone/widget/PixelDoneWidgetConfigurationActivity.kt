@@ -4,6 +4,7 @@ import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,13 +24,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
 import androidx.appcompat.app.AppCompatActivity
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import com.milesxue.pixeldone.R
@@ -42,7 +43,9 @@ import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
 import com.milesxue.pixeldone.ui.theme.PixelTextRole
 import com.milesxue.pixeldone.ui.theme.scriptAwareText
 import com.milesxue.pixeldone.ui.todo.components.PixelButton
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class PixelDoneWidgetConfigurationActivity : AppCompatActivity() {
     private var appWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID
@@ -84,18 +87,44 @@ class PixelDoneWidgetConfigurationActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveConfiguration(checklistId: String) {
-        PixelDoneWidgetConfigStore.saveChecklistId(this, appWidgetId, checklistId)
-        lifecycleScope.launch {
+    private suspend fun saveConfiguration(checklistId: String): Boolean = try {
+        val stored = withContext(Dispatchers.IO) {
+            PixelDoneWidgetConfigStore.saveChecklistId(
+                context = this@PixelDoneWidgetConfigurationActivity,
+                appWidgetId = appWidgetId,
+                checklistId = checklistId,
+            ) && PixelDoneWidgetConfigStore.checklistId(
+                context = this@PixelDoneWidgetConfigurationActivity,
+                appWidgetId = appWidgetId,
+            ) == checklistId
+        }
+        if (!stored) {
+            false
+        } else {
             val glanceId = GlanceAppWidgetManager(this@PixelDoneWidgetConfigurationActivity)
-                .getGlanceIdBy(appWidgetId)
-            PixelDoneWidget().update(this@PixelDoneWidgetConfigurationActivity, glanceId)
+                .getGlanceIdBy(intent) ?: return false
+            PixelDoneWidget().update(
+                context = this@PixelDoneWidgetConfigurationActivity,
+                id = glanceId,
+            )
             setResult(
                 Activity.RESULT_OK,
                 Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId),
             )
             finish()
+            true
         }
+    } catch (error: Exception) {
+        Log.e(
+            WidgetConfigurationLogTag,
+            "Unable to save widget configuration for appWidgetId=$appWidgetId",
+            error,
+        )
+        false
+    }
+
+    private companion object {
+        const val WidgetConfigurationLogTag = "PixelDoneWidgetConfig"
     }
 }
 
@@ -110,10 +139,13 @@ internal fun configuredWidgetChecklistId(
 private fun WidgetConfigurationScreen(
     checklists: List<TodoChecklist>,
     initialChecklistId: String?,
-    onSave: (String) -> Unit,
+    onSave: suspend (String) -> Boolean,
 ) {
     val colors = PixelDoneColors.current
     var selectedChecklistId by remember(initialChecklistId) { mutableStateOf(initialChecklistId) }
+    var isSaving by remember { mutableStateOf(false) }
+    var saveFailed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -157,7 +189,10 @@ private fun WidgetConfigurationScreen(
                             color = if (selected) colors.primary else colors.border,
                             shape = RectangleShape,
                         )
-                        .clickable { selectedChecklistId = checklist.id }
+                        .clickable(enabled = !isSaving) {
+                            selectedChecklistId = checklist.id
+                            saveFailed = false
+                        }
                         .padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -176,10 +211,29 @@ private fun WidgetConfigurationScreen(
                 }
             }
         }
+        if (saveFailed) {
+            Text(
+                text = stringResource(R.string.widget_save_failed),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.error,
+            )
+        }
         PixelButton(
-            text = stringResource(R.string.widget_show_list),
-            onClick = { selectedChecklistId?.let(onSave) },
-            enabled = selectedChecklistId != null,
+            text = stringResource(
+                if (isSaving) R.string.widget_saving else R.string.widget_show_list,
+            ),
+            onClick = {
+                val checklistId = selectedChecklistId ?: return@PixelButton
+                isSaving = true
+                saveFailed = false
+                scope.launch {
+                    if (!onSave(checklistId)) {
+                        isSaving = false
+                        saveFailed = true
+                    }
+                }
+            },
+            enabled = selectedChecklistId != null && !isSaving,
             modifier = Modifier.fillMaxWidth(),
         )
     }

@@ -48,6 +48,9 @@
     <string name="widget_description">Consulta y completa tareas pendientes de una lista.</string>
     <string name="widget_choose_list">Elegir una lista</string>
     <string name="widget_choose_list_detail">El widget mostrará las tareas pendientes de la lista elegida.</string>
+    <string name="widget_empty_detail">Elige una lista para ver sus tareas pendientes.</string>
+    <string name="widget_list_missing_detail">La lista guardada ya no existe.</string>
+    <string name="widget_list_icon_description">Lista de tareas</string>
     <string name="widget_save">Añadir widget</string>
     <string name="widget_all_done">Todo hecho</string>
     <string name="widget_list_missing">Lista no disponible</string>
@@ -58,6 +61,8 @@
     <string name="widget_select_list">Toca para elegir una lista</string>
     <string name="widget_selected_list">%1$s ▼</string>
     <string name="widget_show_list">Mostrar esta lista</string>
+    <string name="widget_saving">Guardando…</string>
+    <string name="widget_save_failed">No se pudo actualizar el widget. Inténtalo de nuevo.</string>
     <string name="widget_preview_list_name">MAIN</string>
     <string name="widget_preview_count">3</string>
     <string name="widget_preview_task_one">Planificar el día</string>

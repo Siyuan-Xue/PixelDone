@@ -3,8 +3,11 @@ package com.milesxue.pixeldone.widget
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
@@ -16,6 +19,8 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.updateAll
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
@@ -33,6 +38,7 @@ import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
+import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
@@ -91,7 +97,7 @@ class PixelDoneWidgetReceiver : GlanceAppWidgetReceiver() {
 object PixelDoneWidgetUpdater {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    fun requestUpdate(context: Context) {
+    fun requestUpdateAll(context: Context) {
         val appContext = context.applicationContext
         scope.launch {
             PixelDoneWidget().updateAll(appContext)
@@ -119,6 +125,10 @@ private val SecondaryText = ColorProvider(
     day = Color(0xFF5E5D59),
     night = Color(0xFFC2C0B6),
 )
+private val OnPrimary = ColorProvider(
+    day = Color(0xFF141413),
+    night = Color(0xFF141413),
+)
 
 @androidx.glance.GlanceComposable
 @androidx.compose.runtime.Composable
@@ -130,130 +140,216 @@ private fun PixelDoneWidgetContent(
 ) {
     val size = LocalSize.current
     val todos = checklist?.let(::widgetTodos).orEmpty()
-    val rowLimit = widgetRowLimit(size.height.value)
-    val visibleTodos = todos.take(rowLimit)
-    val remaining = todos.size - visibleTodos.size
-    val reconfigureIntent = Intent(context, PixelDoneWidgetConfigurationActivity::class.java).apply {
-        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-        addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
-        )
-    }
-    val reconfigureAction = actionStartActivity(reconfigureIntent)
+    val reconfigureAction = actionStartActivity(
+        widgetConfigurationIntent(context, appWidgetId),
+    )
 
-    Column(
+    Box(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(Surface)
-            .padding(10.dp),
+            .background(Surface),
     ) {
         if (checklist == null) {
-            Text(
-                text = context.getString(
-                    if (configuredChecklistId == null) {
-                        R.string.widget_choose_list
-                    } else {
-                        R.string.widget_list_missing
-                    },
-                ),
-                style = TextStyle(
-                    color = PrimaryText,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                ),
-                maxLines = 2,
+            EmptyWidgetContent(
+                context = context,
+                missingList = configuredChecklistId != null,
+                compact = size.height.value < 220f || size.width.value < 180f,
+                modifier = GlanceModifier.clickable(reconfigureAction),
             )
-            Spacer(modifier = GlanceModifier.height(8.dp))
-            Text(
-                text = context.getString(
-                    if (configuredChecklistId == null) {
-                        R.string.widget_select_list
-                    } else {
-                        R.string.widget_reconfigure
-                    },
-                ),
-                modifier = GlanceModifier
-                    .fillMaxWidth()
-                    .background(RaisedSurface)
-                    .padding(8.dp)
-                    .clickable(reconfigureAction),
-                style = TextStyle(
-                    color = Primary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                ),
-                maxLines = 2,
-            )
-            return@Column
+            return@Box
         }
 
-        Row(
+        Column(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .padding(10.dp),
+        ) {
+            Row(
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .clickable(reconfigureAction),
+                verticalAlignment = Alignment.Vertical.CenterVertically,
+            ) {
+                Image(
+                    provider = ImageProvider(R.drawable.pixeldone_widget_list_icon),
+                    contentDescription = null,
+                    modifier = GlanceModifier.size(20.dp),
+                )
+                Spacer(modifier = GlanceModifier.width(8.dp))
+                Text(
+                    text = checklist.name,
+                    modifier = GlanceModifier.defaultWeight(),
+                    style = TextStyle(
+                        color = PrimaryText,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                    ),
+                    maxLines = 1,
+                )
+                Spacer(modifier = GlanceModifier.width(8.dp))
+                Text(
+                    text = todos.size.toString(),
+                    style = TextStyle(
+                        color = Primary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                    ),
+                    maxLines = 1,
+                )
+                Spacer(modifier = GlanceModifier.width(8.dp))
+                Image(
+                    provider = ImageProvider(R.drawable.pixeldone_widget_switch_icon),
+                    contentDescription = context.getString(R.string.widget_reconfigure),
+                    modifier = GlanceModifier.size(20.dp),
+                )
+            }
+            Spacer(modifier = GlanceModifier.height(4.dp))
+
+            if (todos.isEmpty()) {
+                Text(
+                    text = context.getString(R.string.widget_all_done),
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .background(RaisedSurface)
+                        .padding(10.dp),
+                    style = TextStyle(
+                        color = SecondaryText,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 13.sp,
+                    ),
+                )
+            } else {
+                LazyColumn(
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .defaultWeight(),
+                ) {
+                    items(
+                        items = todos,
+                        itemId = { item -> widgetItemId(item.id) },
+                    ) { item ->
+                        WidgetTodoRow(
+                            checklist = checklist,
+                            item = item,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@androidx.glance.GlanceComposable
+@androidx.compose.runtime.Composable
+private fun EmptyWidgetContent(
+    context: Context,
+    missingList: Boolean,
+    compact: Boolean,
+    modifier: GlanceModifier = GlanceModifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
             modifier = GlanceModifier.fillMaxWidth(),
             verticalAlignment = Alignment.Vertical.CenterVertically,
+            horizontalAlignment = Alignment.Horizontal.CenterHorizontally,
         ) {
+            Image(
+                provider = ImageProvider(R.drawable.pixeldone_widget_list_icon),
+                contentDescription = context.getString(R.string.widget_list_icon_description),
+                modifier = GlanceModifier.size(if (compact) 32.dp else 48.dp),
+            )
+            Spacer(modifier = GlanceModifier.height(if (compact) 8.dp else 12.dp))
             Text(
-                text = context.getString(R.string.widget_selected_list, checklist.name),
-                modifier = GlanceModifier
-                    .defaultWeight()
-                    .clickable(reconfigureAction),
+                text = context.getString(
+                    if (missingList) {
+                        R.string.widget_list_missing
+                    } else {
+                        R.string.widget_choose_list
+                    },
+                ),
+                modifier = GlanceModifier.fillMaxWidth(),
                 style = TextStyle(
                     color = PrimaryText,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontSize = if (compact) 14.sp else 16.sp,
+                    textAlign = TextAlign.Center,
                 ),
-                maxLines = 1,
+                maxLines = 2,
             )
-            Spacer(modifier = GlanceModifier.width(8.dp))
-            Text(
-                text = todos.size.toString(),
-                style = TextStyle(
-                    color = Primary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                ),
-                maxLines = 1,
-            )
-        }
-        Spacer(modifier = GlanceModifier.height(8.dp))
-
-        if (todos.isEmpty()) {
-            Text(
-                text = context.getString(R.string.widget_all_done),
-                modifier = GlanceModifier
-                    .fillMaxWidth()
-                    .background(RaisedSurface)
-                    .padding(10.dp),
-                style = TextStyle(
-                    color = SecondaryText,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 13.sp,
-                ),
-            )
-        } else {
-            visibleTodos.forEach { item ->
-                WidgetTodoRow(
-                    checklist = checklist,
-                    item = item,
-                )
+            if (!compact) {
                 Spacer(modifier = GlanceModifier.height(4.dp))
-            }
-            if (remaining > 0) {
                 Text(
-                    text = context.getString(R.string.widget_more_items, remaining),
+                    text = context.getString(
+                        if (missingList) {
+                            R.string.widget_list_missing_detail
+                        } else {
+                            R.string.widget_empty_detail
+                        },
+                    ),
                     modifier = GlanceModifier.fillMaxWidth(),
                     style = TextStyle(
                         color = SecondaryText,
                         fontWeight = FontWeight.Medium,
                         fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
                     ),
-                    maxLines = 1,
+                    maxLines = 2,
                 )
+                Spacer(modifier = GlanceModifier.height(12.dp))
+                Row(
+                    modifier = GlanceModifier
+                        .background(Primary)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.Vertical.CenterVertically,
+                ) {
+                    Image(
+                        provider = ImageProvider(R.drawable.pixeldone_widget_arrow_icon),
+                        contentDescription = null,
+                        modifier = GlanceModifier.size(16.dp),
+                    )
+                    Spacer(modifier = GlanceModifier.width(8.dp))
+                    Text(
+                        text = context.getString(
+                            if (missingList) {
+                                R.string.widget_reconfigure
+                            } else {
+                                R.string.widget_select_list
+                            },
+                        ),
+                        style = TextStyle(
+                            color = OnPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                        ),
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
 }
+
+internal fun widgetConfigurationIntent(context: Context, appWidgetId: Int): Intent =
+    Intent(context, PixelDoneWidgetConfigurationActivity::class.java).apply {
+        action = AppWidgetManager.ACTION_APPWIDGET_CONFIGURE
+        data = Uri.Builder()
+            .scheme("pixeldone")
+            .authority("widget")
+            .appendPath("configure")
+            .appendPath(appWidgetId.toString())
+            .build()
+        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+        addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS,
+        )
+    }
 
 @androidx.glance.GlanceComposable
 @androidx.compose.runtime.Composable
@@ -264,13 +360,14 @@ private fun WidgetTodoRow(
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .height(32.dp)
+            .height(48.dp)
+            .padding(bottom = 4.dp)
             .background(RaisedSurface),
         verticalAlignment = Alignment.Vertical.CenterVertically,
     ) {
         Box(
             modifier = GlanceModifier
-                .size(32.dp)
+                .size(44.dp)
                 .background(PrimaryText)
                 .padding(2.dp)
                 .clickable(
@@ -285,7 +382,7 @@ private fun WidgetTodoRow(
         ) {
             Box(
                 modifier = GlanceModifier
-                    .size(28.dp)
+                    .size(40.dp)
                     .background(Surface),
             ) {}
         }
@@ -336,7 +433,7 @@ class CompleteTodoFromWidgetAction : ActionCallback {
             container.reminderScheduler.sync(normalTodos(before), normalTodos(after))
             container.syncCoordinator.requestSync()
         }
-        PixelDoneWidget().updateAll(context)
+        PixelDoneWidget().update(context, glanceId)
     }
 
     companion object {

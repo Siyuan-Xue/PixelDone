@@ -9,12 +9,11 @@ internal object PixelDoneWidgetConfigStore {
     fun checklistId(context: Context, appWidgetId: Int): String? =
         preferences(context).getString("$ChecklistKeyPrefix$appWidgetId", null)
 
-    fun saveChecklistId(context: Context, appWidgetId: Int, checklistId: String) {
+    fun saveChecklistId(context: Context, appWidgetId: Int, checklistId: String): Boolean =
         preferences(context)
             .edit()
             .putString("$ChecklistKeyPrefix$appWidgetId", checklistId)
-            .apply()
-    }
+            .commit()
 
     fun remove(context: Context, appWidgetId: Int) {
         preferences(context)

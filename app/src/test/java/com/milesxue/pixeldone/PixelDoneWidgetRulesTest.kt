@@ -8,9 +8,10 @@ import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.domain.todo.TrashChecklistId
 import com.milesxue.pixeldone.widget.configuredWidgetChecklistId
 import com.milesxue.pixeldone.widget.widgetChecklists
-import com.milesxue.pixeldone.widget.widgetRowLimit
+import com.milesxue.pixeldone.widget.widgetItemId
 import com.milesxue.pixeldone.widget.widgetTodos
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class PixelDoneWidgetRulesTest {
@@ -35,10 +36,9 @@ class PixelDoneWidgetRulesTest {
     }
 
     @Test
-    fun widgetRowLimitAdaptsToHeight() {
-        assertEquals(1, widgetRowLimit(110f))
-        assertEquals(3, widgetRowLimit(180f))
-        assertEquals(5, widgetRowLimit(250f))
+    fun widgetItemsUseStableDistinctIdsForScrollPosition() {
+        assertEquals(widgetItemId("todo-a"), widgetItemId("todo-a"))
+        assertNotEquals(widgetItemId("todo-a"), widgetItemId("todo-b"))
     }
 
     @Test

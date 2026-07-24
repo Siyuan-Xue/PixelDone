@@ -48,6 +48,9 @@
     <string name="widget_description">Consultez et terminez les tâches d’une liste.</string>
     <string name="widget_choose_list">Choisir une liste</string>
     <string name="widget_choose_list_detail">Le widget affichera les tâches inachevées de la liste choisie.</string>
+    <string name="widget_empty_detail">Choisissez une liste pour voir ses tâches inachevées.</string>
+    <string name="widget_list_missing_detail">La liste enregistrée n’existe plus.</string>
+    <string name="widget_list_icon_description">Liste de tâches</string>
     <string name="widget_save">Ajouter le widget</string>
     <string name="widget_all_done">Tout est terminé</string>
     <string name="widget_list_missing">Liste indisponible</string>
@@ -58,6 +61,8 @@
     <string name="widget_select_list">Touchez pour choisir une liste</string>
     <string name="widget_selected_list">%1$s ▼</string>
     <string name="widget_show_list">Afficher cette liste</string>
+    <string name="widget_saving">Enregistrement…</string>
+    <string name="widget_save_failed">Impossible de mettre à jour le widget. Réessayez.</string>
     <string name="widget_preview_list_name">MAIN</string>
     <string name="widget_preview_count">3</string>
     <string name="widget_preview_task_one">Planifier la journée</string>

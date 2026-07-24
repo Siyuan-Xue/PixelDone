@@ -48,6 +48,9 @@
     <string name="widget_description">Просматривайте и завершайте задачи одного списка.</string>
     <string name="widget_choose_list">Выберите список</string>
     <string name="widget_choose_list_detail">Виджет покажет незавершённые задачи выбранного списка.</string>
+    <string name="widget_empty_detail">Выберите список, чтобы увидеть незавершённые задачи.</string>
+    <string name="widget_list_missing_detail">Сохранённого списка больше нет.</string>
+    <string name="widget_list_icon_description">Список задач</string>
     <string name="widget_save">Добавить виджет</string>
     <string name="widget_all_done">Всё выполнено</string>
     <string name="widget_list_missing">Список недоступен</string>
@@ -58,6 +61,8 @@
     <string name="widget_select_list">Нажмите, чтобы выбрать список</string>
     <string name="widget_selected_list">%1$s ▼</string>
     <string name="widget_show_list">Показать этот список</string>
+    <string name="widget_saving">Сохранение…</string>
+    <string name="widget_save_failed">Не удалось обновить виджет. Повторите попытку.</string>
     <string name="widget_preview_list_name">MAIN</string>
     <string name="widget_preview_count">3</string>
     <string name="widget_preview_task_one">Спланировать день</string>

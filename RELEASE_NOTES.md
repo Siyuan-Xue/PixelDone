@@ -1,24 +1,20 @@
-# PixelDone 3.3.1
+# PixelDone 3.3.3
 
-PixelDone 3.3.1 fixes Android home-screen widget setup, preview, navigation, and dialog affordances.
+PixelDone 3.3.3 redesigns the Android home-screen widget and fixes list switching and completion refresh.
 
 ## Android widget
 
-- Replaces the widget picker's indefinite Glance loading placeholder with a representative PixelDone checklist preview and a matching legacy preview drawable.
-- Adds the widget without interrupting the launcher with an automatic list picker. An unconfigured widget now asks the user to choose a list in place.
-- Requires an explicit list choice, updates the exact widget instance, and returns to the launcher after configuration.
-- Removes implicit jumps into the PixelDone app from the widget header, task labels, empty state, and overflow count.
-- Uses the checklist heading only as an explicit list-change control while task checkboxes continue to complete tasks directly.
-- Removes the square outer border so launcher-provided rounded clipping remains visually consistent.
-
-## Dialog polish
-
-- Adds a visible checkbox and stronger body/label type hierarchy to the available-update prompt.
-- Gives simple and detailed Markdown copy equal-width, equal-emphasis actions.
+- Centers the unconfigured and unavailable-list states with a pixel checklist icon, concise guidance, and a clear list-selection action.
+- Makes the complete widget header a stable list-change target with visible list and switch icons.
+- Gives each widget instance a unique configuration intent so reopening the chooser cannot reuse another widget’s stale target.
+- Keeps the explicit “Show this list” confirmation step, adds saving and retry feedback, and commits the selected list before refreshing the exact widget instance.
+- Replaces the fixed three-row task preview with a scrollable unfinished-task list while keeping the checklist header fixed.
+- Uses stable task item IDs to preserve scroll position when the list changes on Android 12 and later.
+- Refreshes the exact widget instance after completing a task so the completed row and remaining count update immediately.
 
 ## Release status
 
-- `versionName` is 3.3.1 and `versionCode` is 91.
+- `versionName` is 3.3.3 and `versionCode` is 93.
 - The remote data contract remains 3.2. Existing servers created with the earlier faulty migration still require the focused 3.2.8 attachment hotfix; its verification must return `attachment_validator_hotfix = true`.
 - The cleartext HTTP deployment contract is unchanged; no HTTPS/TLS migration is required.
 - The release uses the established long-lived PixelDone signing identity.

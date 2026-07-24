@@ -228,6 +228,9 @@
     <string name="widget_description">View and complete unfinished tasks from one list.</string>
     <string name="widget_choose_list">Choose a list</string>
     <string name="widget_choose_list_detail">This widget will show unfinished tasks from the selected list.</string>
+    <string name="widget_empty_detail">Choose a list to see its unfinished tasks.</string>
+    <string name="widget_list_missing_detail">The saved list no longer exists.</string>
+    <string name="widget_list_icon_description">Checklist</string>
     <string name="widget_save">Add widget</string>
     <string name="widget_all_done">All done</string>
     <string name="widget_list_missing">List unavailable</string>
@@ -238,6 +241,8 @@
     <string name="widget_select_list">Tap to choose a list</string>
     <string name="widget_selected_list">%1$s ▼</string>
     <string name="widget_show_list">Show this list</string>
+    <string name="widget_saving">Saving…</string>
+    <string name="widget_save_failed">Couldn’t update the widget. Try again.</string>
     <string name="widget_preview_list_name">MAIN</string>
     <string name="widget_preview_count">3</string>
     <string name="widget_preview_task_one">Plan the day</string>

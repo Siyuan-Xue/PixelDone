@@ -51,6 +51,9 @@
     <string name="widget_description">在桌面查看并完成一个清单中的未完成待办。</string>
     <string name="widget_choose_list">选择清单</string>
     <string name="widget_choose_list_detail">小组件将显示所选清单中的未完成待办。</string>
+    <string name="widget_empty_detail">选择一个清单以查看未完成待办。</string>
+    <string name="widget_list_missing_detail">已保存的清单已不存在。</string>
+    <string name="widget_list_icon_description">清单</string>
     <string name="widget_save">添加小组件</string>
     <string name="widget_all_done">全部完成</string>
     <string name="widget_list_missing">清单不可用</string>
@@ -61,6 +64,8 @@
     <string name="widget_select_list">点击选择要显示的清单</string>
     <string name="widget_selected_list">%1$s ▼</string>
     <string name="widget_show_list">显示此清单</string>
+    <string name="widget_saving">正在保存…</string>
+    <string name="widget_save_failed">无法更新小组件，请重试。</string>
     <string name="widget_preview_list_name">MAIN</string>
     <string name="widget_preview_count">3</string>
     <string name="widget_preview_task_one">规划今天</string>

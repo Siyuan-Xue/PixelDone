@@ -90,6 +90,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Consume todo row highlight events once so returning from `SETTINGS` does not replay an old highlight.
 - Persist checklists and todos locally on the device with Room, migrating legacy SharedPreferences JSON on first launch.
 - Keep system bars aligned with the selected light or dark PixelDone theme.
+- Add a home-screen widget with a centered list picker, reliable list switching, a scrollable unfinished-task list, and direct task completion.
 
 ## Tech Stack
 
@@ -189,7 +190,7 @@ The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.3.1-release.apk
+app/build/outputs/apk/release/PixelDone-3.3.3-release.apk
 ```
 
 ## Install
@@ -197,7 +198,7 @@ app/build/outputs/apk/release/PixelDone-3.3.1-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.3.1-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.3.3-release.apk
 ```
 
 The formal package name is:
@@ -214,4 +215,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.3.1 (versionCode 91) is the current formal signed Android release. It fixes launcher-widget preview, optional setup, list selection, in-widget navigation, rounded clipping, and update/export dialog affordances. The remote contract remains 3.2, and the existing permission choices and direct-IP HTTP deployment contract remain unchanged.
+3.3.3 (versionCode 93) is the current formal signed Android release. It redesigns the launcher-widget list picker, makes the task area scrollable, stabilizes list switching, and refreshes the exact widget instance immediately after task completion. The remote contract remains 3.2, and the existing permission choices and direct-IP HTTP deployment contract remain unchanged.

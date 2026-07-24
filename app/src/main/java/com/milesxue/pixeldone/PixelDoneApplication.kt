@@ -18,8 +18,8 @@ class PixelDoneApplication : Application() {
         super.onCreate()
         appContainer = PixelDoneAppContainer(this)
         appContainer.todoRepository.observeTodoState {
-            PixelDoneWidgetUpdater.requestUpdate(this)
+            PixelDoneWidgetUpdater.requestUpdateAll(this)
         }
-        PixelDoneWidgetUpdater.requestUpdate(this)
+        PixelDoneWidgetUpdater.requestUpdateAll(this)
     }
 }

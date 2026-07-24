@@ -51,6 +51,9 @@
     <string name="widget_description">اعرض المهام غير المكتملة وأكملها من قائمة واحدة.</string>
     <string name="widget_choose_list">اختر قائمة</string>
     <string name="widget_choose_list_detail">ستعرض الأداة المهام غير المكتملة من القائمة المحددة.</string>
+    <string name="widget_empty_detail">اختر قائمة لعرض مهامها غير المكتملة.</string>
+    <string name="widget_list_missing_detail">لم تعد القائمة المحفوظة موجودة.</string>
+    <string name="widget_list_icon_description">قائمة مهام</string>
     <string name="widget_save">إضافة الأداة</string>
     <string name="widget_all_done">اكتمل الكل</string>
     <string name="widget_list_missing">القائمة غير متاحة</string>
@@ -61,6 +64,8 @@
     <string name="widget_select_list">اضغط لاختيار قائمة</string>
     <string name="widget_selected_list">▼ %1$s</string>
     <string name="widget_show_list">عرض هذه القائمة</string>
+    <string name="widget_saving">جارٍ الحفظ…</string>
+    <string name="widget_save_failed">تعذر تحديث الأداة. حاول مرة أخرى.</string>
     <string name="widget_preview_list_name">MAIN</string>
     <string name="widget_preview_count">3</string>
     <string name="widget_preview_task_one">خطط لليوم</string>
