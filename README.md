@@ -52,6 +52,8 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Advance daily and weekly repeating todos to the next reminder time after a notification fires.
 - Keep an emergency XHigh alarm control panel available in PixelDone while an XHigh alarm is ringing.
 - Stop XHigh alarm sound and vibration when the alarm notification is dismissed.
+- Prepare XHigh alarm audio asynchronously, keep STOP/SNOOZE responsive during startup failures, and enforce a 10-minute hard timeout.
+- Keep XHigh controls available over the lock screen without weakening the system lock, use Back as a 10-minute snooze, and safely downgrade when notification or full-screen capabilities are unavailable.
 - Use restrained haptic feedback for core task and list-state actions.
 - Check GitHub Releases automatically on app start, with synced Gitee Releases as fallback, and show a quiet footer update state when a release is available.
 - Show an update prompt dialog for users who have not disabled update prompts.
@@ -90,7 +92,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Consume todo row highlight events once so returning from `SETTINGS` does not replay an old highlight.
 - Persist checklists and todos locally on the device with Room, migrating legacy SharedPreferences JSON on first launch.
 - Keep system bars aligned with the selected light or dark PixelDone theme.
-- Add a home-screen widget with a centered list picker, reliable list switching, a scrollable unfinished-task list, and direct task completion.
+- Add a home-screen widget with a centered list picker, an app-aligned checkbox, live checklist switching, a scrollable unfinished-task list, and immediate task/count refresh after completion.
 
 ## Tech Stack
 
@@ -190,7 +192,7 @@ The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.3.3-release.apk
+app/build/outputs/apk/release/PixelDone-3.3.4-release.apk
 ```
 
 ## Install
@@ -198,7 +200,7 @@ app/build/outputs/apk/release/PixelDone-3.3.3-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.3.3-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.3.4-release.apk
 ```
 
 The formal package name is:
@@ -215,4 +217,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.3.3 (versionCode 93) is the current formal signed Android release. It redesigns the launcher-widget list picker, makes the task area scrollable, stabilizes list switching, and refreshes the exact widget instance immediately after task completion. The remote contract remains 3.2, and the existing permission choices and direct-IP HTTP deployment contract remain unchanged.
+3.3.4 (versionCode 94) is the current formal signed Android release. It aligns widget checkboxes with the app, observes list and task state for immediate widget refresh, and hardens XHigh lock-screen alarm control with safe capability fallbacks and a 10-minute timeout. The remote contract remains 3.2, and the existing direct-IP HTTP deployment contract remains unchanged.
