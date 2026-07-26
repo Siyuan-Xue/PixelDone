@@ -1,28 +1,19 @@
-# PixelDone 3.3.4
+# PixelDone 3.3.5
 
-PixelDone 3.3.4 fixes widget completion feedback and hardens XHigh alarms so they remain controllable on locked devices.
+PixelDone 3.3.5 fixes home-screen widget list switching, checklist rendering, and completion feedback.
 
 ## Android widget
 
-- Uses a compact checkbox styled consistently with the in-app todo checkbox while preserving a touch-friendly row.
-- Observes both the selected checklist and repository state, so changing lists or completing a task refreshes the active widget immediately.
-- Makes completion idempotent and refreshes the exact widget even if reminder or cloud-sync follow-up fails.
-- Keeps the scrollable unfinished-task list and stable task IDs.
-
-## XHigh alarm reliability
-
-- Prepares alarm audio asynchronously so the full-screen controls and STOP/SNOOZE remain responsive while playback starts or fails.
-- Safely retires preparing or failed players and ignores late callbacks, preventing stopped or snoozed alarms from restarting.
-- Stops sound and vibration after a 10-minute hard timeout, then clears the foreground alarm session; Back snoozes for 10 minutes.
-- Keeps the alarm controls available over the lock screen without weakening the system lock, handles consecutive alarm intents, and opts into Android 15+ background activity launch rules.
-- Rechecks notification, channel, exact-alarm, and full-screen access at delivery time; falls back to a short notification or suppresses uncontrolled sound and vibration when required controls cannot be shown.
-- Shows the foreground-service notification immediately so STOP/SNOOZE actions are not deferred.
-- Delivers companion short reminders only when their notification is actually posted, including when the XHigh loop reaches its hard timeout.
+- Stores each widget's selected checklist in Glance state and publishes one configuration update, preventing the list from clearing and rebuilding during a switch.
+- Maps stable todo IDs into Glance's supported collection range so MAIN, PAPER, and every other normal checklist render reliably instead of showing "Can't show content."
+- Uses one continuous Surface background without a darker task panel.
+- Shows a completed row with the app-aligned checked box and struck-through title, confirms the action with a restrained click vibration, updates the remaining count immediately, and removes the row after two seconds.
+- Keeps completion idempotent, preserves stable scrolling IDs, and retains the unrestricted scrollable task list.
 
 ## Release status
 
-- `versionName` is 3.3.4 and `versionCode` is 94.
-- The attached `PixelDone-3.3.4-release.apk` is the signed formal APK for direct installation and in-app update.
+- `versionName` is 3.3.5 and `versionCode` is 95.
+- The attached `PixelDone-3.3.5-release.apk` is the signed formal APK for direct installation and in-app update.
 - The remote data contract remains 3.2. Existing servers created with the earlier faulty migration still require the focused 3.2.8 attachment hotfix; its verification must return `attachment_validator_hotfix = true`.
 - The cleartext HTTP deployment contract is unchanged; no HTTPS/TLS migration is required.
 - The release uses the established long-lived PixelDone signing identity.

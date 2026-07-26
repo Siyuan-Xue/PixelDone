@@ -92,7 +92,7 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Consume todo row highlight events once so returning from `SETTINGS` does not replay an old highlight.
 - Persist checklists and todos locally on the device with Room, migrating legacy SharedPreferences JSON on first launch.
 - Keep system bars aligned with the selected light or dark PixelDone theme.
-- Add a home-screen widget with a centered list picker, an app-aligned checkbox, live checklist switching, a scrollable unfinished-task list, and immediate task/count refresh after completion.
+- Add a home-screen widget with a centered list picker, seamless checklist switching, safe rendering for every normal checklist, one Surface background, a scrollable task list, and app-aligned checked/struck-through completion feedback with a restrained confirmation vibration before removal.
 
 ## Tech Stack
 
@@ -192,7 +192,7 @@ The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.3.4-release.apk
+app/build/outputs/apk/release/PixelDone-3.3.5-release.apk
 ```
 
 ## Install
@@ -200,7 +200,7 @@ app/build/outputs/apk/release/PixelDone-3.3.4-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.3.4-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.3.5-release.apk
 ```
 
 The formal package name is:
@@ -217,4 +217,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.3.4 (versionCode 94) is the current formal signed Android release. It aligns widget checkboxes with the app, observes list and task state for immediate widget refresh, and hardens XHigh lock-screen alarm control with safe capability fallbacks and a 10-minute timeout. The remote contract remains 3.2, and the existing direct-IP HTTP deployment contract remains unchanged.
+3.3.5 (versionCode 95) is the current formal signed Android release. It switches widget configuration through one Glance state update, safely renders every checklist item ID, uses one widget background, and keeps completed rows checked and struck through for two seconds with confirmation haptics before removal. The remote contract remains 3.2, and the existing direct-IP HTTP deployment contract remains unchanged.
