@@ -3,8 +3,11 @@ package com.milesxue.pixeldone.widget
 import android.app.Application
 import android.os.Build
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.glance.action.ActionParameters
+import androidx.glance.appwidget.testing.unit.assertIsChecked
 import androidx.glance.appwidget.testing.unit.assertIsNotChecked
+import androidx.glance.appwidget.testing.unit.isChecked
 import androidx.glance.appwidget.testing.unit.isNotChecked
 import androidx.glance.appwidget.testing.unit.runGlanceAppWidgetUnitTest
 import androidx.glance.testing.GlanceNodeMatcher
@@ -50,6 +53,42 @@ class PixelDoneWidgetGlanceTest {
         }
 
     @Test
+    fun completingTodoRowIsCheckedStruckThroughAndNotInteractive() =
+        runGlanceAppWidgetUnitTest {
+            val checklist = checklist("paper", listOf(todo("task")))
+            provideComposable {
+                WidgetTodoRow(
+                    checklist = checklist,
+                    item = checklist.items.single(),
+                    completing = true,
+                )
+            }
+
+            onNode(isChecked())
+                .assertIsChecked()
+                .assertHasText("task")
+                .assert(hasNoActionOrBackground())
+                .assert(hasLineThroughText())
+        }
+
+    @Test
+    fun lazyListAcceptsTodoIdsThatPreviouslyFellInsideGlanceReservedRange() =
+        runGlanceAppWidgetUnitTest {
+            val checklist = checklist("main", listOf(todo("todo-a")))
+            provideComposable {
+                WidgetTodoList(
+                    checklist = checklist,
+                    todos = checklist.items,
+                )
+            }
+
+            awaitIdle()
+            onNode(isNotChecked())
+                .assertIsNotChecked()
+                .assertHasText("todo-a")
+        }
+
+    @Test
     fun repositoryAndConfigurationFlowsRecomposeCurrentChecklist() =
         runGlanceAppWidgetUnitTest {
             val paper = checklist("paper", listOf(todo("paper-task")))
@@ -60,14 +99,13 @@ class PixelDoneWidgetGlanceTest {
                     selectedListId = paper.id,
                 ),
             )
-            val checklistId = MutableStateFlow<String?>("paper")
+            val checklistId = mutableStateOf<String?>("paper")
             val observedSelection = AtomicReference<ObservedWidgetChecklist>()
 
             provideComposable {
                 val selection = observeWidgetChecklist(
                     todoStateFlow = todoState,
-                    checklistIdFlow = checklistId,
-                    initialChecklistId = "paper",
+                    configuredChecklistId = checklistId.value,
                 )
                 SideEffect {
                     observedSelection.set(selection)
@@ -138,6 +176,32 @@ class PixelDoneWidgetGlanceTest {
 
             callbackClass == CompleteTodoFromWidgetAction::class.java &&
                 parameters?.asMap() == expectedParameters.asMap()
+        }.getOrDefault(false)
+    }
+
+    private fun hasNoActionOrBackground(): GlanceNodeMatcher<MappedNode> = GlanceNodeMatcher(
+        "has no completion action or nested background",
+    ) { node ->
+        var hasAction = false
+        var hasBackground = false
+        node.value.emittable.modifier.foldIn(Unit) { _, element ->
+            hasAction = hasAction ||
+                element.javaClass.name == "androidx.glance.action.ActionModifier"
+            hasBackground = hasBackground ||
+                element.javaClass.name.startsWith("androidx.glance.BackgroundModifier")
+        }
+        !hasAction && !hasBackground
+    }
+
+    private fun hasLineThroughText(): GlanceNodeMatcher<MappedNode> = GlanceNodeMatcher(
+        "has line-through text decoration",
+    ) { node ->
+        runCatching {
+            node.value.emittable.javaClass
+                .getMethod("getStyle")
+                .invoke(node.value.emittable)
+                ?.toString()
+                ?.contains("LineThrough") == true
         }.getOrDefault(false)
     }
 

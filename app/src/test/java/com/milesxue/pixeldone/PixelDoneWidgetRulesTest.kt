@@ -10,7 +10,9 @@ import com.milesxue.pixeldone.widget.completeWidgetTodo
 import com.milesxue.pixeldone.widget.configuredWidgetChecklistId
 import com.milesxue.pixeldone.widget.widgetChecklists
 import com.milesxue.pixeldone.widget.widgetItemId
+import com.milesxue.pixeldone.widget.widgetRemainingTodoCount
 import com.milesxue.pixeldone.widget.widgetTodos
+import com.milesxue.pixeldone.widget.widgetTodosWithFeedback
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -43,6 +45,48 @@ class PixelDoneWidgetRulesTest {
     fun widgetItemsUseStableDistinctIdsForScrollPosition() {
         assertEquals(widgetItemId("todo-a"), widgetItemId("todo-a"))
         assertNotEquals(widgetItemId("todo-a"), widgetItemId("todo-b"))
+        assertTrue(widgetItemId("todo-a") >= 0L)
+        assertTrue(widgetItemId("todo-b") >= 0L)
+    }
+
+    @Test
+    fun completingTodoStaysInItsPriorityPositionWhileCountDropsImmediately() {
+        val checklist = checklist(
+            id = "main",
+            items = listOf(
+                todo("low", TodoPriority.LOW),
+                todo("high", TodoPriority.HIGH, completed = true),
+                todo("mid", TodoPriority.MEDIUM),
+            ),
+        )
+
+        assertEquals(
+            listOf("high", "mid", "low"),
+            widgetTodosWithFeedback(checklist, completingTodoIds = setOf("high"))
+                .map { it.id },
+        )
+        assertEquals(
+            2,
+            widgetRemainingTodoCount(checklist, completingTodoIds = setOf("high")),
+        )
+    }
+
+    @Test
+    fun finalCompletingTodoRemainsVisibleWhileRemainingCountIsZero() {
+        val checklist = checklist(
+            id = "main",
+            items = listOf(todo("last", TodoPriority.MEDIUM, completed = true)),
+        )
+
+        assertEquals(
+            listOf("last"),
+            widgetTodosWithFeedback(checklist, completingTodoIds = setOf("last"))
+                .map { it.id },
+        )
+        assertEquals(
+            0,
+            widgetRemainingTodoCount(checklist, completingTodoIds = setOf("last")),
+        )
     }
 
     @Test

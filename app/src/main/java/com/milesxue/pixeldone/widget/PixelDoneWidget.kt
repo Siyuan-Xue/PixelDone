@@ -8,16 +8,17 @@ import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.Preferences
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
+import androidx.glance.action.Action
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
@@ -28,6 +29,7 @@ import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.CheckBox
 import androidx.glance.appwidget.CheckboxDefaults
 import androidx.glance.appwidget.action.ActionCallback
+import androidx.glance.appwidget.action.ToggleableStateKey
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.lazy.LazyColumn
@@ -36,6 +38,7 @@ import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.color.ColorProvider
+import androidx.glance.currentState
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
@@ -50,6 +53,7 @@ import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
+import androidx.glance.text.TextDecoration
 import androidx.glance.text.TextStyle
 import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
@@ -61,11 +65,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 class PixelDoneWidget : GlanceAppWidget() {
+    override val stateDefinition = PixelDoneWidgetStateStore.definition
+
     override val sizeMode: SizeMode = SizeMode.Responsive(
         setOf(
             DpSize(110.dp, 110.dp),
@@ -78,22 +85,24 @@ class PixelDoneWidget : GlanceAppWidget() {
         val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
         val repository = context.pixelDoneAppContainer().todoRepository
         repository.loadTodoState()
-        val initialChecklistId = PixelDoneWidgetConfigStore.checklistId(context, appWidgetId)
 
         provideContent {
-            val checklistIdFlow = remember(appWidgetId) {
-                PixelDoneWidgetConfigStore.checklistIdFlow(context, appWidgetId)
-            }
+            val preferences = currentState<Preferences>()
+            val configuredChecklistId = PixelDoneWidgetStateStore.selectedChecklistId(
+                context = context,
+                appWidgetId = appWidgetId,
+                preferences = preferences,
+            )
             val selection = observeWidgetChecklist(
                 todoStateFlow = repository.state,
-                checklistIdFlow = checklistIdFlow,
-                initialChecklistId = initialChecklistId,
+                configuredChecklistId = configuredChecklistId,
             )
             PixelDoneWidgetContent(
                 context = context,
                 appWidgetId = appWidgetId,
                 checklist = selection.checklist,
                 configuredChecklistId = selection.configuredChecklistId,
+                completionFeedback = PixelDoneWidgetStateStore.completionFeedback(preferences),
             )
         }
     }
@@ -103,7 +112,7 @@ class PixelDoneWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = PixelDoneWidget()
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        appWidgetIds.forEach { PixelDoneWidgetConfigStore.remove(context, it) }
+        appWidgetIds.forEach { PixelDoneWidgetConfigStore.clearLegacy(context, it) }
         super.onDeleted(context, appWidgetIds)
     }
 }
@@ -122,10 +131,6 @@ object PixelDoneWidgetUpdater {
 private val Surface = ColorProvider(
     day = Color(0xFFFAF9F5),
     night = Color(0xFF1F1E1D),
-)
-private val RaisedSurface = ColorProvider(
-    day = Color(0xFFF0EEE6),
-    night = Color(0xFF30302E),
 )
 private val Primary = ColorProvider(
     day = Color(0xFFD97757),
@@ -155,9 +160,33 @@ private fun PixelDoneWidgetContent(
     appWidgetId: Int,
     checklist: TodoChecklist?,
     configuredChecklistId: String?,
+    completionFeedback: List<WidgetCompletionFeedback>,
 ) {
     val size = LocalSize.current
-    val todos = checklist?.let(::widgetTodos).orEmpty()
+    val completingTodoIds = checklist
+        ?.let { selectedChecklist ->
+            completionFeedback
+                .asSequence()
+                .filter { feedback -> feedback.checklistId == selectedChecklist.id }
+                .mapTo(mutableSetOf()) { feedback -> feedback.todoId }
+        }
+        .orEmpty()
+    val todos = checklist
+        ?.let { selectedChecklist ->
+            widgetTodosWithFeedback(
+                checklist = selectedChecklist,
+                completingTodoIds = completingTodoIds,
+            )
+        }
+        .orEmpty()
+    val remainingTodoCount = checklist
+        ?.let { selectedChecklist ->
+            widgetRemainingTodoCount(
+                checklist = selectedChecklist,
+                completingTodoIds = completingTodoIds,
+            )
+        }
+        ?: 0
     val reconfigureAction = actionStartActivity(
         widgetConfigurationIntent(context, appWidgetId),
     )
@@ -207,7 +236,7 @@ private fun PixelDoneWidgetContent(
                 )
                 Spacer(modifier = GlanceModifier.width(8.dp))
                 Text(
-                    text = todos.size.toString(),
+                    text = remainingTodoCount.toString(),
                     style = TextStyle(
                         color = Primary,
                         fontWeight = FontWeight.Bold,
@@ -229,7 +258,6 @@ private fun PixelDoneWidgetContent(
                     text = context.getString(R.string.widget_all_done),
                     modifier = GlanceModifier
                         .fillMaxWidth()
-                        .background(RaisedSurface)
                         .padding(10.dp),
                     style = TextStyle(
                         color = SecondaryText,
@@ -238,21 +266,14 @@ private fun PixelDoneWidgetContent(
                     ),
                 )
             } else {
-                LazyColumn(
+                WidgetTodoList(
+                    checklist = checklist,
+                    todos = todos,
+                    completingTodoIds = completingTodoIds,
                     modifier = GlanceModifier
                         .fillMaxWidth()
                         .defaultWeight(),
-                ) {
-                    items(
-                        items = todos,
-                        itemId = { item -> widgetItemId(item.id) },
-                    ) { item ->
-                        WidgetTodoRow(
-                            checklist = checklist,
-                            item = item,
-                        )
-                    }
-                }
+                )
             }
         }
     }
@@ -371,28 +392,56 @@ internal fun widgetConfigurationIntent(context: Context, appWidgetId: Int): Inte
 
 @androidx.glance.GlanceComposable
 @androidx.compose.runtime.Composable
+internal fun WidgetTodoList(
+    checklist: TodoChecklist,
+    todos: List<TodoItem>,
+    completingTodoIds: Set<String> = emptySet(),
+    modifier: GlanceModifier = GlanceModifier,
+) {
+    LazyColumn(modifier = modifier) {
+        items(
+            items = todos,
+            itemId = { item -> widgetItemId(item.id) },
+        ) { item ->
+            WidgetTodoRow(
+                checklist = checklist,
+                item = item,
+                completing = item.id in completingTodoIds,
+            )
+        }
+    }
+}
+
+@androidx.glance.GlanceComposable
+@androidx.compose.runtime.Composable
 internal fun WidgetTodoRow(
     checklist: TodoChecklist,
     item: TodoItem,
+    completing: Boolean = false,
 ) {
-    CheckBox(
-        checked = false,
-        onCheckedChange = actionRunCallback<CompleteTodoFromWidgetAction>(
+    val completionAction: Action? = if (completing) {
+        null
+    } else {
+        actionRunCallback<CompleteTodoFromWidgetAction>(
             widgetCompletionParameters(
                 checklistId = checklist.id,
                 todoId = item.id,
             ),
-        ),
+        )
+    }
+    CheckBox(
+        checked = completing,
+        onCheckedChange = completionAction,
         modifier = GlanceModifier
             .fillMaxWidth()
             .height(48.dp)
-            .padding(bottom = 4.dp)
-            .background(RaisedSurface),
+            .padding(bottom = 4.dp),
         text = item.title,
         style = TextStyle(
-            color = PrimaryText,
+            color = if (completing) SecondaryText else PrimaryText,
             fontWeight = FontWeight.Medium,
             fontSize = 13.sp,
+            textDecoration = if (completing) TextDecoration.LineThrough else null,
         ),
         colors = CheckboxDefaults.colors(
             checkedColor = Success,
@@ -418,11 +467,9 @@ internal data class ObservedWidgetChecklist(
 @Composable
 internal fun observeWidgetChecklist(
     todoStateFlow: StateFlow<TodoChecklistState>,
-    checklistIdFlow: Flow<String?>,
-    initialChecklistId: String?,
+    configuredChecklistId: String?,
 ): ObservedWidgetChecklist {
     val todoState by todoStateFlow.collectAsState()
-    val configuredChecklistId by checklistIdFlow.collectAsState(initial = initialChecklistId)
     return ObservedWidgetChecklist(
         configuredChecklistId = configuredChecklistId,
         checklist = configuredChecklistId?.let { requestedId ->
@@ -437,13 +484,70 @@ class CompleteTodoFromWidgetAction : ActionCallback {
         glanceId: GlanceId,
         parameters: ActionParameters,
     ) {
+        if (parameters[ToggleableStateKey] == false) return
         val checklistId = parameters[ChecklistIdKey] ?: return
         val todoId = parameters[TodoIdKey] ?: return
-        try {
-            val container = context.pixelDoneAppContainer()
-            var before = container.todoRepository.loadTodoState()
-            var changed = false
-            val after = container.todoRepository.updateTodoState { latest ->
+        val appContext = context.applicationContext
+        val container = appContext.pixelDoneAppContainer()
+        val initialState = try {
+            container.todoRepository.loadTodoState()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.e(LogTag, "Unable to read todo before widget completion", error)
+            return
+        }
+        val target = initialState.lists
+            .firstOrNull { checklist -> checklist.id == checklistId }
+            ?.items
+            ?.firstOrNull { item -> item.id == todoId }
+        if (target == null || target.completed) return
+
+        val startedAtMillis = System.currentTimeMillis()
+        val feedback = WidgetCompletionFeedback(
+            checklistId = checklistId,
+            todoId = todoId,
+            token = UUID.randomUUID().toString(),
+            expiresAtMillis = startedAtMillis + FeedbackSetupTimeoutMillis,
+        )
+        val feedbackAdded = try {
+            PixelDoneWidgetStateStore.addCompletionFeedback(
+                context = appContext,
+                glanceId = glanceId,
+                feedback = feedback,
+                nowMillis = startedAtMillis,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.e(LogTag, "Unable to persist widget completion feedback", error)
+            false
+        }
+        if (!feedbackAdded) return
+
+        val appWidgetId = runCatching {
+            GlanceAppWidgetManager(appContext).getAppWidgetId(glanceId)
+        }.onFailure { error ->
+            Log.e(LogTag, "Unable to resolve widget completion cleanup target", error)
+        }.getOrNull()
+        appWidgetId?.let { resolvedAppWidgetId ->
+            runCatching {
+                WidgetCompletionFeedbackCleanupScheduler(appContext).schedule(
+                    appWidgetId = resolvedAppWidgetId,
+                    feedback = feedback,
+                    nowMillis = startedAtMillis,
+                )
+            }.onFailure { error ->
+                Log.e(LogTag, "Unable to schedule provisional widget feedback cleanup", error)
+            }
+        }
+        refreshWidget(appContext, glanceId, "show completion feedback")
+        val visibleUntilMillis = System.currentTimeMillis() + CompletionFeedbackDurationMillis
+
+        var before = initialState
+        var changed = false
+        val after = try {
+            container.todoRepository.updateTodoState { latest ->
                 before = latest
                 completeWidgetTodo(
                     state = latest,
@@ -453,32 +557,125 @@ class CompleteTodoFromWidgetAction : ActionCallback {
                     changed = result.changed
                 }.state
             }
-            if (changed) {
-                runCatching {
-                    container.reminderScheduler.sync(normalTodos(before), normalTodos(after))
-                }.onFailure { error ->
-                    Log.e(LogTag, "Unable to reschedule reminders after widget completion", error)
-                }
-                runCatching {
-                    container.syncCoordinator.requestSync()
-                }.onFailure { error ->
-                    Log.e(LogTag, "Unable to request sync after widget completion", error)
-                }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.e(LogTag, "Unable to complete todo from widget", error)
+            rollbackFeedback(appContext, glanceId, feedback)
+            return
+        }
+
+        if (changed) {
+            WidgetCompletionHaptics(appContext).perform()
+            runCatching {
+                container.reminderScheduler.sync(normalTodos(before), normalTodos(after))
+            }.onFailure { error ->
+                Log.e(LogTag, "Unable to reschedule reminders after widget completion", error)
             }
-        } finally {
-            try {
-                PixelDoneWidget().update(context, glanceId)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                Log.e(LogTag, "Unable to refresh widget after completion action", error)
+            runCatching {
+                container.syncCoordinator.requestSync()
+            }.onFailure { error ->
+                Log.e(LogTag, "Unable to request sync after widget completion", error)
             }
+        }
+
+        val completionFinishedAtMillis = System.currentTimeMillis()
+        val finalExpiryMillis = widgetCompletionFeedbackFinalExpiryMillis(
+            visibleUntilMillis = visibleUntilMillis,
+            completionFinishedAtMillis = completionFinishedAtMillis,
+        )
+        val finalFeedback = try {
+            PixelDoneWidgetStateStore.updateCompletionFeedbackExpiry(
+                context = appContext,
+                glanceId = glanceId,
+                feedback = feedback,
+                expiresAtMillis = finalExpiryMillis,
+                nowMillis = completionFinishedAtMillis,
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.e(LogTag, "Unable to finalize widget completion feedback expiry", error)
+            null
+        }
+        if (finalFeedback == null) {
+            rollbackFeedback(appContext, glanceId, feedback)
+            return
+        }
+        appWidgetId?.let { resolvedAppWidgetId ->
+            runCatching {
+                WidgetCompletionFeedbackCleanupScheduler(appContext).schedule(
+                    appWidgetId = resolvedAppWidgetId,
+                    feedback = finalFeedback,
+                    nowMillis = completionFinishedAtMillis,
+                )
+            }.onFailure { error ->
+                Log.e(LogTag, "Unable to schedule final widget feedback cleanup", error)
+            }
+        }
+
+        try {
+            val remainingMillis = widgetCompletionFeedbackDelayMillis(
+                expiresAtMillis = finalFeedback.expiresAtMillis,
+                nowMillis = System.currentTimeMillis(),
+            )
+            if (remainingMillis > 0L) {
+                delay(remainingMillis)
+            }
+            val cleared = PixelDoneWidgetStateStore.removeExpiredCompletionFeedback(
+                context = appContext,
+                glanceId = glanceId,
+                feedback = finalFeedback,
+            )
+            if (cleared) {
+                refreshWidget(appContext, glanceId, "remove completion feedback")
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // The persistent cleanup worker remains responsible if this in-process cleanup fails.
+            Log.e(LogTag, "Unable to clear widget completion feedback on time", error)
         }
     }
 
     companion object {
         val ChecklistIdKey = ActionParameters.Key<String>("checklist_id")
         val TodoIdKey = ActionParameters.Key<String>("todo_id")
+        private const val CompletionFeedbackDurationMillis = 2_000L
+        private const val FeedbackSetupTimeoutMillis = 30_000L
         private const val LogTag = "PixelDoneWidget"
+    }
+
+    private suspend fun rollbackFeedback(
+        context: Context,
+        glanceId: GlanceId,
+        feedback: WidgetCompletionFeedback,
+    ) {
+        runCatching {
+            PixelDoneWidgetStateStore.removeCompletionFeedback(
+                context = context,
+                glanceId = glanceId,
+                checklistId = feedback.checklistId,
+                todoId = feedback.todoId,
+                token = feedback.token,
+            )
+            refreshWidget(context, glanceId, "roll back completion feedback")
+        }.onFailure { error ->
+            Log.e(LogTag, "Unable to roll back widget completion feedback", error)
+        }
+    }
+
+    private suspend fun refreshWidget(
+        context: Context,
+        glanceId: GlanceId,
+        reason: String,
+    ) {
+        try {
+            PixelDoneWidget().update(context, glanceId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.e(LogTag, "Unable to $reason", error)
+        }
     }
 }

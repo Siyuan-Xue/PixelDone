@@ -32,7 +32,9 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.appcompat.app.AppCompatActivity
+import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.lifecycle.lifecycleScope
 import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.applyPixelDoneLanguage
 import com.milesxue.pixeldone.applyPixelDoneSystemBars
@@ -43,12 +45,11 @@ import com.milesxue.pixeldone.ui.theme.PixelDoneTheme
 import com.milesxue.pixeldone.ui.theme.PixelTextRole
 import com.milesxue.pixeldone.ui.theme.scriptAwareText
 import com.milesxue.pixeldone.ui.todo.components.PixelButton
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class PixelDoneWidgetConfigurationActivity : AppCompatActivity() {
     private var appWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID
+    private var glanceId: GlanceId? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyPixelDoneLanguage(pixelDoneAppContainer().settingsStore.loadSettings().languageMode)
@@ -69,58 +70,118 @@ class PixelDoneWidgetConfigurationActivity : AppCompatActivity() {
 
         val container = pixelDoneAppContainer()
         val checklists = widgetChecklists(container.todoRepository.loadTodoState())
-        val initialChecklistId = configuredWidgetChecklistId(
-            checklists = checklists,
-            configuredChecklistId = PixelDoneWidgetConfigStore.checklistId(this, appWidgetId),
-        )
         val darkTheme = container.settingsStore.loadSettings().darkTheme
         applyPixelDoneSystemBars(darkTheme)
 
-        setContent {
-            PixelDoneTheme(darkTheme = darkTheme) {
-                WidgetConfigurationScreen(
-                    checklists = checklists,
-                    initialChecklistId = initialChecklistId,
-                    onSave = ::saveConfiguration,
+        lifecycleScope.launch {
+            val resolvedGlanceId = GlanceAppWidgetManager(
+                this@PixelDoneWidgetConfigurationActivity,
+            ).getGlanceIdBy(intent)
+            if (resolvedGlanceId == null) {
+                Log.e(
+                    WidgetConfigurationLogTag,
+                    "Unable to resolve Glance ID for appWidgetId=$appWidgetId",
                 )
+                finish()
+                return@launch
+            }
+            glanceId = resolvedGlanceId
+            val configuredChecklistId = runCatching {
+                val preferences = PixelDoneWidgetStateStore.readPreferences(
+                    context = this@PixelDoneWidgetConfigurationActivity,
+                    glanceId = resolvedGlanceId,
+                )
+                PixelDoneWidgetStateStore.selectedChecklistId(
+                    context = this@PixelDoneWidgetConfigurationActivity,
+                    appWidgetId = appWidgetId,
+                    preferences = preferences,
+                )
+            }.onFailure { error ->
+                Log.e(
+                    WidgetConfigurationLogTag,
+                    "Unable to read widget configuration for appWidgetId=$appWidgetId",
+                    error,
+                )
+            }.getOrElse {
+                PixelDoneWidgetConfigStore.legacyChecklistId(
+                    context = this@PixelDoneWidgetConfigurationActivity,
+                    appWidgetId = appWidgetId,
+                )
+            }
+            val initialChecklistId = configuredWidgetChecklistId(
+                checklists = checklists,
+                configuredChecklistId = configuredChecklistId,
+            )
+
+            setContent {
+                PixelDoneTheme(darkTheme = darkTheme) {
+                    WidgetConfigurationScreen(
+                        checklists = checklists,
+                        initialChecklistId = initialChecklistId,
+                        onSave = ::saveConfiguration,
+                    )
+                }
             }
         }
     }
 
-    private suspend fun saveConfiguration(checklistId: String): Boolean = try {
-        val stored = withContext(Dispatchers.IO) {
-            PixelDoneWidgetConfigStore.saveChecklistId(
+    private suspend fun saveConfiguration(checklistId: String): Boolean {
+        val targetGlanceId = glanceId ?: return false
+        var previousState: PixelDoneWidgetStateSnapshot? = null
+        return try {
+            previousState = PixelDoneWidgetStateStore.replaceConfiguration(
                 context = this@PixelDoneWidgetConfigurationActivity,
-                appWidgetId = appWidgetId,
+                glanceId = targetGlanceId,
                 checklistId = checklistId,
-            ) && PixelDoneWidgetConfigStore.checklistId(
-                context = this@PixelDoneWidgetConfigurationActivity,
-                appWidgetId = appWidgetId,
-            ) == checklistId
-        }
-        if (!stored) {
-            false
-        } else {
-            val glanceId = GlanceAppWidgetManager(this@PixelDoneWidgetConfigurationActivity)
-                .getGlanceIdBy(intent) ?: return false
+            )
             PixelDoneWidget().update(
                 context = this@PixelDoneWidgetConfigurationActivity,
-                id = glanceId,
+                id = targetGlanceId,
             )
+            if (
+                !PixelDoneWidgetConfigStore.clearLegacy(
+                    context = this@PixelDoneWidgetConfigurationActivity,
+                    appWidgetId = appWidgetId,
+                )
+            ) {
+                Log.w(
+                    WidgetConfigurationLogTag,
+                    "Unable to clear legacy configuration for appWidgetId=$appWidgetId",
+                )
+            }
             setResult(
                 Activity.RESULT_OK,
                 Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId),
             )
             finish()
             true
+        } catch (error: Exception) {
+            previousState?.let { snapshot ->
+                runCatching {
+                    PixelDoneWidgetStateStore.restore(
+                        context = this@PixelDoneWidgetConfigurationActivity,
+                        glanceId = targetGlanceId,
+                        snapshot = snapshot,
+                    )
+                    PixelDoneWidget().update(
+                        context = this@PixelDoneWidgetConfigurationActivity,
+                        id = targetGlanceId,
+                    )
+                }.onFailure { rollbackError ->
+                    Log.e(
+                        WidgetConfigurationLogTag,
+                        "Unable to roll back widget configuration for appWidgetId=$appWidgetId",
+                        rollbackError,
+                    )
+                }
+            }
+            Log.e(
+                WidgetConfigurationLogTag,
+                "Unable to save widget configuration for appWidgetId=$appWidgetId",
+                error,
+            )
+            false
         }
-    } catch (error: Exception) {
-        Log.e(
-            WidgetConfigurationLogTag,
-            "Unable to save widget configuration for appWidgetId=$appWidgetId",
-            error,
-        )
-        false
     }
 
     private companion object {

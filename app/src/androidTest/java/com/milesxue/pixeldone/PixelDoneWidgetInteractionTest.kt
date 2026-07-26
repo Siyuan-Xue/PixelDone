@@ -3,17 +3,15 @@ package com.milesxue.pixeldone
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
+import androidx.glance.appwidget.AppWidgetId
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.milesxue.pixeldone.widget.PixelDoneWidgetStateStore
 import com.milesxue.pixeldone.widget.PixelDoneWidgetConfigStore
 import com.milesxue.pixeldone.widget.PixelDoneWidgetConfigurationActivity
+import com.milesxue.pixeldone.widget.WidgetCompletionFeedback
 import com.milesxue.pixeldone.widget.widgetConfigurationIntent
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -28,8 +26,11 @@ class PixelDoneWidgetInteractionTest {
     private val widgetIds = listOf(930_001, 930_002)
 
     @After
-    fun cleanUp() {
-        widgetIds.forEach { PixelDoneWidgetConfigStore.remove(context, it) }
+    fun cleanUp() = runBlocking {
+        widgetIds.forEach { appWidgetId ->
+            PixelDoneWidgetStateStore.clear(context, AppWidgetId(appWidgetId))
+            PixelDoneWidgetConfigStore.clearLegacy(context, appWidgetId)
+        }
     }
 
     @Test
@@ -56,56 +57,326 @@ class PixelDoneWidgetInteractionTest {
     }
 
     @Test
-    fun widgetChecklistSelectionIsCommittedBeforeRefresh() {
-        assertNull(PixelDoneWidgetConfigStore.checklistId(context, widgetIds[0]))
-
-        assertTrue(
-            PixelDoneWidgetConfigStore.saveChecklistId(
-                context = context,
-                appWidgetId = widgetIds[0],
-                checklistId = "paper",
+    fun widgetChecklistSelectionIsCommittedToGlanceState() = runBlocking {
+        val glanceId = AppWidgetId(widgetIds[0])
+        assertNull(
+            PixelDoneWidgetStateStore.selectedChecklistId(
+                PixelDoneWidgetStateStore.readPreferences(context, glanceId),
             ),
+        )
+
+        PixelDoneWidgetStateStore.replaceConfiguration(
+            context = context,
+            glanceId = glanceId,
+            checklistId = "paper",
         )
 
         assertEquals(
             "paper",
-            PixelDoneWidgetConfigStore.checklistId(context, widgetIds[0]),
+            PixelDoneWidgetStateStore.selectedChecklistId(
+                PixelDoneWidgetStateStore.readPreferences(context, glanceId),
+            ),
         )
     }
 
     @Test
-    fun checklistSelectionFlowEmitsOnlyThisWidgetChanges() = runBlocking {
-        val observedSelections = Channel<String?>(Channel.UNLIMITED)
-        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
-            PixelDoneWidgetConfigStore
-                .checklistIdFlow(context, widgetIds[0])
-                .collect(observedSelections::send)
-        }
-        assertNull(withTimeout(3_000) { observedSelections.receive() })
+    fun checklistSelectionsRemainIsolatedPerWidget() = runBlocking {
+        PixelDoneWidgetStateStore.replaceConfiguration(
+            context = context,
+            glanceId = AppWidgetId(widgetIds[0]),
+            checklistId = "paper",
+        )
+        PixelDoneWidgetStateStore.replaceConfiguration(
+            context = context,
+            glanceId = AppWidgetId(widgetIds[1]),
+            checklistId = "main",
+        )
+
+        assertEquals(
+            "paper",
+            PixelDoneWidgetStateStore.selectedChecklistId(
+                PixelDoneWidgetStateStore.readPreferences(
+                    context,
+                    AppWidgetId(widgetIds[0]),
+                ),
+            ),
+        )
+        assertEquals(
+            "main",
+            PixelDoneWidgetStateStore.selectedChecklistId(
+                PixelDoneWidgetStateStore.readPreferences(
+                    context,
+                    AppWidgetId(widgetIds[1]),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun newGlanceStateTakesPriorityOverLegacySelection() = runBlocking {
+        writeLegacySelection(widgetIds[0], "legacy")
+        val glanceId = AppWidgetId(widgetIds[0])
+        var preferences = PixelDoneWidgetStateStore.readPreferences(context, glanceId)
+
+        assertEquals(
+            "legacy",
+            PixelDoneWidgetStateStore.selectedChecklistId(
+                context = context,
+                appWidgetId = widgetIds[0],
+                preferences = preferences,
+            ),
+        )
+
+        PixelDoneWidgetStateStore.replaceConfiguration(
+            context = context,
+            glanceId = glanceId,
+            checklistId = "paper",
+        )
+        preferences = PixelDoneWidgetStateStore.readPreferences(context, glanceId)
+        assertEquals(
+            "paper",
+            PixelDoneWidgetStateStore.selectedChecklistId(
+                context = context,
+                appWidgetId = widgetIds[0],
+                preferences = preferences,
+            ),
+        )
+        assertTrue(PixelDoneWidgetConfigStore.clearLegacy(context, widgetIds[0]))
+        assertNull(PixelDoneWidgetConfigStore.legacyChecklistId(context, widgetIds[0]))
+        assertEquals(
+            "paper",
+            PixelDoneWidgetStateStore.selectedChecklistId(
+                context = context,
+                appWidgetId = widgetIds[0],
+                preferences = preferences,
+            ),
+        )
+    }
+
+    @Test
+    fun replacingConfigurationClearsFeedbackAndCanBeRolledBack() = runBlocking {
+        val glanceId = AppWidgetId(widgetIds[0])
+        PixelDoneWidgetStateStore.replaceConfiguration(
+            context = context,
+            glanceId = glanceId,
+            checklistId = "paper",
+        )
+        assertTrue(
+            PixelDoneWidgetStateStore.addCompletionFeedback(
+                context = context,
+                glanceId = glanceId,
+                feedback = WidgetCompletionFeedback(
+                    checklistId = "paper",
+                    todoId = "todo-a",
+                    token = "token-a",
+                    expiresAtMillis = 3_000L,
+                ),
+                nowMillis = 1_000L,
+            ),
+        )
+        val previousState = PixelDoneWidgetStateStore.replaceConfiguration(
+            context = context,
+            glanceId = glanceId,
+            checklistId = "main",
+        )
+
+        var preferences = PixelDoneWidgetStateStore.readPreferences(context, glanceId)
+        assertEquals("main", PixelDoneWidgetStateStore.selectedChecklistId(preferences))
+        assertTrue(
+            PixelDoneWidgetStateStore.completionFeedback(
+                preferences = preferences,
+                nowMillis = 1_000L,
+            ).isEmpty(),
+        )
+
+        PixelDoneWidgetStateStore.restore(
+            context = context,
+            glanceId = glanceId,
+            snapshot = previousState,
+        )
+        preferences = PixelDoneWidgetStateStore.readPreferences(context, glanceId)
+        assertEquals("paper", PixelDoneWidgetStateStore.selectedChecklistId(preferences))
+        assertEquals(
+            listOf("todo-a"),
+            PixelDoneWidgetStateStore.completionFeedback(
+                preferences = preferences,
+                nowMillis = 1_000L,
+            ).map(WidgetCompletionFeedback::todoId),
+        )
+    }
+
+    @Test
+    fun duplicateFeedbackIsIdempotentAndTokenRemovalIsExact() = runBlocking {
+        val glanceId = AppWidgetId(widgetIds[0])
+        val original = WidgetCompletionFeedback(
+            checklistId = "main",
+            todoId = "todo-a",
+            token = "token-a",
+            expiresAtMillis = 3_000L,
+        )
+        assertTrue(
+            PixelDoneWidgetStateStore.addCompletionFeedback(
+                context,
+                glanceId,
+                original,
+                nowMillis = 1_000L,
+            ),
+        )
+        assertTrue(
+            !PixelDoneWidgetStateStore.addCompletionFeedback(
+                context,
+                glanceId,
+                original.copy(token = "token-b", expiresAtMillis = 5_000L),
+                nowMillis = 1_500L,
+            ),
+        )
+        assertTrue(
+            !PixelDoneWidgetStateStore.removeCompletionFeedback(
+                context,
+                glanceId,
+                checklistId = "main",
+                todoId = "todo-a",
+                token = "wrong-token",
+                nowMillis = 1_500L,
+            ),
+        )
+        assertTrue(
+            PixelDoneWidgetStateStore.removeCompletionFeedback(
+                context,
+                glanceId,
+                checklistId = "main",
+                todoId = "todo-a",
+                token = "token-a",
+                nowMillis = 1_500L,
+            ),
+        )
+        assertTrue(
+            PixelDoneWidgetStateStore.completionFeedback(
+                PixelDoneWidgetStateStore.readPreferences(context, glanceId),
+                nowMillis = 1_500L,
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun completionExpiryUpdateRequiresTheExactActiveToken() = runBlocking {
+        val glanceId = AppWidgetId(widgetIds[0])
+        val provisional = WidgetCompletionFeedback(
+            checklistId = "main",
+            todoId = "todo-a",
+            token = "token-a",
+            expiresAtMillis = 30_000L,
+        )
+        assertTrue(
+            PixelDoneWidgetStateStore.addCompletionFeedback(
+                context,
+                glanceId,
+                provisional,
+                nowMillis = 1_000L,
+            ),
+        )
+
+        assertNull(
+            PixelDoneWidgetStateStore.updateCompletionFeedbackExpiry(
+                context,
+                glanceId,
+                feedback = provisional.copy(token = "wrong-token"),
+                expiresAtMillis = 3_000L,
+                nowMillis = 1_000L,
+            ),
+        )
+        val finalized = PixelDoneWidgetStateStore.updateCompletionFeedbackExpiry(
+            context,
+            glanceId,
+            feedback = provisional,
+            expiresAtMillis = 3_000L,
+            nowMillis = 1_000L,
+        )
+
+        assertEquals(3_000L, finalized?.expiresAtMillis)
+        assertEquals(
+            listOf(finalized),
+            PixelDoneWidgetStateStore.completionFeedback(
+                PixelDoneWidgetStateStore.readPreferences(context, glanceId),
+                nowMillis = 1_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun expiryCleanupOnlyRemovesTheMatchingDueToken() = runBlocking {
+        val glanceId = AppWidgetId(widgetIds[0])
+        val first = WidgetCompletionFeedback(
+            checklistId = "main",
+            todoId = "todo-a",
+            token = "token-a",
+            expiresAtMillis = 3_000L,
+        )
+        val second = WidgetCompletionFeedback(
+            checklistId = "main",
+            todoId = "todo-b",
+            token = "token-b",
+            expiresAtMillis = 4_000L,
+        )
+        assertTrue(
+            PixelDoneWidgetStateStore.addCompletionFeedback(
+                context,
+                glanceId,
+                first,
+                nowMillis = 1_000L,
+            ),
+        )
+        assertTrue(
+            PixelDoneWidgetStateStore.addCompletionFeedback(
+                context,
+                glanceId,
+                second,
+                nowMillis = 1_000L,
+            ),
+        )
 
         assertTrue(
-            PixelDoneWidgetConfigStore.saveChecklistId(
-                context = context,
-                appWidgetId = widgetIds[1],
-                checklistId = "ignored",
+            !PixelDoneWidgetStateStore.removeExpiredCompletionFeedback(
+                context,
+                glanceId,
+                feedback = first,
+                nowMillis = 2_999L,
             ),
         )
         assertTrue(
-            PixelDoneWidgetConfigStore.saveChecklistId(
-                context = context,
-                appWidgetId = widgetIds[0],
-                checklistId = "paper",
+            !PixelDoneWidgetStateStore.removeExpiredCompletionFeedback(
+                context,
+                glanceId,
+                feedback = first.copy(token = "wrong-token"),
+                nowMillis = 3_000L,
             ),
         )
-        assertEquals("paper", withTimeout(3_000) { observedSelections.receive() })
         assertTrue(
-            PixelDoneWidgetConfigStore.saveChecklistId(
-                context = context,
-                appWidgetId = widgetIds[0],
-                checklistId = "main",
+            PixelDoneWidgetStateStore.removeExpiredCompletionFeedback(
+                context,
+                glanceId,
+                feedback = first,
+                nowMillis = 3_000L,
             ),
         )
-        assertEquals("main", withTimeout(3_000) { observedSelections.receive() })
-        collector.cancelAndJoin()
+
+        assertEquals(
+            listOf(second),
+            PixelDoneWidgetStateStore.completionFeedback(
+                PixelDoneWidgetStateStore.readPreferences(context, glanceId),
+                nowMillis = 3_000L,
+            ),
+        )
+    }
+
+    private fun writeLegacySelection(appWidgetId: Int, checklistId: String) {
+        assertTrue(
+            context.getSharedPreferences(
+                "pixeldone_widget_config",
+                Context.MODE_PRIVATE,
+            ).edit()
+                .putString("checklist_$appWidgetId", checklistId)
+                .commit(),
+        )
     }
 }
