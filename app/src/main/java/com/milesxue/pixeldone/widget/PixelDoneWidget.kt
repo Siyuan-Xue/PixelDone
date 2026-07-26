@@ -4,6 +4,15 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
@@ -16,13 +25,15 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.CheckBox
+import androidx.glance.appwidget.CheckboxDefaults
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
-import androidx.glance.appwidget.updateAll
 import androidx.glance.appwidget.provideContent
+import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
@@ -43,16 +54,16 @@ import androidx.glance.text.TextStyle
 import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
 import com.milesxue.pixeldone.domain.todo.TodoChecklist
+import com.milesxue.pixeldone.domain.todo.TodoChecklistState
 import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.normalTodos
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 class PixelDoneWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Responsive(
@@ -65,21 +76,24 @@ class PixelDoneWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val appWidgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
-        val checklistId = PixelDoneWidgetConfigStore.checklistId(context, appWidgetId)
-        val checklist = checklistId?.let { requestedId ->
-            context.pixelDoneAppContainer()
-                .todoRepository
-                .loadTodoState()
-                .lists
-                .firstOrNull { it.id == requestedId }
-        }
+        val repository = context.pixelDoneAppContainer().todoRepository
+        repository.loadTodoState()
+        val initialChecklistId = PixelDoneWidgetConfigStore.checklistId(context, appWidgetId)
 
         provideContent {
+            val checklistIdFlow = remember(appWidgetId) {
+                PixelDoneWidgetConfigStore.checklistIdFlow(context, appWidgetId)
+            }
+            val selection = observeWidgetChecklist(
+                todoStateFlow = repository.state,
+                checklistIdFlow = checklistIdFlow,
+                initialChecklistId = initialChecklistId,
+            )
             PixelDoneWidgetContent(
                 context = context,
                 appWidgetId = appWidgetId,
-                checklist = checklist,
-                configuredChecklistId = checklistId,
+                checklist = selection.checklist,
+                configuredChecklistId = selection.configuredChecklistId,
             )
         }
     }
@@ -124,6 +138,10 @@ private val PrimaryText = ColorProvider(
 private val SecondaryText = ColorProvider(
     day = Color(0xFF5E5D59),
     night = Color(0xFFC2C0B6),
+)
+private val Success = ColorProvider(
+    day = Color(0xFF629987),
+    night = Color(0xFF629987),
 )
 private val OnPrimary = ColorProvider(
     day = Color(0xFF141413),
@@ -353,52 +371,64 @@ internal fun widgetConfigurationIntent(context: Context, appWidgetId: Int): Inte
 
 @androidx.glance.GlanceComposable
 @androidx.compose.runtime.Composable
-private fun WidgetTodoRow(
+internal fun WidgetTodoRow(
     checklist: TodoChecklist,
     item: TodoItem,
 ) {
-    Row(
+    CheckBox(
+        checked = false,
+        onCheckedChange = actionRunCallback<CompleteTodoFromWidgetAction>(
+            widgetCompletionParameters(
+                checklistId = checklist.id,
+                todoId = item.id,
+            ),
+        ),
         modifier = GlanceModifier
             .fillMaxWidth()
             .height(48.dp)
             .padding(bottom = 4.dp)
             .background(RaisedSurface),
-        verticalAlignment = Alignment.Vertical.CenterVertically,
-    ) {
-        Box(
-            modifier = GlanceModifier
-                .size(44.dp)
-                .background(PrimaryText)
-                .padding(2.dp)
-                .clickable(
-                    actionRunCallback<CompleteTodoFromWidgetAction>(
-                        actionParametersOf(
-                            CompleteTodoFromWidgetAction.ChecklistIdKey to checklist.id,
-                            CompleteTodoFromWidgetAction.TodoIdKey to item.id,
-                        ),
-                    ),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = GlanceModifier
-                    .size(40.dp)
-                    .background(Surface),
-            ) {}
-        }
-        Text(
-            text = item.title,
-            modifier = GlanceModifier
-                .defaultWeight()
-                .padding(horizontal = 8.dp),
-            style = TextStyle(
-                color = PrimaryText,
-                fontWeight = FontWeight.Medium,
-                fontSize = 13.sp,
-            ),
-            maxLines = 1,
-        )
-    }
+        text = item.title,
+        style = TextStyle(
+            color = PrimaryText,
+            fontWeight = FontWeight.Medium,
+            fontSize = 13.sp,
+        ),
+        colors = CheckboxDefaults.colors(
+            checkedColor = Success,
+            uncheckedColor = SecondaryText,
+        ),
+        maxLines = 1,
+    )
+}
+
+internal fun widgetCompletionParameters(
+    checklistId: String,
+    todoId: String,
+): ActionParameters = actionParametersOf(
+    CompleteTodoFromWidgetAction.ChecklistIdKey to checklistId,
+    CompleteTodoFromWidgetAction.TodoIdKey to todoId,
+)
+
+internal data class ObservedWidgetChecklist(
+    val configuredChecklistId: String?,
+    val checklist: TodoChecklist?,
+)
+
+@Composable
+internal fun observeWidgetChecklist(
+    todoStateFlow: StateFlow<TodoChecklistState>,
+    checklistIdFlow: Flow<String?>,
+    initialChecklistId: String?,
+): ObservedWidgetChecklist {
+    val todoState by todoStateFlow.collectAsState()
+    val configuredChecklistId by checklistIdFlow.collectAsState(initial = initialChecklistId)
+    return ObservedWidgetChecklist(
+        configuredChecklistId = configuredChecklistId,
+        checklist = configuredChecklistId?.let { requestedId ->
+            todoState.lists.firstOrNull { it.id == requestedId }
+        },
+    )
 }
 
 class CompleteTodoFromWidgetAction : ActionCallback {
@@ -409,35 +439,46 @@ class CompleteTodoFromWidgetAction : ActionCallback {
     ) {
         val checklistId = parameters[ChecklistIdKey] ?: return
         val todoId = parameters[TodoIdKey] ?: return
-        val container = context.pixelDoneAppContainer()
-        val before = container.todoRepository.loadTodoState()
-        var changed = false
-        val after = container.todoRepository.updateTodoState { latest ->
-            latest.copy(
-                lists = latest.lists.map { checklist ->
-                    if (checklist.id != checklistId) return@map checklist
-                    checklist.copy(
-                        items = checklist.items.map { item ->
-                            if (item.id == todoId && !item.completed) {
-                                changed = true
-                                item.copy(completed = true)
-                            } else {
-                                item
-                            }
-                        },
-                    )
-                },
-            )
+        try {
+            val container = context.pixelDoneAppContainer()
+            var before = container.todoRepository.loadTodoState()
+            var changed = false
+            val after = container.todoRepository.updateTodoState { latest ->
+                before = latest
+                completeWidgetTodo(
+                    state = latest,
+                    checklistId = checklistId,
+                    todoId = todoId,
+                ).also { result ->
+                    changed = result.changed
+                }.state
+            }
+            if (changed) {
+                runCatching {
+                    container.reminderScheduler.sync(normalTodos(before), normalTodos(after))
+                }.onFailure { error ->
+                    Log.e(LogTag, "Unable to reschedule reminders after widget completion", error)
+                }
+                runCatching {
+                    container.syncCoordinator.requestSync()
+                }.onFailure { error ->
+                    Log.e(LogTag, "Unable to request sync after widget completion", error)
+                }
+            }
+        } finally {
+            try {
+                PixelDoneWidget().update(context, glanceId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.e(LogTag, "Unable to refresh widget after completion action", error)
+            }
         }
-        if (changed) {
-            container.reminderScheduler.sync(normalTodos(before), normalTodos(after))
-            container.syncCoordinator.requestSync()
-        }
-        PixelDoneWidget().update(context, glanceId)
     }
 
     companion object {
         val ChecklistIdKey = ActionParameters.Key<String>("checklist_id")
         val TodoIdKey = ActionParameters.Key<String>("todo_id")
+        private const val LogTag = "PixelDoneWidget"
     }
 }

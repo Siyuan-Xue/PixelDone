@@ -17,6 +17,42 @@ internal fun widgetTodos(checklist: TodoChecklist): List<TodoItem> =
         hideCompleted = true,
     )
 
+internal data class WidgetTodoCompletion(
+    val state: TodoChecklistState,
+    val changed: Boolean,
+)
+
+internal fun completeWidgetTodo(
+    state: TodoChecklistState,
+    checklistId: String,
+    todoId: String,
+): WidgetTodoCompletion {
+    val target = state.lists
+        .firstOrNull { it.id == checklistId }
+        ?.items
+        ?.firstOrNull { it.id == todoId }
+    if (target == null || target.completed) {
+        return WidgetTodoCompletion(state = state, changed = false)
+    }
+
+    return WidgetTodoCompletion(
+        state = state.copy(
+            lists = state.lists.map { checklist ->
+                if (checklist.id != checklistId) {
+                    checklist
+                } else {
+                    checklist.copy(
+                        items = checklist.items.map { item ->
+                            if (item.id == todoId) item.copy(completed = true) else item
+                        },
+                    )
+                }
+            },
+        ),
+        changed = true,
+    )
+}
+
 internal fun widgetItemId(todoId: String): Long {
     var hash = -3750763034362895579L
     todoId.forEach { character ->

@@ -31,40 +31,79 @@ class TodoAlarmReceiver : BroadcastReceiver() {
         val appContainer = context.pixelDoneAppContainer()
         val storage = appContainer.todoRepository
         val state = storage.loadTodoState()
+        val hasExactAlarmAccess = appContainer.reminderScheduler.canScheduleExactAlarms()
         val dispatchPlan = reminderDispatchPlan(
             items = normalTodos(state),
             firedDueAtMillis = firedDueAtMillis,
             triggerTodoId = triggerTodoId,
             triggerAlertMode = triggerAlertMode,
-            canScheduleExactAlarms = appContainer.reminderScheduler.canScheduleExactAlarms(),
+            canScheduleExactAlarms = hasExactAlarmAccess,
         )
         if (dispatchPlan.isEmpty) return
-        if (wasRecentlyDispatched(context, dispatchSignature(firedDueAtMillis, triggerAlertMode, dispatchPlan))) {
+
+        val capabilities = TodoReminderNotifier.deliveryCapabilities(
+            context = context,
+            exactAlarmAccess = hasExactAlarmAccess,
+        )
+        val delivery = if (dispatchPlan.fullscreenAlarmItems.isNotEmpty()) {
+            xhighReminderDelivery(capabilities)
+        } else if (capabilities.canShowShortNotification) {
+            XHighReminderDelivery.SHORT_NOTIFICATION
+        } else {
+            XHighReminderDelivery.SUPPRESSED
+        }
+        if (delivery == XHighReminderDelivery.SUPPRESSED) {
+            // Keep the task due instead of starting sound or vibration without a visible stop path.
+            return
+        }
+        if (
+            wasRecentlyDispatched(
+                context,
+                dispatchSignature(firedDueAtMillis, delivery, dispatchPlan),
+            )
+        ) {
             return
         }
 
-        if (dispatchPlan.fullscreenAlarmItems.isNotEmpty()) {
-            XHighAlarmService.start(
-                context = context,
-                items = dispatchPlan.fullscreenAlarmItems,
-                firedDueAtMillis = firedDueAtMillis,
-                companionShortItems = dispatchPlan.shortNotificationItems,
-            )
-        } else if (dispatchPlan.shortNotificationItems.isNotEmpty()) {
-            TodoReminderNotifier.showShortNotificationBatch(
-                context = context,
-                items = dispatchPlan.shortNotificationItems,
+        val delivered = when (delivery) {
+            XHighReminderDelivery.FULLSCREEN_LOOP -> runCatching {
+                XHighAlarmService.start(
+                    context = context,
+                    items = dispatchPlan.fullscreenAlarmItems,
+                    firedDueAtMillis = firedDueAtMillis,
+                    companionShortItems = dispatchPlan.shortNotificationItems,
+                )
+            }.isSuccess
+            XHighReminderDelivery.SHORT_NOTIFICATION -> {
+                val notificationItems = (
+                    dispatchPlan.fullscreenAlarmItems +
+                        dispatchPlan.shortNotificationItems
+                    ).distinctBy { it.id }
+                TodoReminderNotifier.showShortNotificationBatch(
+                    context = context,
+                    items = notificationItems,
+                    firedDueAtMillis = firedDueAtMillis,
+                )
+            }
+            XHighReminderDelivery.SUPPRESSED -> false
+        }
+        if (!delivered) {
+            return
+        }
+        recordDispatch(
+            context,
+            dispatchSignature(firedDueAtMillis, delivery, dispatchPlan),
+        )
+
+        if (delivery != XHighReminderDelivery.FULLSCREEN_LOOP) {
+            rescheduleDispatchedTodos(
+                scheduler = appContainer.reminderScheduler,
+                storage = storage,
+                state = state,
+                dueItems = dispatchPlan.rescheduleItems,
                 firedDueAtMillis = firedDueAtMillis,
             )
         }
-
-        rescheduleDispatchedTodos(
-            scheduler = appContainer.reminderScheduler,
-            storage = storage,
-            state = state,
-            dueItems = dispatchPlan.rescheduleItems,
-            firedDueAtMillis = firedDueAtMillis,
-        )
     }
 
     private fun rescheduleDispatchedTodos(
@@ -91,10 +130,10 @@ class TodoAlarmReceiver : BroadcastReceiver() {
 
     private fun dispatchSignature(
         firedDueAtMillis: Long,
-        triggerAlertMode: ReminderAlertMode,
+        delivery: XHighReminderDelivery,
         dispatchPlan: ReminderDispatchPlan,
     ): String {
-        return "$triggerAlertMode:$firedDueAtMillis:${dispatchPlan.signatureIds.joinToString(",")}"
+        return "$delivery:$firedDueAtMillis:${dispatchPlan.signatureIds.joinToString(",")}"
     }
 
     private fun wasRecentlyDispatched(context: Context, signature: String): Boolean {
@@ -105,11 +144,16 @@ class TodoAlarmReceiver : BroadcastReceiver() {
         if (signature == lastSignature && nowMillis - lastDispatchedAt in 0L..DISPATCH_DEDUP_WINDOW_MILLIS) {
             return true
         }
+        return false
+    }
+
+    private fun recordDispatch(context: Context, signature: String) {
+        val nowMillis = System.currentTimeMillis()
+        val preferences = context.getSharedPreferences(DISPATCH_PREFS_NAME, Context.MODE_PRIVATE)
         preferences.edit()
             .putString(KEY_LAST_SIGNATURE, signature)
             .putLong(KEY_LAST_DISPATCHED_AT, nowMillis)
             .apply()
-        return false
     }
 
     private companion object {

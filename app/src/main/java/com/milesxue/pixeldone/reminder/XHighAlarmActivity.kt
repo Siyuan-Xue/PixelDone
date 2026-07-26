@@ -1,12 +1,16 @@
 package com.milesxue.pixeldone.reminder
 
+import android.app.ActivityOptions
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -38,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
+import androidx.core.content.ContextCompat
 import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.TodoPriority
@@ -55,36 +60,68 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 class XHighAlarmActivity : ComponentActivity() {
-    private val todoIds: List<String> by lazy {
-        intent.todoIds()
+    private val alarmPayload = mutableStateOf(AlarmScreenPayload())
+    private var alarmFinishedReceiverRegistered = false
+    private var actionDispatched = false
+    private val alarmFinishedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == XHighAlarmService.ACTION_ALARM_FINISHED) {
+                finish()
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureAlarmWindow()
-
-        val titles = intent.todoTitles(todoIds.size)
-        val firedDueAtMillis = intent.getLongExtra(
-            TodoAlarmScheduler.EXTRA_TODO_DUE_AT,
-            System.currentTimeMillis(),
-        )
+        updateAlarmPayload(intent)
+        onBackPressedDispatcher.addCallback(this) {
+            dispatchAlarmAction(ACTION_SNOOZE_ALARM)
+        }
 
         setContent {
+            val payload = alarmPayload.value
             PixelDoneTheme {
                 XHighAlarmScreen(
-                    titles = titles,
-                    dueTime = firedDueAtMillis.formatAlarmScreenTime(),
+                    titles = payload.titles,
+                    dueTime = payload.firedDueAtMillis.formatAlarmScreenTime(),
                     onStop = {
-                        startService(actionIntent(ACTION_STOP_ALARM))
-                        finish()
+                        dispatchAlarmAction(ACTION_STOP_ALARM)
                     },
                     onSnooze = {
-                        startService(actionIntent(ACTION_SNOOZE_ALARM))
-                        finish()
+                        dispatchAlarmAction(ACTION_SNOOZE_ALARM)
                     },
                 )
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!alarmFinishedReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                alarmFinishedReceiver,
+                IntentFilter(XHighAlarmService.ACTION_ALARM_FINISHED),
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            alarmFinishedReceiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        if (alarmFinishedReceiverRegistered) {
+            unregisterReceiver(alarmFinishedReceiver)
+            alarmFinishedReceiverRegistered = false
+        }
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        actionDispatched = false
+        updateAlarmPayload(intent)
     }
 
     private fun configureAlarmWindow() {
@@ -98,14 +135,31 @@ class XHighAlarmActivity : ComponentActivity() {
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
             )
         }
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON,
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun updateAlarmPayload(sourceIntent: Intent) {
+        val todoIds = sourceIntent.todoIds()
+        alarmPayload.value = AlarmScreenPayload(
+            todoIds = todoIds,
+            titles = sourceIntent.todoTitles(todoIds.size),
+            firedDueAtMillis = sourceIntent.getLongExtra(
+                TodoAlarmScheduler.EXTRA_TODO_DUE_AT,
+                System.currentTimeMillis(),
+            ),
         )
+    }
+
+    private fun dispatchAlarmAction(action: String) {
+        if (actionDispatched) return
+        actionDispatched = true
+        startService(actionIntent(action))
+        finish()
     }
 
     private fun actionIntent(action: String): Intent {
         val sourceIntent = intent
+        val todoIds = alarmPayload.value.todoIds
         return Intent(this, XHighAlarmService::class.java).apply {
             this.action = action
             putStringArrayListExtra(XHighAlarmService.EXTRA_BATCH_TODO_IDS, ArrayList(todoIds))
@@ -188,11 +242,29 @@ class XHighAlarmActivity : ComponentActivity() {
                 putExtra(TodoAlarmScheduler.EXTRA_TODO_TITLE, safeItems.first().title)
                 putExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, firedDueAtMillis)
             }
+            val creatorOptions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                val backgroundStartMode = if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA
+                ) {
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+                } else {
+                    @Suppress("DEPRECATION")
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                }
+                ActivityOptions.makeBasic()
+                    .setPendingIntentCreatorBackgroundActivityStartMode(
+                        backgroundStartMode,
+                    )
+                    .toBundle()
+            } else {
+                null
+            }
             return PendingIntent.getActivity(
                 context,
                 batchRequestCode(safeItems, firedDueAtMillis),
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                creatorOptions,
             )
         }
 
@@ -202,6 +274,12 @@ class XHighAlarmActivity : ComponentActivity() {
     }
 }
 
+private data class AlarmScreenPayload(
+    val todoIds: List<String> = emptyList(),
+    val titles: List<String> = emptyList(),
+    val firedDueAtMillis: Long = System.currentTimeMillis(),
+)
+
 @Composable
 private fun XHighAlarmScreen(
     titles: List<String>,
@@ -210,7 +288,7 @@ private fun XHighAlarmScreen(
     onSnooze: () -> Unit,
 ) {
     val safeTitles = titles.ifEmpty { listOf(stringResource(R.string.todo_due)) }
-    val selectedIndexState = remember { mutableStateOf(0) }
+    val selectedIndexState = remember(safeTitles) { mutableStateOf(0) }
     val selectedIndex = selectedIndexState.value.coerceIn(0, safeTitles.lastIndex)
     val title = safeTitles[selectedIndex]
     val count = safeTitles.size

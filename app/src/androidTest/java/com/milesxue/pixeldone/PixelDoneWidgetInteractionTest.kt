@@ -8,6 +8,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.milesxue.pixeldone.widget.PixelDoneWidgetConfigStore
 import com.milesxue.pixeldone.widget.PixelDoneWidgetConfigurationActivity
 import com.milesxue.pixeldone.widget.widgetConfigurationIntent
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -65,5 +71,41 @@ class PixelDoneWidgetInteractionTest {
             "paper",
             PixelDoneWidgetConfigStore.checklistId(context, widgetIds[0]),
         )
+    }
+
+    @Test
+    fun checklistSelectionFlowEmitsOnlyThisWidgetChanges() = runBlocking {
+        val observedSelections = Channel<String?>(Channel.UNLIMITED)
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            PixelDoneWidgetConfigStore
+                .checklistIdFlow(context, widgetIds[0])
+                .collect(observedSelections::send)
+        }
+        assertNull(withTimeout(3_000) { observedSelections.receive() })
+
+        assertTrue(
+            PixelDoneWidgetConfigStore.saveChecklistId(
+                context = context,
+                appWidgetId = widgetIds[1],
+                checklistId = "ignored",
+            ),
+        )
+        assertTrue(
+            PixelDoneWidgetConfigStore.saveChecklistId(
+                context = context,
+                appWidgetId = widgetIds[0],
+                checklistId = "paper",
+            ),
+        )
+        assertEquals("paper", withTimeout(3_000) { observedSelections.receive() })
+        assertTrue(
+            PixelDoneWidgetConfigStore.saveChecklistId(
+                context = context,
+                appWidgetId = widgetIds[0],
+                checklistId = "main",
+            ),
+        )
+        assertEquals("main", withTimeout(3_000) { observedSelections.receive() })
+        collector.cancelAndJoin()
     }
 }

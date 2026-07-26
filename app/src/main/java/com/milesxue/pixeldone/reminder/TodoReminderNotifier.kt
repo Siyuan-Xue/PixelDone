@@ -33,24 +33,54 @@ object TodoReminderNotifier {
         context: Context,
         item: TodoItem,
         firedDueAtMillis: Long,
-    ) {
-        showShortNotificationBatch(context, listOf(item), firedDueAtMillis)
-    }
+    ): Boolean = showShortNotificationBatch(context, listOf(item), firedDueAtMillis)
 
     fun showShortNotificationBatch(
         context: Context,
         items: List<TodoItem>,
         firedDueAtMillis: Long,
         replaceExisting: Boolean = false,
-    ) {
-        if (!canPostNotifications(context)) return
-        val dueItems = items.takeIf { it.isNotEmpty() } ?: return
+    ): Boolean {
+        val dueItems = items.takeIf { it.isNotEmpty() } ?: return false
         val notificationManager = context.getSystemService(NotificationManager::class.java)
-        notificationManager.createNotificationChannel(shortNotificationChannel(context))
+        ensureNotificationChannels(context, notificationManager)
+        if (!deliveryCapabilities(context, exactAlarmAccess = false).canShowShortNotification) {
+            return false
+        }
 
         if (dueItems.size == 1) {
             val item = dueItems.single()
             val notificationId = ReminderNotificationIds.shortItem(item.id)
+            return runCatching {
+                if (replaceExisting) {
+                    notificationManager.cancel(notificationId)
+                }
+                notificationManager.notify(
+                    notificationId,
+                    Notification.Builder(context, SHORT_CHANNEL_ID)
+                        .setSmallIcon(R.drawable.ic_notification)
+                        .setContentTitle(item.title)
+                        .setContentText(item.notificationContentText(context, firedDueAtMillis))
+                        .setContentIntent(openAppIntent(context, notificationId))
+                        .setAutoCancel(true)
+                        .setShowWhen(true)
+                        .setWhen(firedDueAtMillis)
+                        .setCategory(Notification.CATEGORY_REMINDER)
+                        .setGroup(SHORT_GROUP_KEY)
+                        .setGroupAlertBehavior(Notification.GROUP_ALERT_ALL)
+                        .setOnlyAlertOnce(false)
+                        .build(),
+                )
+            }.isSuccess
+        }
+
+        val notificationId = ReminderNotificationIds.shortBatch(firedDueAtMillis)
+        val batchTitle = context.resources.getQuantityString(R.plurals.tasks_due, dueItems.size, dueItems.size)
+        val inboxStyle = Notification.InboxStyle().setBigContentTitle(batchTitle)
+        dueItems.take(6).forEach { item ->
+            inboxStyle.addLine(item.title)
+        }
+        return runCatching {
             if (replaceExisting) {
                 notificationManager.cancel(notificationId)
             }
@@ -58,8 +88,10 @@ object TodoReminderNotifier {
                 notificationId,
                 Notification.Builder(context, SHORT_CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setContentTitle(item.title)
-                    .setContentText(item.notificationContentText(context, firedDueAtMillis))
+                    .setContentTitle(batchTitle)
+                    .setContentText(dueItems.previewTitles())
+                    .setStyle(inboxStyle)
+                    .setNumber(dueItems.size)
                     .setContentIntent(openAppIntent(context, notificationId))
                     .setAutoCancel(true)
                     .setShowWhen(true)
@@ -70,36 +102,7 @@ object TodoReminderNotifier {
                     .setOnlyAlertOnce(false)
                     .build(),
             )
-            return
-        }
-
-        val notificationId = ReminderNotificationIds.shortBatch(firedDueAtMillis)
-        if (replaceExisting) {
-            notificationManager.cancel(notificationId)
-        }
-        val batchTitle = context.resources.getQuantityString(R.plurals.tasks_due, dueItems.size, dueItems.size)
-        val inboxStyle = Notification.InboxStyle().setBigContentTitle(batchTitle)
-        dueItems.take(6).forEach { item ->
-            inboxStyle.addLine(item.title)
-        }
-        notificationManager.notify(
-            notificationId,
-            Notification.Builder(context, SHORT_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(batchTitle)
-                .setContentText(dueItems.previewTitles())
-                .setStyle(inboxStyle)
-                .setNumber(dueItems.size)
-                .setContentIntent(openAppIntent(context, notificationId))
-                .setAutoCancel(true)
-                .setShowWhen(true)
-                .setWhen(firedDueAtMillis)
-                .setCategory(Notification.CATEGORY_REMINDER)
-                .setGroup(SHORT_GROUP_KEY)
-                .setGroupAlertBehavior(Notification.GROUP_ALERT_ALL)
-                .setOnlyAlertOnce(false)
-                .build(),
-        )
+        }.isSuccess
     }
 
     fun buildXHighAlarmNotification(
@@ -141,10 +144,9 @@ object TodoReminderNotifier {
             companionShortItems = companionShortItems,
             firedDueAtMillis = firedDueAtMillis,
         )
-        context.getSystemService(NotificationManager::class.java)
-            .createNotificationChannel(xhighNotificationChannel(context))
-
-        return Notification.Builder(context, XHIGH_CHANNEL_ID)
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        ensureNotificationChannels(context, notificationManager)
+        val builder = Notification.Builder(context, XHIGH_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(dueItems.xhighNotificationTitle(context))
             .setContentText(dueItems.xhighNotificationText(context, firedDueAtMillis))
@@ -180,7 +182,10 @@ object TodoReminderNotifier {
                     ),
                 ).build(),
             )
-            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+        return builder.build()
     }
 
     fun alarmSoundUri() =
@@ -191,6 +196,42 @@ object TodoReminderNotifier {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
+    }
+
+    internal fun deliveryCapabilities(
+        context: Context,
+        exactAlarmAccess: Boolean,
+    ): ReminderDeliveryCapabilities {
+        val notificationManager = context.getSystemService(NotificationManager::class.java)
+        ensureNotificationChannels(context, notificationManager)
+        val shortChannel = notificationManager.getNotificationChannel(SHORT_CHANNEL_ID)
+        val xhighChannel = notificationManager.getNotificationChannel(XHIGH_CHANNEL_ID)
+        val fullScreenIntentAccess = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+            runCatching(notificationManager::canUseFullScreenIntent).getOrDefault(false)
+
+        return ReminderDeliveryCapabilities(
+            notificationPermissionGranted = canPostNotifications(context),
+            notificationsEnabled = notificationManager.areNotificationsEnabled(),
+            shortNotificationChannelEnabled =
+                shortChannel?.importance != NotificationManager.IMPORTANCE_NONE,
+            xhighChannelCanInterrupt =
+                (xhighChannel?.importance ?: NotificationManager.IMPORTANCE_HIGH) >=
+                    NotificationManager.IMPORTANCE_HIGH,
+            exactAlarmAccess = exactAlarmAccess,
+            fullScreenIntentAccess = fullScreenIntentAccess,
+        )
+    }
+
+    private fun ensureNotificationChannels(
+        context: Context,
+        notificationManager: NotificationManager,
+    ) {
+        notificationManager.createNotificationChannels(
+            listOf(
+                shortNotificationChannel(context),
+                xhighNotificationChannel(context),
+            ),
+        )
     }
 
     private fun shortNotificationChannel(context: Context): NotificationChannel {

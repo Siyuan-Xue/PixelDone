@@ -6,12 +6,16 @@ import com.milesxue.pixeldone.domain.todo.TodoChecklistState
 import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.TodoPriority
 import com.milesxue.pixeldone.domain.todo.TrashChecklistId
+import com.milesxue.pixeldone.widget.completeWidgetTodo
 import com.milesxue.pixeldone.widget.configuredWidgetChecklistId
 import com.milesxue.pixeldone.widget.widgetChecklists
 import com.milesxue.pixeldone.widget.widgetItemId
 import com.milesxue.pixeldone.widget.widgetTodos
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PixelDoneWidgetRulesTest {
@@ -48,6 +52,35 @@ class PixelDoneWidgetRulesTest {
         assertEquals(null, configuredWidgetChecklistId(listOf(main), configuredChecklistId = null))
         assertEquals(null, configuredWidgetChecklistId(listOf(main), configuredChecklistId = "missing"))
         assertEquals("main", configuredWidgetChecklistId(listOf(main), configuredChecklistId = "main"))
+    }
+
+    @Test
+    fun completingFromWidgetIsIdempotent() {
+        val original = TodoChecklistState(
+            lists = listOf(
+                checklist(
+                    id = "paper",
+                    items = listOf(todo("task", TodoPriority.MEDIUM)),
+                ),
+            ),
+            selectedListId = "paper",
+        )
+
+        val first = completeWidgetTodo(
+            state = original,
+            checklistId = "paper",
+            todoId = "task",
+        )
+        val second = completeWidgetTodo(
+            state = first.state,
+            checklistId = "paper",
+            todoId = "task",
+        )
+
+        assertTrue(first.changed)
+        assertTrue(first.state.lists.single().items.single().completed)
+        assertFalse(second.changed)
+        assertSame(first.state, second.state)
     }
 
     private fun checklist(id: String, items: List<TodoItem>) = TodoChecklist(

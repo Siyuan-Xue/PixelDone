@@ -2,4 +2,11 @@
 <resources>
 
     <style name="Theme.PixelDone" parent="Theme.AppCompat.Light.NoActionBar" />
+
+    <style name="Theme.PixelDone.XHighAlarm">
+        <item name="android:windowBackground">@color/pixeldone_alarm_window_background</item>
+        <item name="android:statusBarColor">@color/pixeldone_alarm_window_background</item>
+        <item name="android:navigationBarColor">@color/pixeldone_alarm_window_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>
