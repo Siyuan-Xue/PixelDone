@@ -368,7 +368,7 @@ class TodoEngineTest {
     }
 
     @Test
-    fun reminderModesMapXhighToSystemAlarmAndOtherPrioritiesToShortNotifications() {
+    fun reminderModesMapXhighToSystemAlarmAndOtherPrioritiesToExactShortNotifications() {
         assertEquals(
             ReminderScheduleMode.SYSTEM_ALARM,
             reminderScheduleMode(
@@ -384,7 +384,7 @@ class TodoEngineTest {
             ),
         )
         assertEquals(
-            ReminderScheduleMode.INEXACT_NOTIFICATION,
+            ReminderScheduleMode.EXACT_NOTIFICATION,
             reminderScheduleMode(
                 item("high", TodoPriority.HIGH, due = 2_000L),
                 nowMillis = 1_000L,
@@ -398,14 +398,14 @@ class TodoEngineTest {
             ),
         )
         assertEquals(
-            ReminderScheduleMode.INEXACT_NOTIFICATION,
+            ReminderScheduleMode.EXACT_NOTIFICATION,
             reminderScheduleMode(
                 item("mid", TodoPriority.MEDIUM, due = 2_000L),
                 nowMillis = 1_000L,
             ),
         )
         assertEquals(
-            ReminderScheduleMode.INEXACT_NOTIFICATION,
+            ReminderScheduleMode.EXACT_NOTIFICATION,
             reminderScheduleMode(
                 item("low", TodoPriority.LOW, due = 2_000L),
                 nowMillis = 1_000L,
@@ -435,6 +435,7 @@ class TodoEngineTest {
         assertEquals(
             setOf(
                 ReminderCapability.NOTIFICATION_PERMISSION,
+                ReminderCapability.EXACT_ALARM_ACCESS,
             ),
             requiredReminderCapabilities(
                 item("high", TodoPriority.HIGH, due = 2_000L),
@@ -551,6 +552,36 @@ class TodoEngineTest {
         assertEquals(
             ReminderScheduleMode.INEXACT_NOTIFICATION,
             effectiveReminderScheduleMode(
+                item = high,
+                nowMillis = 1_000L,
+                canScheduleExactAlarms = false,
+            ),
+        )
+    }
+
+    @Test
+    fun normalReminderUsesExactSchedulingWhenAvailableAndAllowWhileIdleFallbackOtherwise() {
+        val high = item("high", TodoPriority.HIGH, due = 2_000L)
+
+        assertEquals(
+            ReminderScheduleMode.EXACT_NOTIFICATION,
+            effectiveReminderScheduleMode(
+                item = high,
+                nowMillis = 1_000L,
+                canScheduleExactAlarms = true,
+            ),
+        )
+        assertEquals(
+            ReminderScheduleMode.INEXACT_NOTIFICATION,
+            effectiveReminderScheduleMode(
+                item = high,
+                nowMillis = 1_000L,
+                canScheduleExactAlarms = false,
+            ),
+        )
+        assertEquals(
+            ReminderAlertMode.SHORT_NOTIFICATION,
+            effectiveReminderAlertMode(
                 item = high,
                 nowMillis = 1_000L,
                 canScheduleExactAlarms = false,

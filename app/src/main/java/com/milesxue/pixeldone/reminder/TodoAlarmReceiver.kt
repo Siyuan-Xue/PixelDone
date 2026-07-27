@@ -3,15 +3,16 @@ package com.milesxue.pixeldone.reminder
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.milesxue.pixeldone.data.todo.TodoRepository
+import android.util.Log
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
 import com.milesxue.pixeldone.domain.todo.ReminderAlertMode
 import com.milesxue.pixeldone.domain.todo.ReminderDispatchPlan
-import com.milesxue.pixeldone.domain.todo.TodoChecklistState
-import com.milesxue.pixeldone.domain.todo.TodoItem
-import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodosAfterReminder
 import com.milesxue.pixeldone.domain.todo.normalTodos
 import com.milesxue.pixeldone.domain.todo.reminderDispatchPlan
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * 系统闹钟广播入口。
@@ -21,7 +22,31 @@ import com.milesxue.pixeldone.domain.todo.reminderDispatchPlan
  */
 class TodoAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val firedDueAtMillis = intent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, 0L)
+        val pendingResult = goAsync()
+        val appContext = context.applicationContext
+        val alarmIntent = Intent(intent)
+        receiverScope.launch {
+            try {
+                dispatch(appContext, alarmIntent)
+            } catch (error: Throwable) {
+                Log.e(LOG_TAG, "Unable to dispatch todo reminder", error)
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+
+    private fun dispatch(context: Context, intent: Intent) {
+        synchronized(dispatchLock) {
+            dispatchSerially(context, intent)
+        }
+    }
+
+    private fun dispatchSerially(context: Context, intent: Intent) {
+        val firedDueAtMillis = intent.getLongExtra(
+            TodoAlarmScheduler.EXTRA_REMINDER_OCCURRENCE_AT,
+            intent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, 0L),
+        )
         if (firedDueAtMillis <= 0L) return
         val triggerAlertMode = intent.getStringExtra(TodoAlarmScheduler.EXTRA_ALERT_MODE)
             ?.let { mode -> ReminderAlertMode.entries.firstOrNull { it.name == mode } }
@@ -29,11 +54,28 @@ class TodoAlarmReceiver : BroadcastReceiver() {
         val triggerTodoId = intent.getStringExtra(TodoAlarmScheduler.EXTRA_TODO_ID)
 
         val appContainer = context.pixelDoneAppContainer()
-        val storage = appContainer.todoRepository
-        val state = storage.loadTodoState()
+        val occurrenceCoordinator = appContainer.reminderOccurrenceCoordinator
+        val state = appContainer.todoRepository.loadTodoState()
+        val allItems = normalTodos(state)
+        val occurrencePartition = partitionReminderOccurrence(
+            items = allItems,
+            occurrenceAtMillis = firedDueAtMillis,
+            wasDelivered = occurrenceCoordinator::wasDelivered,
+        )
+        val previouslyDeliveredIds = occurrencePartition.alreadyDeliveredTodoIds
+        if (previouslyDeliveredIds.isNotEmpty()) {
+            runCatching {
+                occurrenceCoordinator.advanceDeliveredTodos(
+                    todoIds = previouslyDeliveredIds,
+                    occurrenceAtMillis = firedDueAtMillis,
+                )
+            }.onFailure { error ->
+                Log.e(LOG_TAG, "Unable to reconcile an already delivered reminder", error)
+            }
+        }
         val hasExactAlarmAccess = appContainer.reminderScheduler.canScheduleExactAlarms()
         val dispatchPlan = reminderDispatchPlan(
-            items = normalTodos(state),
+            items = occurrencePartition.dispatchCandidateItems,
             firedDueAtMillis = firedDueAtMillis,
             triggerTodoId = triggerTodoId,
             triggerAlertMode = triggerAlertMode,
@@ -90,41 +132,21 @@ class TodoAlarmReceiver : BroadcastReceiver() {
         if (!delivered) {
             return
         }
+
+        if (delivery != XHighReminderDelivery.FULLSCREEN_LOOP) {
+            runCatching {
+                occurrenceCoordinator.recordDeliveredAndAdvance(
+                    todoIds = dispatchPlan.rescheduleItems
+                        .mapTo(mutableSetOf()) { item -> item.id },
+                    occurrenceAtMillis = firedDueAtMillis,
+                )
+            }.onFailure { error ->
+                Log.e(LOG_TAG, "Unable to advance delivered recurring reminders", error)
+            }
+        }
         recordDispatch(
             context,
             dispatchSignature(firedDueAtMillis, delivery, dispatchPlan),
-        )
-
-        if (delivery != XHighReminderDelivery.FULLSCREEN_LOOP) {
-            rescheduleDispatchedTodos(
-                scheduler = appContainer.reminderScheduler,
-                storage = storage,
-                state = state,
-                dueItems = dispatchPlan.rescheduleItems,
-                firedDueAtMillis = firedDueAtMillis,
-            )
-        }
-    }
-
-    private fun rescheduleDispatchedTodos(
-        scheduler: ReminderScheduler,
-        storage: TodoRepository,
-        state: TodoChecklistState,
-        dueItems: List<TodoItem>,
-        firedDueAtMillis: Long,
-    ) {
-        val updatedState = advanceRepeatingTodosAfterReminder(
-            state = state,
-            todoIds = dueItems.mapTo(mutableSetOf()) { it.id },
-            nowMillis = maxOf(System.currentTimeMillis(), firedDueAtMillis),
-        ) ?: state
-        if (updatedState != state) {
-            storage.saveTodoState(updatedState)
-        }
-
-        scheduler.sync(
-            previousItems = normalTodos(state),
-            currentItems = normalTodos(updatedState),
         )
     }
 
@@ -157,9 +179,12 @@ class TodoAlarmReceiver : BroadcastReceiver() {
     }
 
     private companion object {
+        private const val LOG_TAG = "TodoAlarmReceiver"
         private const val DISPATCH_PREFS_NAME = "todo_alarm_dispatch"
         private const val KEY_LAST_SIGNATURE = "last_signature"
         private const val KEY_LAST_DISPATCHED_AT = "last_dispatched_at"
         private const val DISPATCH_DEDUP_WINDOW_MILLIS = 2L * 60L * 1000L
+        private val dispatchLock = Any()
+        private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 }

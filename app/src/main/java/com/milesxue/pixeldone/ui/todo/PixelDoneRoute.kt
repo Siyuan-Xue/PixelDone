@@ -517,8 +517,6 @@ internal fun PixelDoneApp(
 
     LaunchedEffect(Unit) {
         cleanupInstalledUpdateIfNeeded()
-        val currentTodos = normalTodos(checklistState)
-        reminderScheduler.sync(currentTodos, currentTodos)
     }
 
     LaunchedEffect(checklistIds) {
@@ -846,7 +844,7 @@ internal fun PixelDoneApp(
     ) {
         permissionRefreshTick += 1
         val currentTodos = normalTodos(currentChecklistState)
-        reminderScheduler.sync(currentTodos, currentTodos)
+        reminderScheduler.rescheduleAll(currentTodos)
         val followUpTodoId = pendingFullScreenPermissionTodoId
         if (
             followUpTodoId != null &&
@@ -888,7 +886,7 @@ internal fun PixelDoneApp(
         permissionRefreshTick += 1
         if (granted) {
             val currentTodos = normalTodos(currentChecklistState)
-            reminderScheduler.sync(currentTodos, currentTodos)
+            reminderScheduler.reconcileOverdue(currentTodos)
             pendingReminderPermissionTodoId
                 ?.let { id -> normalTodos(currentChecklistState).firstOrNull { it.id == id } }
                 ?.let(::requestSystemReminderPermissionIfNeeded)
@@ -1640,7 +1638,7 @@ internal fun PixelDoneApp(
                     refreshActiveXHighAlarm()
                     cleanupInstalledUpdateIfNeeded()
                     val currentTodos = normalTodos(currentChecklistState)
-                    reminderScheduler.sync(currentTodos, currentTodos)
+                    reminderScheduler.recover(currentTodos)
                     val pendingInstall = pendingUpdateInstallDownload
                     if (pendingInstall != null && hasInstallUpdatePermission()) {
                         openDownloadedUpdate(pendingInstall)
@@ -1689,7 +1687,7 @@ internal fun PixelDoneApp(
                     }
                     permissionRefreshTick += 1
                     val currentTodos = normalTodos(currentChecklistState)
-                    reminderScheduler.sync(currentTodos, currentTodos)
+                    reminderScheduler.rescheduleAll(currentTodos)
                 }
             }
             val filter = IntentFilter(

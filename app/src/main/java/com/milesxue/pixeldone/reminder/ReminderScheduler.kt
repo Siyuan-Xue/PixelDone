@@ -12,11 +12,36 @@ import com.milesxue.pixeldone.domain.todo.TodoItem
 interface ReminderScheduler {
     fun sync(previousItems: List<TodoItem>, currentItems: List<TodoItem>): Set<ReminderCapability>
     fun schedule(item: TodoItem): Set<ReminderCapability>
+    fun recover(items: List<TodoItem>): Set<ReminderCapability> = sync(emptyList(), items)
+    fun rescheduleAll(items: List<TodoItem>): Set<ReminderCapability> = sync(emptyList(), items)
+    fun reconcileOverdue(items: List<TodoItem>): Set<ReminderCapability> = emptySet()
     fun canScheduleExactAlarms(): Boolean
     fun cancel(itemId: String)
 }
 
+internal enum class ReminderRecoveryMode {
+    RESCHEDULE_ALL,
+    RECONCILE_OVERDUE,
+}
+
+internal fun reminderRecoveryMode(
+    previousExactAlarmAccess: Boolean?,
+    currentExactAlarmAccess: Boolean,
+): ReminderRecoveryMode {
+    return if (
+        previousExactAlarmAccess == null ||
+        previousExactAlarmAccess != currentExactAlarmAccess
+    ) {
+        ReminderRecoveryMode.RESCHEDULE_ALL
+    } else {
+        ReminderRecoveryMode.RECONCILE_OVERDUE
+    }
+}
+
 class AndroidReminderScheduler(private val context: Context) : ReminderScheduler {
+    private val recoveryLock = Any()
+    private var recoveredExactAlarmAccess: Boolean? = null
+
     override fun sync(
         previousItems: List<TodoItem>,
         currentItems: List<TodoItem>,
@@ -24,6 +49,35 @@ class AndroidReminderScheduler(private val context: Context) : ReminderScheduler
 
     override fun schedule(item: TodoItem): Set<ReminderCapability> =
         TodoAlarmScheduler.schedule(context, item)
+
+    override fun recover(items: List<TodoItem>): Set<ReminderCapability> {
+        return synchronized(recoveryLock) {
+            val currentExactAlarmAccess = TodoAlarmScheduler.canScheduleExactAlarms(context)
+            val previousExactAlarmAccess = recoveredExactAlarmAccess
+            recoveredExactAlarmAccess = currentExactAlarmAccess
+            when (
+                reminderRecoveryMode(
+                    previousExactAlarmAccess = previousExactAlarmAccess,
+                    currentExactAlarmAccess = currentExactAlarmAccess,
+                )
+            ) {
+                ReminderRecoveryMode.RESCHEDULE_ALL ->
+                    TodoAlarmScheduler.rescheduleAll(context, items)
+                ReminderRecoveryMode.RECONCILE_OVERDUE ->
+                    TodoAlarmScheduler.reconcileOverdue(context, items)
+            }
+        }
+    }
+
+    override fun rescheduleAll(items: List<TodoItem>): Set<ReminderCapability> {
+        return synchronized(recoveryLock) {
+            recoveredExactAlarmAccess = TodoAlarmScheduler.canScheduleExactAlarms(context)
+            TodoAlarmScheduler.rescheduleAll(context, items)
+        }
+    }
+
+    override fun reconcileOverdue(items: List<TodoItem>): Set<ReminderCapability> =
+        TodoAlarmScheduler.reconcileOverdue(context, items)
 
     override fun canScheduleExactAlarms(): Boolean =
         TodoAlarmScheduler.canScheduleExactAlarms(context)

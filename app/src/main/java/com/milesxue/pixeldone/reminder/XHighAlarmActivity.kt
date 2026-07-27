@@ -144,8 +144,11 @@ class XHighAlarmActivity : ComponentActivity() {
             todoIds = todoIds,
             titles = sourceIntent.todoTitles(todoIds.size),
             firedDueAtMillis = sourceIntent.getLongExtra(
-                TodoAlarmScheduler.EXTRA_TODO_DUE_AT,
-                System.currentTimeMillis(),
+                TodoAlarmScheduler.EXTRA_REMINDER_OCCURRENCE_AT,
+                sourceIntent.getLongExtra(
+                    TodoAlarmScheduler.EXTRA_TODO_DUE_AT,
+                    System.currentTimeMillis(),
+                ),
             ),
         )
     }
@@ -166,7 +169,11 @@ class XHighAlarmActivity : ComponentActivity() {
             todoIds.firstOrNull()?.let { putExtra(TodoAlarmScheduler.EXTRA_TODO_ID, it) }
             putExtra(
                 TodoAlarmScheduler.EXTRA_TODO_DUE_AT,
-                sourceIntent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, 0L),
+                alarmPayload.value.firedDueAtMillis,
+            )
+            putExtra(
+                TodoAlarmScheduler.EXTRA_REMINDER_OCCURRENCE_AT,
+                alarmPayload.value.firedDueAtMillis,
             )
             copyStringArrayListExtraFrom(sourceIntent, XHighAlarmService.EXTRA_COMPANION_TODO_IDS)
             copyStringArrayListExtraFrom(sourceIntent, XHighAlarmService.EXTRA_COMPANION_TODO_TITLES)
@@ -241,6 +248,7 @@ class XHighAlarmActivity : ComponentActivity() {
                 putExtra(TodoAlarmScheduler.EXTRA_TODO_ID, safeItems.first().id)
                 putExtra(TodoAlarmScheduler.EXTRA_TODO_TITLE, safeItems.first().title)
                 putExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, firedDueAtMillis)
+                putExtra(TodoAlarmScheduler.EXTRA_REMINDER_OCCURRENCE_AT, firedDueAtMillis)
             }
             val creatorOptions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 val backgroundStartMode = if (

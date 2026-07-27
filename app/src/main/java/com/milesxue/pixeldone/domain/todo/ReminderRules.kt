@@ -7,7 +7,7 @@
 
 fun shouldScheduleTodoAlarm(item: TodoItem, nowMillis: Long): Boolean {
     if (isTrashedTodo(item)) return false
-    return nextReminderAtMillis(item, nowMillis) != null
+    return reminderAlarmTarget(item, nowMillis) != null
 }
 
 fun reminderScheduleMode(item: TodoItem, nowMillis: Long): ReminderScheduleMode? {
@@ -17,7 +17,7 @@ fun reminderScheduleMode(item: TodoItem, nowMillis: Long): ReminderScheduleMode?
         TodoPriority.HIGH,
         TodoPriority.MEDIUM,
         TodoPriority.LOW,
-        -> ReminderScheduleMode.INEXACT_NOTIFICATION
+        -> ReminderScheduleMode.EXACT_NOTIFICATION
     }
 }
 
@@ -41,6 +41,7 @@ fun requiredReminderCapabilities(item: TodoItem, nowMillis: Long): Set<ReminderC
         )
         ReminderAlertMode.SHORT_NOTIFICATION -> setOf(
             ReminderCapability.NOTIFICATION_PERMISSION,
+            ReminderCapability.EXACT_ALARM_ACCESS,
         )
         null -> emptySet()
     }
@@ -52,7 +53,13 @@ fun effectiveReminderScheduleMode(
     canScheduleExactAlarms: Boolean,
 ): ReminderScheduleMode? {
     val idealMode = reminderScheduleMode(item, nowMillis) ?: return null
-    return if (idealMode == ReminderScheduleMode.SYSTEM_ALARM && !canScheduleExactAlarms) {
+    return if (
+        idealMode in setOf(
+            ReminderScheduleMode.SYSTEM_ALARM,
+            ReminderScheduleMode.EXACT_NOTIFICATION,
+        ) &&
+        !canScheduleExactAlarms
+    ) {
         ReminderScheduleMode.INEXACT_NOTIFICATION
     } else {
         idealMode
@@ -78,16 +85,16 @@ fun canScheduleExactAlarmForSdk(sdkInt: Int, canScheduleExactAlarms: Boolean): B
 
 fun shouldDispatchTodoReminder(item: TodoItem, firedDueAtMillis: Long): Boolean {
     if (isTrashedTodo(item) || item.completed || firedDueAtMillis <= 0L) return false
-    if (item.dueAtMillis <= 0L || firedDueAtMillis < item.dueAtMillis) return false
+    if (item.dueAtMillis <= 0L) return false
 
     return when (item.reminderRepeat) {
         ReminderRepeat.NONE -> item.dueAtMillis == firedDueAtMillis
-        ReminderRepeat.DAILY -> isAlignedRepeatingReminder(
+        ReminderRepeat.DAILY -> isCurrentOrImmediatelyPreviousRepeatingReminder(
             dueAtMillis = item.dueAtMillis,
             firedDueAtMillis = firedDueAtMillis,
             intervalMillis = DailyReminderIntervalMillis,
         )
-        ReminderRepeat.WEEKLY -> isAlignedRepeatingReminder(
+        ReminderRepeat.WEEKLY -> isCurrentOrImmediatelyPreviousRepeatingReminder(
             dueAtMillis = item.dueAtMillis,
             firedDueAtMillis = firedDueAtMillis,
             intervalMillis = WeeklyReminderIntervalMillis,
@@ -130,6 +137,9 @@ fun reminderDispatchPlan(
     canScheduleExactAlarms: Boolean,
 ): ReminderDispatchPlan {
     val dueItems = todosDueForReminder(items, firedDueAtMillis)
+        .filter { item ->
+            item.dueAtMillis <= firedDueAtMillis || item.id == triggerTodoId
+        }
     if (dueItems.isEmpty()) return ReminderDispatchPlan()
 
     val triggerItem = triggerTodoId?.let { id -> dueItems.firstOrNull { it.id == id } }
@@ -256,6 +266,39 @@ fun nextReminderAtMillis(
     }
 }
 
+fun reminderAlarmTarget(
+    item: TodoItem,
+    nowMillis: Long,
+): ReminderAlarmTarget? {
+    if (isTrashedTodo(item) || item.completed || item.dueAtMillis <= 0L) return null
+
+    if (item.reminderRepeat == ReminderRepeat.NONE) {
+        return item.dueAtMillis
+            .takeIf { it > nowMillis }
+            ?.let { dueAtMillis ->
+                ReminderAlarmTarget(
+                    triggerAtMillis = dueAtMillis,
+                    occurrenceAtMillis = dueAtMillis,
+                )
+            }
+    }
+
+    val intervalMillis = when (item.reminderRepeat) {
+        ReminderRepeat.DAILY -> DailyReminderIntervalMillis
+        ReminderRepeat.WEEKLY -> WeeklyReminderIntervalMillis
+        ReminderRepeat.NONE -> error("Handled above")
+    }
+    val occurrenceAtMillis = latestRepeatingReminderAtOrBefore(
+        dueAtMillis = item.dueAtMillis,
+        intervalMillis = intervalMillis,
+        nowMillis = nowMillis,
+    )
+    return ReminderAlarmTarget(
+        triggerAtMillis = maxOf(nowMillis, occurrenceAtMillis),
+        occurrenceAtMillis = occurrenceAtMillis,
+    )
+}
+
 fun normalizeRepeatingDueAtMillis(
     dueAtMillis: Long,
     reminderRepeat: ReminderRepeat,
@@ -339,10 +382,24 @@ private fun nextRepeatingReminderAtMillis(
     return nextAtMillis.takeIf { it > nowMillis }
 }
 
-private fun isAlignedRepeatingReminder(
+private fun latestRepeatingReminderAtOrBefore(
+    dueAtMillis: Long,
+    intervalMillis: Long,
+    nowMillis: Long,
+): Long {
+    if (dueAtMillis > nowMillis) return dueAtMillis
+    val elapsedIntervals = (nowMillis - dueAtMillis) / intervalMillis
+    return dueAtMillis + (elapsedIntervals * intervalMillis)
+}
+
+private fun isCurrentOrImmediatelyPreviousRepeatingReminder(
     dueAtMillis: Long,
     firedDueAtMillis: Long,
     intervalMillis: Long,
 ): Boolean {
-    return (firedDueAtMillis - dueAtMillis) % intervalMillis == 0L
+    return if (firedDueAtMillis >= dueAtMillis) {
+        (firedDueAtMillis - dueAtMillis) % intervalMillis == 0L
+    } else {
+        dueAtMillis - firedDueAtMillis == intervalMillis
+    }
 }

@@ -10,15 +10,12 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import com.milesxue.pixeldone.R
 import com.milesxue.pixeldone.di.pixelDoneAppContainer
-import com.milesxue.pixeldone.domain.todo.DefaultSnoozeIntervalMillis
 import com.milesxue.pixeldone.domain.todo.ReminderRepeat
 import com.milesxue.pixeldone.domain.todo.TodoItem
 import com.milesxue.pixeldone.domain.todo.TodoPriority
-import com.milesxue.pixeldone.domain.todo.advanceRepeatingTodosAfterReminder
-import com.milesxue.pixeldone.domain.todo.normalTodos
-import com.milesxue.pixeldone.domain.todo.snoozeTodosAfterReminder
 
 class XHighAlarmService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -57,7 +54,12 @@ class XHighAlarmService : Service() {
                 restoreCompanionShortItems(intent)
                 val todoIds = intent.todoIds().ifEmpty { activeTodoIds }
                 playbackController.stop()
-                if (todoIds.isNotEmpty()) snoozeAlarms(todoIds)
+                if (todoIds.isNotEmpty()) {
+                    runCatching { snoozeAlarms(todoIds) }
+                        .onFailure { error ->
+                            Log.e(LOG_TAG, "Unable to persist snoozed reminders", error)
+                        }
+                }
                 stopAlarm(showCompanionShortReminder = true)
             }
         }
@@ -86,7 +88,7 @@ class XHighAlarmService : Service() {
         // A newer START must retire the previous loop before notification or storage Binder work.
         playbackController.stop()
         activeTodoIds = items.map { it.id }
-        val firedDueAtMillis = intent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, items.first().dueAtMillis)
+        val firedDueAtMillis = intent.reminderOccurrenceAt(items.first().dueAtMillis)
         val companionShortItems = intent.toCompanionShortItems(firedDueAtMillis)
         activeCompanionShortItems = companionShortItems
         activeFiredDueAtMillis = firedDueAtMillis
@@ -198,7 +200,7 @@ class XHighAlarmService : Service() {
 
     private fun restoreCompanionShortItems(intent: Intent) {
         if (activeCompanionShortItems.isNotEmpty()) return
-        val firedDueAtMillis = intent.getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, 0L)
+        val firedDueAtMillis = intent.reminderOccurrenceAt(0L)
         activeCompanionShortItems = intent.toCompanionShortItems(firedDueAtMillis)
         activeFiredDueAtMillis = firedDueAtMillis
     }
@@ -262,16 +264,10 @@ class XHighAlarmService : Service() {
     }
 
     private fun snoozeAlarms(todoIds: List<String>) {
-        val appContainer = pixelDoneAppContainer()
-        val storage = appContainer.todoRepository
-        val state = storage.loadTodoState()
-        val updatedState = snoozeTodosAfterReminder(
-            state = state,
+        pixelDoneAppContainer().reminderOccurrenceCoordinator.snoozeTodos(
             todoIds = todoIds.toSet(),
-            nowMillis = System.currentTimeMillis(),
-        ) ?: return
-        storage.saveTodoState(updatedState)
-        appContainer.reminderScheduler.sync(normalTodos(state), normalTodos(updatedState))
+            occurrenceAtMillis = activeFiredDueAtMillis,
+        )
     }
 
     private fun rescheduleDeliveredTodos(
@@ -279,21 +275,14 @@ class XHighAlarmService : Service() {
         firedDueAtMillis: Long,
     ) {
         if (todoIds.isEmpty()) return
-        val appContainer = pixelDoneAppContainer()
-        val storage = appContainer.todoRepository
-        val state = storage.loadTodoState()
-        val updatedState = advanceRepeatingTodosAfterReminder(
-            state = state,
-            todoIds = todoIds,
-            nowMillis = maxOf(System.currentTimeMillis(), firedDueAtMillis),
-        ) ?: state
-        if (updatedState != state) {
-            storage.saveTodoState(updatedState)
+        runCatching {
+            pixelDoneAppContainer().reminderOccurrenceCoordinator.recordDeliveredAndAdvance(
+                todoIds = todoIds,
+                occurrenceAtMillis = firedDueAtMillis,
+            )
+        }.onFailure { error ->
+            Log.e(LOG_TAG, "Unable to advance delivered recurring reminders", error)
         }
-        appContainer.reminderScheduler.sync(
-            previousItems = normalTodos(state),
-            currentItems = normalTodos(updatedState),
-        )
     }
 
     private fun signalAlarmFinished() {
@@ -316,7 +305,7 @@ class XHighAlarmService : Service() {
         val todoIds = todoIds()
         if (todoIds.isEmpty()) return emptyList()
         val titles = getStringArrayListExtra(EXTRA_BATCH_TODO_TITLES).orEmpty()
-        val dueAtMillis = getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, System.currentTimeMillis())
+        val dueAtMillis = reminderOccurrenceAt(System.currentTimeMillis())
 
         return todoIds.mapIndexed { index, todoId ->
             TodoItem(
@@ -369,7 +358,15 @@ class XHighAlarmService : Service() {
             .orEmpty()
     }
 
+    private fun Intent.reminderOccurrenceAt(defaultValue: Long): Long {
+        return getLongExtra(
+            TodoAlarmScheduler.EXTRA_REMINDER_OCCURRENCE_AT,
+            getLongExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, defaultValue),
+        )
+    }
+
     companion object {
+        private const val LOG_TAG = "XHighAlarmService"
         const val ACTION_START_ALARM = "com.milesxue.pixeldone.action.START_XHIGH_ALARM"
         const val ACTION_STOP_ALARM = "com.milesxue.pixeldone.action.STOP_XHIGH_ALARM"
         const val ACTION_SNOOZE_ALARM = "com.milesxue.pixeldone.action.SNOOZE_XHIGH_ALARM"
@@ -402,6 +399,7 @@ class XHighAlarmService : Service() {
                 putExtra(TodoAlarmScheduler.EXTRA_TODO_TITLE, items.first().title)
                 putExtra(TodoAlarmScheduler.EXTRA_TODO_PRIORITY, TodoPriority.XHIGH.name)
                 putExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, firedDueAtMillis)
+                putExtra(TodoAlarmScheduler.EXTRA_REMINDER_OCCURRENCE_AT, firedDueAtMillis)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -452,6 +450,7 @@ class XHighAlarmService : Service() {
                 putCompanionShortItems(companionShortItems)
                 if (firedDueAtMillis > 0L) {
                     putExtra(TodoAlarmScheduler.EXTRA_TODO_DUE_AT, firedDueAtMillis)
+                    putExtra(TodoAlarmScheduler.EXTRA_REMINDER_OCCURRENCE_AT, firedDueAtMillis)
                 }
             }
         }

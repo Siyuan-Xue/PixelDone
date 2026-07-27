@@ -32,7 +32,9 @@ import com.milesxue.pixeldone.domain.todo.ClockProvider
 import com.milesxue.pixeldone.domain.todo.SystemClockProvider
 import com.milesxue.pixeldone.reminder.ActiveXHighAlarmStore
 import com.milesxue.pixeldone.reminder.AndroidReminderScheduler
+import com.milesxue.pixeldone.reminder.ReminderOccurrenceCoordinator
 import com.milesxue.pixeldone.reminder.ReminderScheduler
+import com.milesxue.pixeldone.reminder.SharedPreferencesReminderOccurrenceHistory
 
 /**
  * Manual dependency container.
@@ -107,6 +109,14 @@ internal class PixelDoneAppContainer(context: Context) {
         checkCache = AppUpdateCheckCache(appContext),
     )
     val reminderScheduler: ReminderScheduler = AndroidReminderScheduler(appContext)
+    private val reminderOccurrenceHistory =
+        SharedPreferencesReminderOccurrenceHistory.create(appContext)
+    val reminderOccurrenceCoordinator = ReminderOccurrenceCoordinator(
+        repository = todoRepository,
+        scheduler = reminderScheduler,
+        occurrenceHistory = reminderOccurrenceHistory,
+        requestSync = syncCoordinator::requestSync,
+    )
     val activeXHighAlarmStore: ActiveXHighAlarmStore = ActiveXHighAlarmStore.create(appContext)
 }
 

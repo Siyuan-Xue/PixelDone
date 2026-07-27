@@ -51,6 +51,7 @@ enum class SortMode {
 }
 
 enum class ReminderScheduleMode {
+    EXACT_NOTIFICATION,
     INEXACT_NOTIFICATION,
     SYSTEM_ALARM,
 }
@@ -74,6 +75,11 @@ data class ReminderDispatchPlan(
             .distinct()
             .sorted()
 }
+
+data class ReminderAlarmTarget(
+    val triggerAtMillis: Long,
+    val occurrenceAtMillis: Long,
+)
 
 enum class ReminderCapability {
     NOTIFICATION_PERMISSION,
