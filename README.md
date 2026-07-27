@@ -47,9 +47,10 @@ Repository-scoped Codex workflows live under `.agents/skills/`. Keep local machi
 - Move deleted tasks, completed-task batches, and deleted-list tasks into `TRASH`.
 - Restore tasks from `TRASH` without changing their completed state, recreating the original list if needed.
 - Permanently delete all visible tasks from `TRASH`, while retaining cloud tombstones locally when needed so deletion facts can finish syncing.
-- Schedule a local alarm notification for each active future todo.
+- Schedule a local alarm notification for each active todo, using exact alarms when authorized and a Doze-capable inexact fallback otherwise.
 - Set reminder repeat per todo: none, daily, or weekly.
-- Advance daily and weekly repeating todos to the next reminder time after a notification fires.
+- Recover only the latest missed daily or weekly occurrence instead of silently skipping it during app, permission, boot, or package-update reconciliation.
+- Advance daily and weekly repeating todos to the next future reminder time only after notification delivery succeeds, then synchronize the refreshed DDL.
 - Keep an emergency XHigh alarm control panel available in PixelDone while an XHigh alarm is ringing.
 - Stop XHigh alarm sound and vibration when the alarm notification is dismissed.
 - Prepare XHigh alarm audio asynchronously, keep STOP/SNOOZE responsive during startup failures, and enforce a 10-minute hard timeout.
@@ -192,7 +193,7 @@ The workflow appends artifact size, APK SHA-256, signing certificate SHA-256, an
 The current formal signed release APK is:
 
 ```text
-app/build/outputs/apk/release/PixelDone-3.3.5-release.apk
+app/build/outputs/apk/release/PixelDone-3.3.6-release.apk
 ```
 
 ## Install
@@ -200,7 +201,7 @@ app/build/outputs/apk/release/PixelDone-3.3.5-release.apk
 Install the current formal signed release build with:
 
 ```sh
-adb install -r app/build/outputs/apk/release/PixelDone-3.3.5-release.apk
+adb install -r app/build/outputs/apk/release/PixelDone-3.3.6-release.apk
 ```
 
 The formal package name is:
@@ -217,4 +218,4 @@ com.milesxue.pixeldone.debug
 
 ## Status
 
-3.3.5 (versionCode 95) is the current formal signed Android release. It switches widget configuration through one Glance state update, safely renders every checklist item ID, uses one widget background, and keeps completed rows checked and struck through for two seconds with confirmation haptics before removal. The remote contract remains 3.2, and the existing direct-IP HTTP deployment contract remains unchanged.
+3.3.6 (versionCode 96) is the current formal signed Android release. It prevents reminder reconciliation from cancelling unchanged alarms, immediately recovers only the latest missed repeating occurrence, advances repeating DDL atomically after successful delivery, and synchronizes the refreshed deadline across devices. Exact alarms are used when the user has authorized them; the fallback remains Doze-capable and recoverable. The remote contract remains 3.2, and the existing direct-IP HTTP deployment contract remains unchanged.
