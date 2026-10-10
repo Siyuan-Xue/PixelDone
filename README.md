@@ -18,20 +18,21 @@
 
 <div align="center">
 
-<img src="app/src/main/res/drawable-nodpi/pixeldone_widget_preview_image.png" alt="Home-screen widget preview" width="24%">
-<img src="docs/screenshots/android-settings-arabic.png" alt="Settings in Arabic, right-to-left layout" width="24%">
-<!-- screenshot slot: docs/screenshots/android-main-list.png (main list with a few tasks, portrait PNG, about 1080 x 2400). Add as <img src="docs/screenshots/android-main-list.png" alt="Main list" width="24%"> -->
-<!-- screenshot slot: docs/screenshots/android-task-editor.png (bottom task editor open, portrait PNG, about 1080 x 2400). Add as <img src="docs/screenshots/android-task-editor.png" alt="Task editor" width="24%"> -->
+<img src="docs/screenshots/android-tasks.png" alt="Task list with priority color bars, date, time and weekly repeat" width="24%">
+<img src="docs/screenshots/android-edit-task.png" alt="Editing a task: priority slider, alarm time and repeat" width="24%">
+<img src="docs/screenshots/android-new-list.png" alt="List switcher with Trash, creating a new list" width="24%">
+<img src="docs/screenshots/android-dock.png" alt="Dock settings: plus button position and up to four quick actions" width="24%">
 
 </div>
 
 ## ✨ Highlights
 
-- 📋 **Checklists that stay out of your way**: multiple lists, four priority levels (Low / Mid / High / XHigh), deadlines, sort by priority or time, and a DDL countdown view.
+- 📋 **A task list you read at a glance**: each task shows a priority color bar (green Low, blue Medium, yellow High, red XHigh), its date and time, and its repeat rule. Sort by priority or time, or switch to a DDL countdown.
+- ✏️ **Fast editing**: name the task, drag the four-step priority slider (Low / Medium / High / XHigh), set the alarm date and time, and repeat it None, Daily or Weekly.
+- 🗂️ **Multiple lists and a Trash**: switch lists from the top bar and long-press `+` to create a new one. Deleted tasks wait in Trash for 30 days.
 - ⏰ **Reminders you can trust**: exact alarms when authorized with a Doze-capable fallback, daily or weekly repeats, recovery of missed repeats, and a full-screen alarm for XHigh tasks.
-- 📴 **Local-first**: everything works offline on Room. Deleted tasks sit in Trash for 30 days before they are scrubbed.
-- 🔄 **Real-time sync across devices**: optional Supabase sign-in, transactional sync, Realtime updates, three-way field merge, and a conflict review that never loses data silently.
-- 🧩 **Home-screen widget and custom dock**: check tasks off from the home screen, and choose up to four quick actions around the `+` button.
+- 🧩 **A dock you design**: put `+` in the center, left or right, then pick up to four quick actions and their order: Sort, DDL countdown, Hide done, Clean done, Quick delete and Export Markdown (copies the current list as Markdown). A home-screen widget lets you check tasks off without opening the app.
+- ☁️ **Cloud backup and multi-device sync**: everything works offline first on Room. Sign in to back up your lists and sync them in real time across Android, Windows and Linux, with three-way field merge and a conflict review that never loses data silently. Account, sync, password, language and theme all live in Settings.
 - 🌍 **Seven languages**: System plus the six UN languages, including full right-to-left Arabic, with light and dark themes.
 - 🔐 **Verified in-app updates**: GitHub Releases first, Gitee mirror second, with SHA-256 and signing-certificate checks before install.
 
@@ -40,7 +41,7 @@
 
 **Tasks and checklists**
 
-- Add todos with a name, four-step priority (Low, Mid, High, XHigh) and date/time; priority colors are Low green, Mid blue, High yellow, XHigh red.
+- Add todos with a name, four-step priority (Low, Medium, High, XHigh) and date/time; priority colors are Low green, Medium blue, High yellow, XHigh red.
 - Keep multiple local checklists, starting from a default `MAIN` list; fixed `TRASH` and `SETTINGS` lists.
 - Expand the top bar to switch checklists and edit checklist names; system Back returns through this session's checklist history.
 - Long-press `+` to create a new checklist; short press creates a task.
@@ -74,20 +75,17 @@
 
 **Dock, settings and updates**
 
-- Dock: `+` placement, live preview, up to four functions (`SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, `QUICK DELETE`) and their order. Default: `SORT`, `+`, `DDL`.
+- Dock: `+` placement, live preview, up to four functions (`SORT`, `DDL`, `HIDE DONE`, `CLEAN DONE`, `QUICK DELETE`, `EXPORT MARKDOWN`) and their order. Export Markdown copies the current list to the clipboard as Markdown. Default: `SORT`, `+`, `DDL`.
 - Settings: language, light/dark mode, dock, cloud sync with pending/conflict counts, update prompts, permissions and version.
 - Updates: quiet check on every start; downloads only the latest channel-matching APK, shows verification progress, and installs through PackageInstaller sessions.
 
 </details>
 
-## 📱 Screenshots
+## 🧩 Widget and Windows client
 
-| Home-screen widget | Settings (Arabic, RTL) | Windows client |
-|:---:|:---:|:---:|
-| <img src="app/src/main/res/drawable-nodpi/pixeldone_widget_preview_image.png" alt="Home-screen widget preview" width="240"> | <img src="docs/screenshots/android-settings-arabic.png" alt="Android settings in Arabic" width="200"> | <img src="docs/screenshots/windows-main.png" alt="PixelDone for Windows main window" width="320"> |
-
-<!-- screenshot slot: docs/screenshots/android-main-light.png and docs/screenshots/android-main-dark.png (same list in light and dark theme, portrait PNG, about 1080 x 2400, shown at width 200) -->
-<!-- GIF slot: docs/media/demo.gif (add task, reminder fires, check off from the widget; about 360 px wide, 10 to 20 s, under 10 MB) -->
+| Home-screen widget | Windows client |
+|:---:|:---:|
+| <img src="app/src/main/res/drawable-nodpi/pixeldone_widget_preview_image.png" alt="Home-screen widget preview" width="240"> | <img src="docs/screenshots/windows-main.png" alt="PixelDone for Windows main window" width="400"> |
 
 ## 📥 Download
 
