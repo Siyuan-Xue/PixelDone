@@ -1,4 +1,4 @@
-<!-- 术语表（修改中文版前请先对照）：todo/task=待办；checklist=清单；priority=优先级（Low/Mid/High/XHigh 保持英文）；DDL=截止时间（DDL）；reminder=提醒；Trash=回收站；widget=桌面小组件；dock=底部 Dock；local-first=本地优先；sync=同步；Realtime 保持英文；three-way merge=三方合并；conflict review=冲突审阅；tombstone=删除标记（tombstone）；release=发布版；APK、Supabase、Room、WorkManager、Jetpack Compose 等名称不翻译。人称统一用“你”，引号统一用「」。 -->
+<!-- 术语表（修改中文版前请先对照）：todo/task=待办；checklist=清单；priority=优先级（Low/Medium/High/XHigh 保持英文）；DDL=截止时间（DDL）；reminder=提醒；Trash=回收站；widget=桌面小组件；dock=底部 Dock；local-first=本地优先；sync=同步；Realtime 保持英文；three-way merge=三方合并；conflict review=冲突审阅；tombstone=删除标记（tombstone）；release=发布版；APK、Supabase、Room、WorkManager、Jetpack Compose 等名称不翻译。人称统一用“你”，引号统一用「」。 -->
 
 <div align="center">
 
@@ -22,20 +22,21 @@
 
 <div align="center">
 
-<img src="app/src/main/res/drawable-nodpi/pixeldone_widget_preview_image.png" alt="桌面小组件预览" width="24%">
-<img src="docs/screenshots/android-settings-arabic.png" alt="阿拉伯语从右到左布局的设置页" width="24%">
-<!-- 截图位：docs/screenshots/android-main-list.png（有几条任务的主清单，竖屏 PNG，约 1080 × 2400）。添加方式：<img src="docs/screenshots/android-main-list.png" alt="主清单" width="24%"> -->
-<!-- 截图位：docs/screenshots/android-task-editor.png（打开底部任务编辑器，竖屏 PNG，约 1080 × 2400）。添加方式：<img src="docs/screenshots/android-task-editor.png" alt="任务编辑器" width="24%"> -->
+<img src="docs/screenshots/android-tasks.png" alt="待办列表：优先级色条、日期时间与每周重复" width="24%">
+<img src="docs/screenshots/android-edit-task.png" alt="编辑待办：优先级滑块、闹钟时间与重复" width="24%">
+<img src="docs/screenshots/android-new-list.png" alt="清单切换与回收站，新建清单" width="24%">
+<img src="docs/screenshots/android-dock.png" alt="Dock 设置：加号位置与最多四个快捷功能" width="24%">
 
 </div>
 
 ## ✨ 亮点
 
-- 📋 **清单轻快**：多清单、四档优先级（Low / Mid / High / XHigh）、截止时间（DDL），可按优先级或时间排序，也能切换成 DDL 倒计时视图。
+- 📋 **待办一目了然**：每条待办都有优先级色条（Low 绿、Medium 蓝、High 黄、XHigh 红），并显示日期时间和重复规则；可按优先级或时间排序，也能切换成 DDL 倒计时。
+- ✏️ **编辑顺手**：填好名称，拖动四档优先级滑块（Low / Medium / High / XHigh），设好闹钟日期和时间，再选择不重复、每日或每周重复。
+- 🗂️ **多清单与回收站**：在顶栏切换清单，长按 `+` 新建清单；删除的任务在回收站保留 30 天。
 - ⏰ **提醒可靠**：获得授权时使用精确闹钟，否则回退到兼容 Doze 的方案；支持每日、每周重复，补回错过的周期，XHigh 任务还有全屏闹钟。
-- 📴 **本地优先**：基于 Room 离线可用；删除的任务在回收站保留 30 天，到期后才彻底清除。
-- 🔄 **多端实时同步**：可选 Supabase 登录，事务化同步加 Realtime 推送；字段级三方合并，冲突一律进入审阅，不会悄悄丢数据。
-- 🧩 **小组件与自定义 Dock**：在桌面直接勾选完成；`+` 按钮两侧最多放四个快捷功能，自由排序。
+- 🧩 **Dock 随你定制**：`+` 可放在中间、左侧或右侧，再挑最多四个快捷功能并排好顺序：排序、DDL 倒计时、隐藏已完成、清理已完成、快速删除、导出 Markdown（把当前清单复制为 Markdown）。桌面小组件让你不打开应用也能勾选完成。
+- ☁️ **云端备份与多端同步**：一切先在本地 Room 中离线可用；登录后即可把清单备份到云端，并在 Android、Windows 和 Linux 之间实时同步。字段级三方合并，冲突一律进入审阅，不会悄悄丢数据。账号、同步、修改密码、语言和主题都在设置里。
 - 🌍 **七种语言**：跟随系统，或选择联合国六种官方语言（阿拉伯语完整支持从右到左布局），并支持浅色与深色主题。
 - 🔐 **应用内更新有校验**：优先从 GitHub Releases 获取，Gitee 镜像兜底，安装前核对 SHA-256 和签名证书。
 
@@ -44,7 +45,7 @@
 
 **待办与清单**
 
-- 新建待办时可设名称、四档优先级（Low、Mid、High、XHigh）和日期时间；优先级颜色依次为绿、蓝、黄、红。
+- 新建待办时可设名称、四档优先级（Low、Medium、High、XHigh）和日期时间；优先级颜色依次为绿、蓝、黄、红。
 - 支持多个本地清单，默认从 `MAIN` 开始；另有固定的 `TRASH`（回收站）和 `SETTINGS`（设置）。
 - 展开顶栏即可切换清单、修改清单名；系统返回手势会沿本次会话的清单浏览记录逐级返回。
 - 长按 `+` 新建清单，短按新建任务。
@@ -78,20 +79,17 @@
 
 **Dock、设置与更新**
 
-- Dock：设置 `+` 的位置并实时预览，最多选择四个功能（`SORT`、`DDL`、`HIDE DONE`、`CLEAN DONE`、`QUICK DELETE`）并调整顺序；默认是 `SORT`、`+`、`DDL`。
+- Dock：设置 `+` 的位置并实时预览，最多选择四个功能（`SORT`、`DDL`、`HIDE DONE`、`CLEAN DONE`、`QUICK DELETE`、`EXPORT MARKDOWN`）并调整顺序，其中导出 Markdown 会把当前清单以 Markdown 格式复制到剪贴板；默认是 `SORT`、`+`、`DDL`。
 - 设置：语言、浅色/深色模式、Dock、云同步（含待同步数和冲突数）、更新提示、权限和版本信息。
 - 更新：每次启动静默检查；只下载与当前渠道匹配的最新 APK，显示校验进度，并通过 PackageInstaller 会话安装。
 
 </details>
 
-## 📱 截图
+## 🧩 小组件与 Windows 客户端
 
-| 桌面小组件 | 设置页（阿拉伯语，从右到左） | Windows 客户端 |
-|:---:|:---:|:---:|
-| <img src="app/src/main/res/drawable-nodpi/pixeldone_widget_preview_image.png" alt="桌面小组件预览" width="240"> | <img src="docs/screenshots/android-settings-arabic.png" alt="阿拉伯语设置页" width="200"> | <img src="docs/screenshots/windows-main.png" alt="PixelDone Windows 版主窗口" width="320"> |
-
-<!-- 截图位：docs/screenshots/android-main-light.png 与 docs/screenshots/android-main-dark.png（同一清单的浅色、深色主题，竖屏 PNG，约 1080 × 2400，显示宽度 200） -->
-<!-- GIF 位：docs/media/demo.gif（新建任务、提醒响起、在小组件上勾选完成；宽约 360 px，10～20 秒，小于 10 MB） -->
+| 桌面小组件 | Windows 客户端 |
+|:---:|:---:|
+| <img src="app/src/main/res/drawable-nodpi/pixeldone_widget_preview_image.png" alt="桌面小组件预览" width="240"> | <img src="docs/screenshots/windows-main.png" alt="PixelDone Windows 版主窗口" width="400"> |
 
 ## 📥 下载
 
